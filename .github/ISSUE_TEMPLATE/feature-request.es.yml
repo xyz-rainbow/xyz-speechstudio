@@ -1,0 +1,36 @@
+name: Solicitud de función
+description: Propón una mejora o una capacidad nueva
+title: "[Función]: "
+labels: [enhancement]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Describe primero el problema y luego la idea. There is also a template in [English](https://github.com/xyz-rainbow/xyz-speechstudio/issues/new?template=feature-request.yml).
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problema
+      description: ¿Qué resulta difícil o qué falta hoy?
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Propuesta
+      description: ¿Qué debería hacer la app? Sé concreto.
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternativas consideradas
+    validations:
+      required: false
+  - type: textarea
+    id: context
+    attributes:
+      label: Contexto adicional
+      description: Sistema, GPU, flujos de trabajo o issues relacionados.
+    validations:
+      required: false
