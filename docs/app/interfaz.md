@@ -12,9 +12,15 @@ Apariencia:
 - Acentos Cyber, Emerald, Amber y Rose.
 - Fondo ASCII a 30 FPS, con pausa si la ventana no se ve. El interruptor y la opacidad están en Ajustes, no en la barra superior.
 - Tarjetas `GlassCard` y botones `BorderBeamButton`.
-- Tipografía Inter y JetBrains Mono.
+- Tipografía Space Grotesk y JetBrains Mono.
 
 Idiomas de la interfaz: inglés (por defecto) y español. Los archivos son `src/i18n/locales/en.json` y `es.json`.
+
+El selector de modelo vacío dice `Local · Sin Modelos` / `Local · No Models`. El de perfil vacío dice `No existe ningún perfil` / `No voice profile`. Borrar queda a la derecha de Reproducir y Guardar.
+
+El catálogo local vive en la app. Se refresca al descargar un modelo y cada pocos segundos, así que un TTS nuevo aparece en Sintetizar y un STT nuevo en Transcribir sin volver a abrir la pestaña. Los endpoints externos salen de los ajustes en cada render: al guardar uno de TTS o de STT entra en el grupo Externo del selector que le corresponde. Los avisos de descarga los pinta Speech Studio, con su nombre y su icono, en Windows, Linux y macOS.
+
+La pastilla de versión del sidebar abre el diálogo de actualizaciones. Si GitHub tiene un tag más nuevo, la pastilla pasa a `Update` con borde lima giratorio. La comprobación corre al arrancar y cada 6 horas. En Windows, Actualizar descarga el `SpeechStudio_*_Setup.exe` de la release y lo lanza (Inno Setup) y la app se cierra. En macOS abre `.dmg` o `.pkg`. En Linux ejecuta el AppImage o abre el `.deb`/`.rpm`. Si la release no trae paquete para ese sistema, el botón lo dice y sigue estando Ver en GitHub.
 
 La barra superior enseña la VRAM en vivo y el toggle GPU/CPU de TTS y de STT. El puerto del orquestador se ve en Ajustes. Además, toda la app se puede inspeccionar y controlar desde terminal con el comando global `speechstudio` (`--status`, `--models`, `--profiles`, `--config`, `play`, `transcribe`, `endpoints`).
 

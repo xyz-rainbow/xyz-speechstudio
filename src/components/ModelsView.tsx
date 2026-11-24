@@ -55,6 +55,7 @@ interface ModelsViewProps {
   vram: VramStatus | null;
   onSaveSettings: (next: AppSettings) => Promise<void>;
   onWorkersChange: (next: WorkersSnapshot) => void;
+  onCatalogChange?: (models: CatalogModelEntry[]) => void;
   onAfterGpuAction: () => void;
 }
 
@@ -125,6 +126,7 @@ export const ModelsView: React.FC<ModelsViewProps> = ({
   vram,
   onSaveSettings,
   onWorkersChange,
+  onCatalogChange,
   onAfterGpuAction,
 }) => {
   const { t } = useI18n();
@@ -153,12 +155,13 @@ export const ModelsView: React.FC<ModelsViewProps> = ({
     try {
       const res = await fetchModelsCatalog(baseUrl);
       setCatalog(res.models);
+      onCatalogChange?.(res.models);
       setDownloads(res.downloads);
       setModelsDir(res.models_dir);
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     }
-  }, [baseUrl]);
+  }, [baseUrl, onCatalogChange]);
 
   useEffect(() => {
     refreshCatalog();

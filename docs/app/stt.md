@@ -10,7 +10,7 @@
 
 El VAD es el de faster-whisper (`vad_filter`, Silero). No hay un segundo motor dentro del worker.
 
-La pestaña Transcriber elige el modelo cargado, manda un archivo y muestra el texto. Profiles usa la misma ruta para rellenar el texto de referencia.
+La pestaña Transcriber elige el modelo cargado, manda un archivo y muestra el texto. Su lista local son los STT instalados y con runtime, y la externa son los endpoints STT de ajustes. Las dos se actualizan al descargar o al guardar, también si la pestaña no estaba abierta. Profiles usa la misma ruta para rellenar el texto de referencia.
 
 Tamaños que el runtime acepta: `tiny`, `base`, `small`, `medium`, `large-v3-turbo`, en `int8`, `int8_float16` o `float16`. GPU o CPU sale de `stt_device`.
 

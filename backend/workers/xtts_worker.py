@@ -69,11 +69,35 @@ def save_pcm16_wav(path: Path, audio, sr: int) -> None:
         wf.writeframes(pcm.tobytes())
 
 
+def _load_audio_soundfile(audiopath, sampling_rate):
+    """Load reference audio without torchcodec/FFmpeg shared DLLs (Windows)."""
+    import numpy as np
+    import soundfile as sf
+    import torch
+    import torchaudio
+
+    data, lsr = sf.read(str(audiopath), always_2d=True)
+    audio = torch.from_numpy(np.asarray(data.T, dtype=np.float32))
+    if audio.size(0) != 1:
+        audio = torch.mean(audio, dim=0, keepdim=True)
+    if lsr != sampling_rate:
+        audio = torchaudio.functional.resample(audio, lsr, sampling_rate)
+    audio.clip_(-1, 1)
+    return audio
+
+
+def _patch_xtts_audio_loader() -> None:
+    import TTS.tts.models.xtts as xtts_mod
+
+    xtts_mod.load_audio = _load_audio_soundfile
+
+
 def _load_checkpoint(model_dir: Path):
     import torch
     from TTS.tts.configs.xtts_config import XttsConfig
     from TTS.tts.models.xtts import Xtts
 
+    _patch_xtts_audio_loader()
     config = XttsConfig()
     config.load_json(str(model_dir / "config.json"))
     model = Xtts.init_from_config(config)
@@ -171,6 +195,7 @@ def synthesize(req: SynthRequest):
 
     t0 = time.perf_counter()
     try:
+        _patch_xtts_audio_loader()
         outputs = model.synthesize(
             text,
             config,

@@ -12,10 +12,12 @@ import {
 import { clsx } from "clsx";
 import { useI18n } from "../i18n";
 import type { TabId } from "../types";
+import { UpdateBadge } from "./UpdateBadge";
 
 interface SidebarProps {
   activeTab: TabId;
   collapsed: boolean;
+  baseUrl: string;
   onSelectTab: (tab: TabId) => void;
   onToggleCollapse: () => void;
 }
@@ -32,6 +34,7 @@ const NAV_ITEMS: { id: TabId; icon: React.ComponentType<{ className?: string }> 
 export const Sidebar: React.FC<SidebarProps> = ({
   activeTab,
   collapsed,
+  baseUrl,
   onSelectTab,
   onToggleCollapse,
 }) => {
@@ -121,17 +124,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
         </nav>
       </div>
 
-      {!collapsed && (
-        <div
-          className="px-3 py-2 rounded-xl border text-[11px] font-mono text-center"
-          style={{
-            borderColor: "var(--border-glass)",
-            color: "var(--text-muted)",
-          }}
-        >
-          {t("app.phaseBadge")}
-        </div>
-      )}
+      <UpdateBadge baseUrl={baseUrl} collapsed={collapsed} />
     </aside>
   );
 };

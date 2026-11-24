@@ -19,7 +19,6 @@ import { clsx } from "clsx";
 import { useI18n } from "../i18n";
 import {
   deleteHistoryRecord,
-  fetchModelsCatalog,
   isTauri,
   LiveCaptionsConflictError,
   notify,
@@ -39,6 +38,7 @@ import { GlassCard } from "./GlassCard";
 
 interface TtsStudioViewProps {
   baseUrl: string;
+  catalog: CatalogModelEntry[];
   settings: AppSettings;
   onSaveSettings: (next: AppSettings) => Promise<void>;
   profiles: VoiceProfile[];
@@ -74,6 +74,7 @@ function normalizeTtsModelId(id: string): string {
 
 export const TtsStudioView: React.FC<TtsStudioViewProps> = ({
   baseUrl,
+  catalog,
   settings,
   onSaveSettings,
   profiles,
@@ -97,27 +98,12 @@ export const TtsStudioView: React.FC<TtsStudioViewProps> = ({
     null
   );
   const [menuOpen, setMenuOpen] = useState(false);
-  const [catalogTts, setCatalogTts] = useState<CatalogModelEntry[]>([]);
   const menuRef = useRef<HTMLDivElement | null>(null);
   const audioRef = useRef<HTMLAudioElement | null>(null);
-
-  useEffect(() => {
-    if (!baseUrl) return;
-    let alive = true;
-    fetchModelsCatalog(baseUrl)
-      .then((res) => {
-        if (!alive) return;
-        setCatalogTts(
-          res.models.filter(
-            (m) => m.kind === "tts" && m.runtime_supported && m.installed
-          )
-        );
-      })
-      .catch(() => {});
-    return () => {
-      alive = false;
-    };
-  }, [baseUrl]);
+  const catalogTts = React.useMemo(
+    () => catalog.filter((m) => m.kind === "tts" && m.runtime_supported && m.installed),
+    [catalog]
+  );
 
   useEffect(() => {
     if (!menuOpen) return;
@@ -714,22 +700,22 @@ export const TtsStudioView: React.FC<TtsStudioViewProps> = ({
               )}
               {t("synthesize.save")}
             </BorderBeamButton>
-
-            <button
-              type="button"
-              disabled={!text.length || !!busyMode}
-              onClick={() => setText("")}
-              className="inline-flex items-center gap-1.5 rounded-full border px-3.5 py-2 text-sm font-medium transition-colors disabled:opacity-40 hover:border-rose-400/50"
-              style={{
-                backgroundColor: "var(--bg-surface-strong)",
-                borderColor: "var(--border-glass)",
-                color: "var(--text-secondary)",
-              }}
-            >
-              <Eraser className="w-4 h-4" />
-              {t("synthesize.erase")}
-            </button>
           </div>
+
+          <button
+            type="button"
+            disabled={!text.length || !!busyMode}
+            onClick={() => setText("")}
+            className="ml-auto mr-2 inline-flex items-center gap-1.5 rounded-full border px-3.5 py-2 text-sm font-medium transition-colors disabled:opacity-40 hover:border-rose-400/50"
+            style={{
+              backgroundColor: "var(--bg-surface-strong)",
+              borderColor: "var(--border-glass)",
+              color: "var(--text-secondary)",
+            }}
+          >
+            <Eraser className="w-4 h-4" />
+            {t("synthesize.erase")}
+          </button>
 
           {lastStats && (
             <div className="text-[11px] font-mono" style={{ color: "var(--text-secondary)" }}>

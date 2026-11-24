@@ -7,6 +7,7 @@ import os
 import re
 import socket
 import subprocess
+import sys
 import time
 import uuid
 from contextlib import asynccontextmanager
@@ -20,7 +21,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse, Response
 from pydantic import BaseModel
 
-from . import downloader, external_providers, history, profiles
+from . import downloader, external_providers, history, profiles, updates
 from .config import (
     APP_ROOT,
     DEFAULT_PROFILES_DIR,
@@ -28,6 +29,7 @@ from .config import (
     RUNTIME_JSON_PATH,
     AppSettings,
     load_settings,
+    reject_public_bind_without_token,
     resolved_models_dir,
     resolved_outputs_dir,
     save_settings,
@@ -130,6 +132,10 @@ class SaveAsRequest(BaseModel):
     dest_path: str
 
 
+class UpdateCurrentRequest(BaseModel):
+    current: str = ""
+
+
 class SpeechRequest(BaseModel):
     model: str = "qwen3-1.7b"
     input: str
@@ -156,6 +162,20 @@ def _verify_local_api_access(request: Request, settings: AppSettings) -> None:
         auth = request.headers.get("authorization", "")
         if auth != f"Bearer {token}":
             raise HTTPException(status_code=401, detail="Invalid or missing Bearer token.")
+
+
+def _require_bearer_for_non_loopback(request: Request, settings: AppSettings) -> None:
+    """When bound on 0.0.0.0, LAN clients must present the configured Bearer token.
+
+    Loopback UI (Tauri → 127.0.0.1) stays unauthenticated so the tray/badge keep working.
+    """
+    client = (request.client.host if request.client else "") or ""
+    if client in {"127.0.0.1", "::1", "localhost"}:
+        return
+    token = settings.api_bearer_token.strip()
+    auth = request.headers.get("authorization", "")
+    if not token or auth != f"Bearer {token}":
+        raise HTTPException(status_code=401, detail="Invalid or missing Bearer token.")
 
 
 def _find_endpoint(settings: AppSettings, ep_id: str) -> external_providers.ExternalEndpointConfig:
@@ -421,6 +441,45 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+def _update_http(exc: updates.UpdateError) -> HTTPException:
+    status = 409 if exc.code in {"no-asset", "already-current", "bad-url", "bad-name", "too-large"} else 502
+    return HTTPException(status_code=status, detail=exc.code)
+
+
+@app.get("/api/toasts/pending")
+def pending_toasts():
+    from .toasts import drain
+
+    return {"toasts": drain()}
+
+
+@app.get("/api/updates/latest")
+def updates_latest(current: str = "0.0.0", force: bool = False):
+    try:
+        return updates.check_latest(current, force=force)
+    except updates.UpdateError as exc:
+        raise _update_http(exc) from exc
+
+
+@app.post("/api/updates/open")
+def updates_open(payload: UpdateCurrentRequest, request: Request):
+    _require_bearer_for_non_loopback(request, load_settings())
+    try:
+        url = updates.open_release_page(payload.current)
+    except updates.UpdateError as exc:
+        raise _update_http(exc) from exc
+    return {"ok": True, "url": url}
+
+
+@app.post("/api/updates/install")
+def updates_install(payload: UpdateCurrentRequest, request: Request):
+    _require_bearer_for_non_loopback(request, load_settings())
+    try:
+        return updates.install_latest(payload.current)
+    except updates.UpdateError as exc:
+        raise _update_http(exc) from exc
 
 
 @app.get("/health")
@@ -1061,6 +1120,11 @@ def main(port: Optional[int] = None) -> None:
 
     settings = load_settings()
     bind_host = args.host or settings.api_bind_host or "127.0.0.1"
+    try:
+        reject_public_bind_without_token(bind_host, settings.api_bearer_token)
+    except ValueError as exc:
+        print(str(exc), file=sys.stderr)
+        raise SystemExit(2) from exc
     requested_port = args.port if args.port is not None else settings.api_fixed_port
     runtime_info["host"] = bind_host
 

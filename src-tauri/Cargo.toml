@@ -26,12 +26,18 @@ serde_json = "1"
 tungstenite = { version = "0.24", default-features = false, features = ["handshake"] }
 base64 = "0.23"
 png = "0.18"
-rfd = "0.17"
+# default-features off: rfd 0.17 defaults to xdg-portal, while tauri-plugin-dialog
+# enables gtk3 — both together panic the build script on Linux.
+rfd = { version = "0.17", default-features = false }
 
 [target.'cfg(unix)'.dependencies]
 libc = "0.2"
 
+[target.'cfg(target_os = "macos")'.dependencies]
+mac-notification-sys = "0.6"
+
 [target.'cfg(windows)'.dependencies]
+winrt-notification = "0.5.1"
 windows-core = "0.62"
 
 [target.'cfg(windows)'.dependencies.windows]
@@ -46,6 +52,8 @@ features = [
     "Win32_System_Variant",
     "Win32_System_Registry",
     "Win32_UI_Accessibility",
+    "Win32_UI_Shell",
+    "Win32_UI_Shell_PropertiesSystem",
     "Win32_UI_WindowsAndMessaging",
     "Win32_Graphics_Dwm",
     "Win32_Graphics_Gdi",

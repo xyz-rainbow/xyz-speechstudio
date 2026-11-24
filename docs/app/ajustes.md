@@ -17,10 +17,10 @@
 | `active_tts_endpoint_id`, `active_stt_endpoint_id` | Endpoint externo elegido |
 | `external_endpoints` | Lista de proveedores. Ver [endpoints.md](endpoints.md) |
 | `captions_max_history` | 5–200. La pestaña Subtitles corta el historial de la sesión |
-| `notifications_enabled` | Toasts. El texto sigue `language` (`en` o `es`). En Windows los entrega BurntToast. Linux (`notify-send`) y macOS (`osascript`) están escritos y pendientes de compilación, igual que el icono de bandeja de esos sistemas |
+| `notifications_enabled` | Toasts en el idioma de `language`. Con la app abierta los muestra Speech Studio: Windows con el id `com.xyz.speechstudio` y un acceso directo del menú Inicio, Linux con `notify-send -a "Speech Studio"`, macOS desde el proceso de la app. Sin el shell, Linux y macOS usan el aviso del sistema y Windows no lanza PowerShell. El icono de bandeja de Linux y macOS sigue sin probarse en un escritorio real |
 | `api_endpoint_enabled` | API OpenAI-compatible. Por defecto apagada |
-| `api_bind_host`, `api_fixed_port` | `127.0.0.1` y puerto dinámico si el puerto es 0 |
-| `api_bearer_token` | Vacío hasta que se active la API |
+| `api_bind_host`, `api_fixed_port` | `127.0.0.1` por defecto. `0.0.0.0` solo se guarda con `api_bearer_token` no vacío. Puerto 0 es dinámico |
+| `api_bearer_token` | Puede ir vacío en localhost. Obligatorio si el bind es `0.0.0.0` |
 | `read_hotkey` | Acelerador físico, o vacío |
 
 La pantalla de Ajustes deja cambiar idioma, tema, ASCII, carpetas, historial de subtítulos, toasts, el hotkey y la API local.

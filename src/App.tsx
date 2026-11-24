@@ -14,6 +14,8 @@ import { I18nProvider, useI18n } from "./i18n";
 import {
   ejectWorkerGroup,
   fetchHistory,
+  fetchModelsCatalog,
+  fetchPendingToasts,
   fetchProfiles,
   fetchSettings,
   fetchWorkers,
@@ -24,6 +26,7 @@ import {
   notify,
   quitApp,
   saveSettings,
+  sendWindowsToast,
   setCaptionsLock,
   stopLiveCaptions,
   updateTrayMenu,
@@ -31,6 +34,7 @@ import {
 import type {
   AppSettings,
   BackendInfo,
+  CatalogModelEntry,
   GenerationRecord,
   TabId,
   VoiceProfile,
@@ -92,6 +96,7 @@ function MainStudio() {
     read_selection_supported: false,
   });
   const [workers, setWorkers] = useState<WorkersSnapshot | null>(null);
+  const [catalog, setCatalog] = useState<CatalogModelEntry[]>([]);
 
   useEffect(() => {
     document.body.classList.remove("app-overlay");
@@ -110,8 +115,20 @@ function MainStudio() {
       setVram(v);
       setBackend(b);
       if (b.running && b.base_url) {
-        const w = await fetchWorkers(b.base_url);
-        setWorkers(w);
+        const [w, catalogRes, pending] = await Promise.all([
+          fetchWorkers(b.base_url).catch(() => null),
+          fetchModelsCatalog(b.base_url).catch(() => null),
+          fetchPendingToasts(b.base_url).catch(() => []),
+        ]);
+        if (w) setWorkers(w);
+        if (catalogRes) setCatalog(catalogRes.models);
+        for (const item of pending) {
+          await sendWindowsToast(
+            item.title,
+            item.message,
+            item.progress == null ? undefined : item.progress
+          ).catch(() => {});
+        }
       }
     } catch {
       // ignore transient startup polling errors
@@ -278,6 +295,7 @@ function MainStudio() {
       <Sidebar
         activeTab={activeTab}
         collapsed={settings.sidebar_collapsed}
+        baseUrl={backend.base_url}
         onSelectTab={setActiveTab}
         onToggleCollapse={() =>
           handleSaveSettings({ ...settings, sidebar_collapsed: !settings.sidebar_collapsed })
@@ -308,6 +326,7 @@ function MainStudio() {
           >
             <TtsStudioView
               baseUrl={backend.base_url}
+              catalog={catalog}
               settings={settings}
               onSaveSettings={handleSaveSettings}
               profiles={profiles}
@@ -339,6 +358,7 @@ function MainStudio() {
           {activeTab === "transcriber" && (
             <TranscriberView
               baseUrl={backend.base_url}
+              catalog={catalog}
               settings={settings}
               onSaveSettings={handleSaveSettings}
               onAfterGpuAction={refreshSystem}
@@ -362,6 +382,7 @@ function MainStudio() {
               vram={vram}
               onSaveSettings={handleSaveSettings}
               onWorkersChange={setWorkers}
+              onCatalogChange={setCatalog}
               onAfterGpuAction={refreshSystem}
             />
           )}

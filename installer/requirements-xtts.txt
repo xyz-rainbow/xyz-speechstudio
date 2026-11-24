@@ -6,3 +6,8 @@
 coqui-tts==0.28.0
 fastapi==0.165.0
 uvicorn==0.54.0
+# Required for load/synth on Windows (coqui omits six; torchcodec/FFmpeg often broken)
+six==1.17.0
+soundfile>=0.12.1
+# transformers 5.x breaks XTTS gpt_inference (past_key_values / get_seq_length)
+transformers==4.46.3

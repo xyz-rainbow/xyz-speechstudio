@@ -11,7 +11,7 @@ Apagada por defecto (`api_endpoint_enabled: false`). Con ella encendida, el orqu
 - `POST /v1/audio/speech` sintetiza con el perfil y el modelo local activos.
 - `POST /v1/audio/transcriptions` transcribe un archivo con faster-whisper.
 
-El bind es `127.0.0.1` salvo que se ponga `0.0.0.0`. El puerto 0 deja que el sidecar elija uno libre. Si hay `api_bearer_token`, la petición tiene que traerlo. Sin el interruptor, estas rutas responden 403.
+El bind es `127.0.0.1` salvo que se ponga `0.0.0.0`. El puerto 0 deja que el sidecar elija uno libre. Si hay `api_bearer_token`, la petición tiene que traerlo. Sin el interruptor, estas rutas responden 403. Si `api_bind_host` es `0.0.0.0`, `api_bearer_token` tiene que ser no vacío: no se guarda esa combinación y el orquestador no llega a escuchar en todas las interfaces sin token.
 
 ### Proveedores externos
 

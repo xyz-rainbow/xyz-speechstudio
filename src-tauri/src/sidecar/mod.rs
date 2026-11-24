@@ -203,6 +203,7 @@ impl BackendState {
                 "--port",
                 &port_arg,
             ])
+            .env("SPEECHSTUDIO_DESKTOP", "1")
             .stdout(Stdio::piped())
             .stderr(Stdio::from(stderr_file));
 

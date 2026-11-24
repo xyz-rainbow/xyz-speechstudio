@@ -41,7 +41,7 @@ Graba la tecla física (`Alt+Shift+Digit7`, `Super+Slash`), sin traducirla al ca
 
 ### Catálogo de modelos
 
-La pestaña Models descarga desde el catálogo y desde una URL de Hugging Face, con cuantización, progreso y borrado. El catálogo ya nombra XTTS v2, Parakeet y Moonshine. Solo Qwen y faster-whisper llegan a cargarse.
+La pestaña Models descarga desde el catálogo y desde una URL de Hugging Face, con cuantización, progreso y borrado. El catálogo ya nombra XTTS v2, Parakeet, Moonshine y Fish Audio. Qwen y faster-whisper se cargan hoy. XTTS tiene worker, `.venvs/xtts` y pesos locales; una síntesis real puede seguir en validación. Parakeet, Moonshine y Fish Audio tienen `runtime_supported: false`.
 
 ### Overlay
 
@@ -49,13 +49,13 @@ La pestaña Subtitles elige la app, manda el audio al STT elegido y el overlay e
 
 ## Pendiente
 
-1. **Live Captions.** Confirmar con Edge o Discord que el PCM llega y el texto sale en el overlay. En Linux cada sink-input es una fila y el paro señala `parec` en cuanto publica su pid; una sesión PipeWire o Pulse no se ha oído. Parakeet y Moonshine siguen sin runtime.
-2. **XTTS v2.** `.venvs/xtts` (`coqui-tts==0.28.0` + PyTorch CUDA) ya está creado y `xtts_worker.py` responde en `/health`. Falta descargar el checkpoint (~1.88 GB) desde la pestaña Models y oír una síntesis real. Los pesos usan la Coqui Public Model License y no van en el repo.
-3. **Parakeet y Moonshine.** Hace falta cargarlos en el worker STT (sherpa-onnx). Hoy el worker solo acepta faster-whisper.
+1. **Live Captions.** Confirmar con Edge o Discord que el PCM llega y el texto sale en el overlay. En Linux cada sink-input es una fila y el paro señala `parec` en cuanto publica su pid; una sesión PipeWire o Pulse no se ha oído. Parakeet, Moonshine y Fish Audio siguen con `runtime_supported: false`.
+2. **XTTS v2.** `.venvs/xtts` (`coqui-tts==0.28.0` + PyTorch) ya está creado, `xtts_worker.py` está en el árbol y los pesos del checkpoint están en disco. No van en el repo (Coqui Public Model License). Una carga falló una vez porque faltaba `six`, hasta `pip install six`. `six==1.17.0` queda fijado en `requirements-xtts.txt`. Una síntesis real puede seguir en validación.
+3. **Parakeet, Moonshine y Fish Audio.** Hace falta cargarlos. Hoy el worker STT solo acepta faster-whisper y el catálogo los marca con `runtime_supported: false`. XTTS no se apaga: sigue en `true`.
 4. **Idiomas.** Hay inglés y español. Faltan italiano, francés, alemán, ruso, chino simplificado, portugués, japonés, coreano, árabe con RTL e hindi.
-5. **Instalador.** La plantilla Inno Setup ya está en `installer/windows/` con el arte de xyz-installer y destino en Archivos de programa. Falta ejecutar el setup en limpio. `xtts` sigue sin entorno. Ver [docs/app/instalador.md](app/instalador.md).
+5. **Instalador.** `SpeechStudio_0.1.0_Setup.exe` (Inno Setup) existe. El 24 de noviembre de 2026 se ejecutó en silencio y quedó en `C:\Program Files (x86)\XYZ-Productions\Speech Studio`. `setup-env.ps1` salió con código 0 y creó `.venvs/core`, `qwen`, `stt` y `xtts`. `/DIR` en silencio ignoró la ruta pedida. El MSI y el NSIS de `tauri build` no instalan Python. Ver [docs/app/instalador.md](app/instalador.md).
 6. **macOS y Linux.** CI enlaza el shell de Linux y hace check en macOS. Falta el paquete (AppImage, `.deb`, bundle de macOS) porque los sidecars de Python no van dentro. El icono de bandeja y los toasts ya están escritos. Esas sesiones de escritorio no se han probado. Ver [docs/app/instalador.md](app/instalador.md).
 
 ## Por dónde seguir
 
-Lo siguiente es oír una captura WASAPI real y descargar el checkpoint de XTTS v2 desde Models para oír una síntesis real (el entorno `.venvs/xtts` y el worker ya arrancan).
+Lo siguiente es oír una captura WASAPI real y validar una síntesis real de XTTS (el worker, `.venvs/xtts` y los pesos ya están). Parakeet, Moonshine y Fish Audio siguen con `runtime_supported: false`.

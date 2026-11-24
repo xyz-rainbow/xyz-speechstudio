@@ -18,6 +18,7 @@ pub struct AudioApp {
     pub has_audio: bool,
 }
 
+#[cfg(any(windows, test))]
 pub(crate) fn encode_rgba_png_data_url(width: u32, height: u32, rgba: &[u8]) -> Option<String> {
     if width == 0 || height == 0 {
         return None;

@@ -170,6 +170,10 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
   }, [recordingHotkey, draft]);
 
   const commit = async (next: AppSettings) => {
+    if (next.api_bind_host === "0.0.0.0" && !next.api_bearer_token.trim()) {
+      setDraft(next);
+      return;
+    }
     setDraft(next);
     await onSave(next);
     setSavedFlag(true);
@@ -808,6 +812,19 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                     )}
                   </div>
                 </div>
+                {draft.api_bind_host === "0.0.0.0" && !draft.api_bearer_token.trim() && (
+                  <p
+                    className="text-xs md:col-span-3 rounded-xl border px-2.5 py-1.5"
+                    role="status"
+                    style={{
+                      color: "var(--text-primary)",
+                      borderColor: "var(--border-glass)",
+                      backgroundColor: "var(--bg-input)",
+                    }}
+                  >
+                    {t("settings.apiLanTokenRequired")}
+                  </p>
+                )}
               </div>
 
               <div className="grid grid-cols-1 md:grid-cols-2 gap-3">

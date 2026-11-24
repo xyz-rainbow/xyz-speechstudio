@@ -4,7 +4,7 @@ import json
 from pathlib import Path
 from typing import Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, ValidationError, model_validator
 
 from .external_providers import ExternalEndpointConfig
 
@@ -16,6 +16,23 @@ DEFAULT_OUTPUTS_DIR = DATA_DIR / "outputs"
 DEFAULT_TMP_DIR = DATA_DIR / "tmp"
 SETTINGS_PATH = DATA_DIR / "settings.json"
 RUNTIME_JSON_PATH = DATA_DIR / "runtime.json"
+
+
+def reject_public_bind_without_token(bind_host: str, token: str) -> None:
+    """Listening on every interface without a bearer token is rejected."""
+    if bind_host == "0.0.0.0" and not (token or "").strip():
+        raise ValueError("api_bearer_token is required when api_bind_host is 0.0.0.0")
+
+
+def repair_open_lan_bind(raw: dict) -> dict | None:
+    """Drop an open LAN bind so a saved file cannot be served without a token."""
+    token = raw.get("api_bearer_token")
+    token_text = token if isinstance(token, str) else ""
+    if raw.get("api_bind_host") == "0.0.0.0" and not token_text.strip():
+        repaired = dict(raw)
+        repaired["api_bind_host"] = "127.0.0.1"
+        return repaired
+    return None
 
 
 class AppSettings(BaseModel):
@@ -45,6 +62,11 @@ class AppSettings(BaseModel):
     close_behavior: Literal["ask", "minimize", "quit"] = "ask"
     external_endpoints: list[ExternalEndpointConfig] = Field(default_factory=list)
 
+    @model_validator(mode="after")
+    def lan_bind_requires_bearer_token(self) -> "AppSettings":
+        reject_public_bind_without_token(self.api_bind_host, self.api_bearer_token)
+        return self
+
 
 def ensure_data_dirs() -> None:
     for d in (DATA_DIR, DEFAULT_MODELS_DIR, DEFAULT_PROFILES_DIR, DEFAULT_OUTPUTS_DIR, DEFAULT_TMP_DIR):
@@ -54,14 +76,25 @@ def ensure_data_dirs() -> None:
 def load_settings() -> AppSettings:
     ensure_data_dirs()
     if SETTINGS_PATH.exists():
+        raw: object | None
         try:
             raw = json.loads(SETTINGS_PATH.read_text(encoding="utf-8"))
-            return AppSettings.model_validate(raw)
         except Exception:
-            pass
+            raw = None
+        if isinstance(raw, dict):
+            try:
+                return AppSettings.model_validate(raw)
+            except ValidationError:
+                repaired = repair_open_lan_bind(raw)
+                if repaired is not None:
+                    try:
+                        settings = AppSettings.model_validate(repaired)
+                    except ValidationError:
+                        settings = None
+                    else:
+                        return save_settings(settings)
     settings = AppSettings()
-    save_settings(settings)
-    return settings
+    return save_settings(settings)
 
 
 def save_settings(settings: AppSettings) -> AppSettings:

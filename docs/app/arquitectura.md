@@ -21,7 +21,7 @@ Entornos que existen en disco, fuera de git:
 | `.venvs/core` | `backend.orchestrator.main` | Sí |
 | `.venvs/qwen` | `backend/workers/qwen_worker.py` | Sí |
 | `.venvs/stt` | `backend/workers/stt_worker.py` | Sí |
-| `.venvs/xtts` | `backend/workers/xtts_worker.py` | Sí (`coqui-tts==0.28.0` + PyTorch CUDA) |
+| `.venvs/xtts` | `backend/workers/xtts_worker.py` | Sí (venv y pesos). La síntesis real sigue en validación |
 
 El supervisor nombra la familia `xtts` en `/api/workers` con `script_ready` y `venv_ready` verdaderos.
 
@@ -34,4 +34,4 @@ Rust captura el audio y lo entrega al orquestador en `/api/captions/stream`. El 
 ## Pendiente
 
 - Probar una captura WASAPI real. El canal está escrito y no se ha oído todavía.
-- Descargar los pesos de XTTS v2 desde Models y oír una síntesis real.
+- Validar una síntesis real de XTTS. El worker, `.venvs/xtts` y los pesos están. Una carga falló una vez por faltar `six` (ahora fijado en `requirements-xtts.txt`).
