@@ -13,12 +13,18 @@ import {
   startLiveCaptions,
   stopLiveCaptions,
   toggleOverlayWindow,
+  type AudioAppRow,
 } from "../services/api";
 import type { AppSettings } from "../types";
 
 interface CaptionEvent {
   type: "partial" | "final" | "error" | "status";
   text: string;
+}
+
+function rowKey(row: AudioAppRow): string {
+  if (!row.pid) return "";
+  return row.stream_index == null ? String(row.pid) : `${row.pid}:${row.stream_index}`;
 }
 
 interface SubtitlesViewProps {
@@ -35,8 +41,8 @@ export const SubtitlesView: React.FC<SubtitlesViewProps> = ({
   liveCaptionsSupported,
 }) => {
   const { t } = useI18n();
-  const [apps, setApps] = useState<{ pid: number; name: string }[]>([]);
-  const [pid, setPid] = useState<number>(0);
+  const [apps, setApps] = useState<AudioAppRow[]>([]);
+  const [selected, setSelected] = useState("");
   const [running, setRunning] = useState(false);
   const [busy, setBusy] = useState(false);
   const [live, setLive] = useState("");
@@ -87,7 +93,10 @@ export const SubtitlesView: React.FC<SubtitlesViewProps> = ({
     try {
       const rows = await listAudioApps();
       setApps(rows);
-      setPid((current) => (rows.some((row) => row.pid === current) ? current : rows[0]?.pid ?? 0));
+      setSelected((current) => {
+        if (current && rows.some((row) => rowKey(row) === current)) return current;
+        return rows[0] ? rowKey(rows[0]) : "";
+      });
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     }
@@ -100,7 +109,8 @@ export const SubtitlesView: React.FC<SubtitlesViewProps> = ({
   }, [liveCaptionsSupported]);
 
   const start = async () => {
-    if (!baseUrl || !pid) return;
+    const row = apps.find((item) => rowKey(item) === selected);
+    if (!baseUrl || !row) return;
     setBusy(true);
     setError("");
     try {
@@ -110,7 +120,7 @@ export const SubtitlesView: React.FC<SubtitlesViewProps> = ({
       }
       const wsUrl = baseUrl.replace(/^http/i, "ws") + "/api/captions/stream";
       await showOverlayWindow();
-      await startLiveCaptions(pid, wsUrl, "auto");
+      await startLiveCaptions(row.pid, wsUrl, "auto", row.stream_index);
       await setCaptionsLock(baseUrl, true);
       setRunning(true);
       void notify(settings.notifications_enabled, t("toast.title"), t("toast.captionsOn"));
@@ -169,8 +179,8 @@ export const SubtitlesView: React.FC<SubtitlesViewProps> = ({
 
       <div className="flex flex-wrap items-center gap-2">
         <select
-          value={pid || ""}
-          onChange={(e) => setPid(Number(e.target.value))}
+          value={selected}
+          onChange={(e) => setSelected(e.target.value)}
           disabled={!liveCaptionsSupported}
           className="rounded-xl border px-2.5 py-1.5 text-xs outline-none min-w-[220px] disabled:opacity-50"
           style={{
@@ -181,7 +191,7 @@ export const SubtitlesView: React.FC<SubtitlesViewProps> = ({
         >
           {apps.length === 0 && <option value="">{t("subtitles.noApps")}</option>}
           {apps.map((app) => (
-            <option key={app.pid} value={app.pid}>
+            <option key={rowKey(app)} value={rowKey(app)}>
               {app.name} · {app.pid}
             </option>
           ))}
@@ -203,7 +213,7 @@ export const SubtitlesView: React.FC<SubtitlesViewProps> = ({
         ) : (
           <BorderBeamButton
             onClick={() => void start()}
-            disabled={busy || !pid || !liveCaptionsSupported}
+            disabled={busy || !selected || !liveCaptionsSupported}
           >
             {busy ? t("subtitles.working") : t("subtitles.start")}
           </BorderBeamButton>

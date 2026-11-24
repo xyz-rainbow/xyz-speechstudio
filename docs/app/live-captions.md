@@ -51,7 +51,7 @@ Un frame de 100 ms son 3200 bytes. El worker local no escribe un WAV. El endpoin
 
 ## Acordado
 
-En Linux el pid del listado se vuelve a resolver al sink-input actual justo antes de capturar. Si faltan `pactl` o `parec`, el error lo dice. macOS sigue sin captura. `live_captions_supported` es verdadero en Linux para que la pestaña muestre ese error en vez del aviso de plataforma.
+En Linux cada sink-input es una fila. Si un proceso tiene varios, el nombre lleva ` #` y el índice. Al iniciar se captura ese índice si sigue perteneciendo al mismo pid; no se cambia a otro stream del mismo proceso. Parar manda SIGTERM en cuanto el pid de `parec` existe, también si el paro llegó antes de publicarlo. Si faltan `pactl` o `parec`, el error lo dice. macOS sigue sin captura. `live_captions_supported` es verdadero en Linux para que la pestaña muestre ese error en vez del aviso de plataforma. Una sesión PipeWire o PulseAudio no se ha oído.
 
 ## Pendiente
 
