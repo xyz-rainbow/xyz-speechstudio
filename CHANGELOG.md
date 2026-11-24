@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- CI links the Linux Tauri shell on Ubuntu 24.04 (`cargo build --locked`, debug) and typechecks macOS (`cargo check` and clippy). There is still no AppImage, `.deb`, or macOS bundle, and those desktops were not launched.
 - Linux tray: the primary click shows the main window and still opens the menu. The existing Open Speech Studio item is unchanged. Close-to-tray and quit-stops-backend were already cross-platform. Ubuntu was not tried.
 - Linux live captions list playback streams with `pactl` and capture one of them with `parec --monitor-stream` at 16 kHz mono s16le, using the same 100 ms WebSocket protocol as Windows. A PipeWire or PulseAudio session was not heard.
 - Linux read-selection uses only the primary selection (`wl-paste --primary`, then `xclip -selection primary`). There is no clipboard fallback. Missing tools show a translated message. A real Wayland or X11 selection was not read from this machine.

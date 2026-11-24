@@ -54,7 +54,7 @@ La pestaña Subtitles elige la app, manda el audio al STT elegido y el overlay e
 3. **Parakeet y Moonshine.** Hace falta cargarlos en el worker STT (sherpa-onnx). Hoy el worker solo acepta faster-whisper.
 4. **Idiomas.** Hay inglés y español. Faltan italiano, francés, alemán, ruso, chino simplificado, portugués, japonés, coreano, árabe con RTL e hindi.
 5. **Instalador.** La plantilla Inno Setup ya está en `installer/windows/` con el arte de xyz-installer y destino en Archivos de programa. Falta ejecutar el setup en limpio. `xtts` sigue sin entorno. Ver [docs/app/instalador.md](app/instalador.md).
-6. **macOS y Linux.** Compilación pendiente. El icono de bandeja (clic primario abre el menú; en macOS el icono va como plantilla) y los toasts (`notify-send`, `osascript`) ya están escritos para esa prueba. Windows sigue siendo el único binario. Ver [docs/app/instalador.md](app/instalador.md).
+6. **macOS y Linux.** CI enlaza el shell de Linux y hace check en macOS. Falta el paquete (AppImage, `.deb`, bundle de macOS) porque los sidecars de Python no van dentro. El icono de bandeja y los toasts ya están escritos. Esas sesiones de escritorio no se han probado. Ver [docs/app/instalador.md](app/instalador.md).
 
 ## Por dónde seguir
 

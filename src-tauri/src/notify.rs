@@ -2,7 +2,8 @@ use std::path::Path;
 use std::process::Command;
 
 /// Shows a desktop toast. Windows uses BurntToast. Linux (`notify-send`) and
-/// macOS (`osascript`) are implemented and still pending a real build.
+/// macOS (`osascript`) are implemented. CI links the Linux shell and typechecks
+/// macOS. Neither desktop session has been tried.
 pub fn dispatch_toast(app_root: &Path, title: &str, message: &str, progress: Option<i32>) {
     #[cfg(windows)]
     dispatch_windows(app_root, title, message, progress);
