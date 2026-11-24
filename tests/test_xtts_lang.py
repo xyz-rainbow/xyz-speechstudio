@@ -5,8 +5,6 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 
-import pytest
-
 ROOT = Path(__file__).resolve().parents[1]
 WORKER_DIR = ROOT / "backend" / "workers"
 if str(WORKER_DIR) not in sys.path:
@@ -24,8 +22,12 @@ def test_names_and_codes() -> None:
 
 
 def test_unknown_lists_supported_names() -> None:
-    with pytest.raises(ValueError, match="Supported languages"):
+    try:
         xtts_language("Klingon")
+    except ValueError as exc:
+        assert "Supported languages" in str(exc)
+    else:
+        raise AssertionError("Expected ValueError for unsupported language")
 
 
 def test_output_sample_rate_is_the_decoder_rate() -> None:
@@ -42,5 +44,9 @@ def test_output_sample_rate_is_the_decoder_rate() -> None:
 
 
 def test_empty_language_is_rejected() -> None:
-    with pytest.raises(ValueError, match="needs a language"):
+    try:
         xtts_language("  ")
+    except ValueError as exc:
+        assert "needs a language" in str(exc)
+    else:
+        raise AssertionError("Expected ValueError for empty language")

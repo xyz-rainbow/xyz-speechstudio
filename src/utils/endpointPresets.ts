@@ -125,3 +125,24 @@ export function reconcileActiveEndpointId(
   }
   return matching[0]?.id || "";
 }
+
+export function endpointProviderLabel(ep: ExternalEndpointConfig): string {
+  const url = (ep.base_url || "").toLowerCase();
+  if (url.includes("groq.com")) return "Groq";
+  if (url.includes("openai.com")) return "OpenAI";
+  if (url.includes("elevenlabs.io") || ep.protocol === "elevenlabs") return "ElevenLabs";
+  if (url.includes("deepgram.com") || ep.protocol === "deepgram") return "Deepgram";
+  try {
+    const host = new URL(ep.base_url).hostname;
+    if (host) return host;
+  } catch {
+    // ignore malformed URL
+  }
+  return ep.protocol === "openai" ? "OpenAI API" : ep.protocol;
+}
+
+export function endpointProviderSubtitle(ep: ExternalEndpointConfig): string {
+  const provider = endpointProviderLabel(ep);
+  const model = (ep.model || "").trim();
+  return model ? `${provider} · ${model}` : provider;
+}

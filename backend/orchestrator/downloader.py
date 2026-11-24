@@ -502,8 +502,7 @@ def _detect_builtin_install(entry: dict[str, Any], settings: AppSettings) -> tup
             candidates.append((models_root / "tts" / dn, False))
             candidates.append((models_root / dn, False))
         candidates.append((models_root, False))
-        if mid == "qwen3-1.7b-base":
-            candidates.append((FALLBACK_QWEN_DIR, True))
+        candidates.append((FALLBACK_QWEN_DIR, True))
 
         for base_dir, is_ext in candidates:
             if not base_dir.is_dir():
@@ -584,9 +583,10 @@ def resolve_xtts_dir(settings: AppSettings, model_id: Optional[str] = None) -> t
 def resolve_qwen_paths(settings: AppSettings, model_id: Optional[str] = None) -> tuple[Path, Path, str]:
     """Find best installed Qwen3-TTS (talker_gguf, codec_gguf, resolved_model_id)."""
     preferred_id = model_id or settings.active_tts_model or "qwen3-1.7b-base"
-    # Map legacy default name "qwen3-1.7b-base-Q8_0" -> "qwen3-1.7b-base"
-    if preferred_id.startswith("qwen3-1.7b-base"):
-        preferred_id = "qwen3-1.7b-base"
+    for suffix in ("-Q8_0", "-Q4_K_M", "-BF16", "-F32"):
+        if preferred_id.endswith(suffix):
+            preferred_id = preferred_id[: -len(suffix)]
+            break
 
     order = [BUILTIN_BY_ID[preferred_id]] if preferred_id in BUILTIN_BY_ID else []
     for m in BUILTIN_MODELS:

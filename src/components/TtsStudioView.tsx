@@ -3,6 +3,8 @@ import { save as saveDialog } from "@tauri-apps/plugin-dialog";
 import {
   AlertTriangle,
   ArrowLeft,
+  Check,
+  ChevronDown,
   ChevronRight,
   Eraser,
   FolderArchive,
@@ -13,22 +15,32 @@ import {
   Trash2,
   Volume2,
 } from "lucide-react";
+import { clsx } from "clsx";
 import { useI18n } from "../i18n";
 import {
   deleteHistoryRecord,
+  fetchModelsCatalog,
   isTauri,
   LiveCaptionsConflictError,
+  notify,
   revealInExplorer,
   saveHistoryAs,
-  notify,
   synthesizeTts,
 } from "../services/api";
-import type { GenerationRecord, VoiceProfile } from "../types";
+import type {
+  AppSettings,
+  CatalogModelEntry,
+  GenerationRecord,
+  VoiceProfile,
+} from "../types";
+import { endpointProviderSubtitle } from "../utils/endpointPresets";
 import { BorderBeamButton } from "./BorderBeamButton";
 import { GlassCard } from "./GlassCard";
 
 interface TtsStudioViewProps {
   baseUrl: string;
+  settings: AppSettings;
+  onSaveSettings: (next: AppSettings) => Promise<void>;
   profiles: VoiceProfile[];
   selectedProfileId: string;
   onSelectProfileId: (id: string) => void;
@@ -52,8 +64,18 @@ const LANGUAGES = [
   "Russian",
 ];
 
+function normalizeTtsModelId(id: string): string {
+  if (id.startsWith("qwen3-1.7b-base")) return "qwen3-1.7b-base";
+  if (id.startsWith("qwen3-1.7b-customvoice")) return "qwen3-1.7b-customvoice";
+  if (id.startsWith("qwen3-0.6b-base")) return "qwen3-0.6b-base";
+  if (id.startsWith("xtts")) return "xtts-v2";
+  return id;
+}
+
 export const TtsStudioView: React.FC<TtsStudioViewProps> = ({
   baseUrl,
+  settings,
+  onSaveSettings,
   profiles,
   selectedProfileId,
   onSelectProfileId,
@@ -68,7 +90,6 @@ export const TtsStudioView: React.FC<TtsStudioViewProps> = ({
   const [text, setText] = useState(
     "Hola, soy Mario. Probando la síntesis local en Speech Studio."
   );
-  const [modelId, setModelId] = useState("qwen3-1.7b-base-Q8_0");
   const [language, setLanguage] = useState("Spanish");
   const [busyMode, setBusyMode] = useState<"play" | "wav" | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -77,17 +98,113 @@ export const TtsStudioView: React.FC<TtsStudioViewProps> = ({
   const [lastStats, setLastStats] = useState<{ dur: number; elapsed: number; rtf: number } | null>(
     null
   );
+  const [menuOpen, setMenuOpen] = useState(false);
+  const [catalogTts, setCatalogTts] = useState<CatalogModelEntry[]>([]);
+  const menuRef = useRef<HTMLDivElement | null>(null);
   const audioRef = useRef<HTMLAudioElement | null>(null);
 
-  const modelFamily = modelId.startsWith("xtts") ? "xtts" : "qwen";
+  useEffect(() => {
+    if (!baseUrl) return;
+    let alive = true;
+    fetchModelsCatalog(baseUrl)
+      .then((res) => {
+        if (!alive) return;
+        setCatalogTts(
+          res.models.filter(
+            (m) => m.kind === "tts" && m.runtime_supported && (m.installed || m.id === "xtts-v2")
+          )
+        );
+      })
+      .catch(() => {});
+    return () => {
+      alive = false;
+    };
+  }, [baseUrl]);
+
+  useEffect(() => {
+    if (!menuOpen) return;
+    const onPointerDown = (ev: MouseEvent) => {
+      if (menuRef.current && !menuRef.current.contains(ev.target as Node)) {
+        setMenuOpen(false);
+      }
+    };
+    window.addEventListener("mousedown", onPointerDown);
+    return () => window.removeEventListener("mousedown", onPointerDown);
+  }, [menuOpen]);
+
+  const activeModelId = normalizeTtsModelId(settings.active_tts_model || "qwen3-1.7b-base");
+  const isEndpointMode = settings.tts_source === "endpoint";
+  const ttsEndpoints = settings.external_endpoints.filter((e) => e.kind === "tts");
+  const activeEp = ttsEndpoints.find((e) => e.id === settings.active_tts_endpoint_id);
+
+  const localOptions: { id: string; name: string; subtitle: string; engine: "qwen" | "xtts" }[] =
+    React.useMemo(() => {
+      const items = catalogTts.map((m) => ({
+        id: m.id,
+        name: m.name,
+        subtitle: `${m.installed_quant || m.quants[0]?.id || m.engine} · ~${(
+          m.vram_mib / 1024
+        ).toFixed(1)} GB`,
+        engine: (m.engine === "xtts" ? "xtts" : "qwen") as "qwen" | "xtts",
+      }));
+      if (!items.some((i) => i.id === "qwen3-1.7b-base")) {
+        items.unshift({
+          id: "qwen3-1.7b-base",
+          name: "Qwen3-TTS 1.7B Base",
+          subtitle: "Q8_0 · ~3.2 GB",
+          engine: "qwen",
+        });
+      }
+      if (!items.some((i) => i.id === "xtts-v2")) {
+        items.push({
+          id: "xtts-v2",
+          name: "Coqui XTTS v2",
+          subtitle: "FP16 · ~2.2 GB",
+          engine: "xtts",
+        });
+      }
+      return items;
+    }, [catalogTts]);
+
+  const activeLocal =
+    localOptions.find((m) => m.id === activeModelId) || localOptions[0];
+  const modelFamily = activeModelId.startsWith("xtts") ? "xtts" : "qwen";
   const visibleProfiles = profiles.filter((p) => p.engine === modelFamily);
   const selectedProfile =
     visibleProfiles.find((p) => p.id === selectedProfileId) || visibleProfiles[0];
 
+  const selectorLabel = isEndpointMode
+    ? `${t("models.externalGroup")} · ${activeEp ? activeEp.name : t("transcriber.unconfigured")}`
+    : `${t("models.local")} · ${activeLocal?.name || activeModelId}`;
+
+  const selectLocalModel = async (id: string) => {
+    setMenuOpen(false);
+    if (settings.tts_source === "local" && normalizeTtsModelId(settings.active_tts_model) === id) {
+      return;
+    }
+    await onSaveSettings({
+      ...settings,
+      tts_source: "local",
+      active_tts_model: id,
+    });
+  };
+
+  const selectEndpoint = async (id: string) => {
+    setMenuOpen(false);
+    if (settings.tts_source === "endpoint" && settings.active_tts_endpoint_id === id) {
+      return;
+    }
+    await onSaveSettings({
+      ...settings,
+      tts_source: "endpoint",
+      active_tts_endpoint_id: id,
+    });
+  };
+
   useEffect(() => {
     if (visibleProfiles.some((p) => p.id === selectedProfileId)) return;
     if (visibleProfiles[0]) onSelectProfileId(visibleProfiles[0].id);
-  }, [modelId, profiles, selectedProfileId, onSelectProfileId]);
+  }, [activeModelId, profiles, selectedProfileId, onSelectProfileId, visibleProfiles]);
 
   useEffect(() => {
     if (selectedProfile) {
@@ -98,12 +215,19 @@ export const TtsStudioView: React.FC<TtsStudioViewProps> = ({
   const synthTokenRef = useRef(0);
   const lastSpokenRef = useRef("");
 
+  const canSynthesize =
+    !busyMode &&
+    !!text.trim() &&
+    (isEndpointMode ? !!activeEp : !!selectedProfile);
+
   const runSynth = async (
     mode: "play" | "wav",
     forceStopCaptions = false,
     textOverride?: string
   ) => {
-    if (!baseUrl || !selectedProfile) return;
+    if (!baseUrl) return;
+    if (!isEndpointMode && !selectedProfile) return;
+    if (isEndpointMode && !activeEp) return;
     const myToken = ++synthTokenRef.current;
     if (mode === "play") lastSpokenRef.current = (textOverride ?? text).trim();
     setBusyMode(mode);
@@ -111,13 +235,13 @@ export const TtsStudioView: React.FC<TtsStudioViewProps> = ({
     setPendingForceMode(null);
     try {
       const res = await synthesizeTts(baseUrl, {
-        profile_id: selectedProfile.id,
+        profile_id: selectedProfile?.id || "mario",
         text: textOverride ?? text,
         language,
         mode,
         force_stop_captions: forceStopCaptions,
       });
-      if (myToken !== synthTokenRef.current) return; // superseded by a newer request
+      if (myToken !== synthTokenRef.current) return;
       const fullAudioUrl = `${baseUrl}${res.audio_url}`;
       setPreviewUrl(fullAudioUrl);
 
@@ -349,41 +473,144 @@ export const TtsStudioView: React.FC<TtsStudioViewProps> = ({
             </p>
           </div>
           <div className="flex flex-wrap items-center gap-2">
-            <select
-              value={modelId}
-              onChange={(e) => setModelId(e.target.value)}
-              title={t("synthesize.model")}
-              className="rounded-xl border px-2.5 py-1.5 text-xs font-mono outline-none"
-              style={{
-                backgroundColor: "var(--bg-input)",
-                borderColor: "var(--border-glass)",
-                color: "var(--text-primary)",
-              }}
-            >
-              <option value="qwen3-1.7b-base-Q8_0">Qwen3-TTS 1.7B Base (Q8_0 · ~3.2 GB)</option>
-              <option value="xtts-v2">XTTS v2 (~2.1 GB)</option>
-            </select>
+            {/* Unified Glass Dropdown: Local + Externo */}
+            <div className="relative" ref={menuRef}>
+              <button
+                type="button"
+                onClick={() => setMenuOpen((v) => !v)}
+                title={t("synthesize.model")}
+                className="inline-flex items-center gap-1.5 rounded-xl px-2.5 py-1.5 text-xs font-mono border transition-colors hover:brightness-110"
+                style={{
+                  backgroundColor: "var(--bg-input)",
+                  borderColor: isEndpointMode
+                    ? "rgba(16,185,129,0.45)"
+                    : "var(--border-glass)",
+                  color: isEndpointMode ? "#34d399" : "var(--text-primary)",
+                }}
+              >
+                <span>{selectorLabel}</span>
+                <ChevronDown
+                  className={clsx("w-3.5 h-3.5 transition-transform", menuOpen && "rotate-180")}
+                />
+              </button>
 
-            <select
-              value={selectedProfile?.id || ""}
-              onChange={(e) => onSelectProfileId(e.target.value)}
-              className="rounded-xl border px-2.5 py-1.5 text-xs font-medium outline-none"
-              style={{
-                backgroundColor: "var(--bg-input)",
-                borderColor: "var(--border-glass)",
-                color: "var(--text-primary)",
-              }}
-            >
-              {visibleProfiles.length === 0 ? (
-                <option value="">{t("synthesize.noProfiles")}</option>
-              ) : (
-                visibleProfiles.map((p) => (
-                  <option key={p.id} value={p.id}>
-                    {p.name} ({p.engine})
-                  </option>
-                ))
+              {menuOpen && (
+                <div
+                  className="absolute right-0 mt-1.5 z-40 min-w-[255px] max-w-[310px] max-h-[320px] overflow-y-auto rounded-2xl border p-1.5 shadow-2xl backdrop-blur-xl flex flex-col gap-0.5"
+                  style={{
+                    backgroundColor: "var(--bg-elevated)",
+                    borderColor: "var(--border-glass)",
+                  }}
+                >
+                  <span
+                    className="px-2.5 pt-1 pb-0.5 text-[10px] font-mono uppercase tracking-wider"
+                    style={{ color: "var(--text-muted)" }}
+                  >
+                    {t("models.local")}
+                  </span>
+
+                  {localOptions.map((m) => {
+                    const active = !isEndpointMode && m.id === activeModelId;
+                    return (
+                      <button
+                        key={m.id}
+                        type="button"
+                        onClick={() => selectLocalModel(m.id)}
+                        className={clsx(
+                          "w-full text-left rounded-xl px-2.5 py-1.5 text-xs flex items-center justify-between gap-2 hover:bg-white/10",
+                          active && "bg-purple-500/15 text-purple-200"
+                        )}
+                      >
+                        <div className="min-w-0">
+                          <div className="font-medium truncate">{m.name}</div>
+                          <div className="text-[10px] font-mono opacity-65 truncate">
+                            {m.subtitle}
+                          </div>
+                        </div>
+                        {active && <Check className="w-3.5 h-3.5 shrink-0 text-purple-400" />}
+                      </button>
+                    );
+                  })}
+
+                  <div className="my-1 h-px bg-white/10" />
+
+                  <span
+                    className="px-2.5 pt-0.5 pb-0.5 text-[10px] font-mono uppercase tracking-wider"
+                    style={{ color: "var(--text-muted)" }}
+                  >
+                    {t("models.externalGroup")}
+                  </span>
+
+                  {ttsEndpoints.length > 0 ? (
+                    ttsEndpoints.map((ep) => {
+                      const active = isEndpointMode && ep.id === settings.active_tts_endpoint_id;
+                      return (
+                        <button
+                          key={ep.id}
+                          type="button"
+                          onClick={() => selectEndpoint(ep.id)}
+                          className={clsx(
+                            "w-full text-left rounded-xl px-2.5 py-1.5 text-xs flex items-center justify-between gap-2 hover:bg-white/10",
+                            active && "bg-emerald-500/15 text-emerald-300"
+                          )}
+                        >
+                          <div className="min-w-0">
+                            <div className="font-medium truncate">{ep.name}</div>
+                            <div className="text-[10px] font-mono opacity-70 truncate">
+                              {endpointProviderSubtitle(ep)}
+                            </div>
+                          </div>
+                          {active && <Check className="w-3.5 h-3.5 shrink-0 text-emerald-400" />}
+                        </button>
+                      );
+                    })
+                  ) : (
+                    <div
+                      className="px-2.5 py-1.5 text-[11px]"
+                      style={{ color: "var(--text-secondary)" }}
+                    >
+                      {t("models.noExternalConfigured")}
+                    </div>
+                  )}
+                </div>
               )}
-            </select>
+            </div>
+
+            {!isEndpointMode ? (
+              <select
+                value={selectedProfile?.id || ""}
+                onChange={(e) => onSelectProfileId(e.target.value)}
+                className="rounded-xl border px-2.5 py-1.5 text-xs font-medium outline-none"
+                style={{
+                  backgroundColor: "var(--bg-input)",
+                  borderColor: "var(--border-glass)",
+                  color: "var(--text-primary)",
+                }}
+              >
+                {visibleProfiles.length === 0 ? (
+                  <option value="">{t("synthesize.noProfiles")}</option>
+                ) : (
+                  visibleProfiles.map((p) => (
+                    <option key={p.id} value={p.id}>
+                      {p.name} ({p.engine})
+                    </option>
+                  ))
+                )}
+              </select>
+            ) : (
+              activeEp && (
+                <span
+                  className="rounded-xl border px-2.5 py-1.5 text-xs font-mono"
+                  style={{
+                    backgroundColor: "var(--bg-input)",
+                    borderColor: "var(--border-glass)",
+                    color: "var(--text-secondary)",
+                  }}
+                >
+                  {activeEp.voice || activeEp.model || t("synthesize.endpointActive")}
+                </span>
+              )
+            )}
 
             <select
               value={language}
@@ -471,7 +698,7 @@ export const TtsStudioView: React.FC<TtsStudioViewProps> = ({
         <div className="flex flex-wrap items-center justify-between gap-3 shrink-0 pt-0.5">
           <div className="flex items-center gap-2">
             <BorderBeamButton
-              disabled={!!busyMode || !text.trim() || !selectedProfile}
+              disabled={!canSynthesize}
               onClick={() => runSynth("play")}
             >
               {busyMode === "play" ? (
@@ -484,7 +711,7 @@ export const TtsStudioView: React.FC<TtsStudioViewProps> = ({
 
             <BorderBeamButton
               variant="emerald"
-              disabled={!!busyMode || !text.trim() || !selectedProfile}
+              disabled={!canSynthesize}
               onClick={() => runSynth("wav")}
             >
               {busyMode === "wav" ? (

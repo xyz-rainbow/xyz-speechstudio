@@ -40,16 +40,6 @@ from .supervisor import (
 )
 
 FALLBACK_QWEN_DIR = Path(r"Z:\[🤖] [Models]\tts\qwen3-1.7b")
-TALKER_NAME = "qwen-talker-1.7b-base-Q8_0.gguf"
-CODEC_NAME = "qwen-tokenizer-12hz-Q8_0.gguf"
-
-STT_CATALOG: dict[str, tuple[str, int]] = {
-    "faster-whisper-tiny": ("tiny", 250),
-    "faster-whisper-base": ("base", 350),
-    "faster-whisper-small": ("small", 700),
-    "faster-whisper-medium": ("medium", 1500),
-    "faster-whisper-large-v3-turbo": ("large-v3-turbo", 2100),
-}
 
 supervisor = WorkerSupervisor()
 runtime_info = {"port": 0, "pid": os.getpid(), "host": "127.0.0.1"}
@@ -912,7 +902,16 @@ async def openai_transcriptions(
     tmp_in = DEFAULT_TMP_DIR / f"stt_api_{uuid.uuid4().hex[:10]}{suffix}"
     try:
         tmp_in.write_bytes(await file.read())
-        target_model = model if model in STT_CATALOG else None
+        known_stt_ids = {
+            m_id
+            for m_id, entry in downloader.BUILTIN_BY_ID.items()
+            if entry.get("kind") == "stt"
+        } | {
+            c["id"]
+            for c in downloader.load_custom_registry(s)
+            if c.get("kind") == "stt"
+        }
+        target_model = model if model in known_stt_ids else None
         return _run_stt(tmp_in, language=language, model_id=target_model)
     finally:
         tmp_in.unlink(missing_ok=True)

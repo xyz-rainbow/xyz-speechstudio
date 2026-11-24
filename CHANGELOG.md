@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Unified Glass model dropdowns in Synthesize and Transcriber with `Local` and `External` (`Externo`) sections, provider + model subtitles on external endpoints, automatic `tts_source` / `stt_source` switching, and automatic detection of `Qwen3-TTS 1.7B CustomVoice` in the external models folder.
+- Created and verified `.venvs/xtts` (`coqui-tts==0.28.0`, `torch==2.15.0+cu132`, `torchaudio==2.11.1+cu132`, `torchcodec==0.17.0+cu132`) with `xtts_worker.py` `/health` check.
 - XTTS writes WAV at `output_sample_rate` (24000 Hz for the catalog checkpoint), splits text that would pass the 400-token limit, and returns the worker's 4xx status. The worker does not set `COQUI_TOS_AGREED`.
 - XTTS v2 worker (`backend/workers/xtts_worker.py`) and `POST /api/workers/xtts/load`. A profile with engine `xtts` synthesizes from its reference wav. The Synthesize model list enables XTTS and shows profiles of the selected engine. `requirements-xtts.txt` pins `coqui-tts==0.28.0`; `setup-env.ps1` also installs PyTorch with `--torch-backend=auto`. The environment was not created and a synthesis was not heard. Checkpoint weights stay out of the repo (Coqui Public Model License).
 - CI links the Linux Tauri shell on Ubuntu 24.04 (`cargo build --locked`, debug) and typechecks macOS (`cargo check` and clippy). There is still no AppImage, `.deb`, or macOS bundle, and those desktops were not launched.

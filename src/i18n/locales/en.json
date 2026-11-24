@@ -1,7 +1,7 @@
 {
   "app": {
     "name": "Speech Studio",
-    "phaseBadge": "Phase 3A STT"
+    "phaseBadge": "v0.1.0"
   },
   "nav": {
     "synthesize": "Synthesize",
@@ -120,6 +120,8 @@
     "sttSection": "STT Models",
     "local": "Local",
     "endpoint": "Endpoint",
+    "externalGroup": "External",
+    "noExternalConfigured": "No endpoints configured",
     "ejectTts": "Eject TTS",
     "ejectStt": "Eject STT",
     "load": "Load",

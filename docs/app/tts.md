@@ -4,7 +4,7 @@
 
 La pestaña Synthesize habla con Qwen3-TTS a través de `qwen_worker.py`.
 
-- El texto ocupa la sección. El selector de modelo deja elegir Qwen y XTTS v2. El desplegable de perfiles muestra solo los del motor elegido.
+- El texto ocupa la sección. El selector desplegable Glass agrupa `Local` (modelos TTS instalados en el catálogo, detectando también `Qwen3-TTS 1.7B CustomVoice` en `Z:\[🤖] [Models]\tts\qwen3-1.7b`, además de `XTTS v2`) y `Externo` debajo (endpoints TTS configurados con subtítulo de proveedor + modelo, cambiando `tts_source` automáticamente). En modo `Local`, el desplegable de perfiles muestra solo los del motor elegido; en modo `Externo`, se oculta el selector de perfil local.
 - Play escribe un WAV temporal en `data/tmp/` y lo reproduce.
 - Save guarda en el historial. Desde ahí se puede volver a guardar eligiendo carpeta, abrir la carpeta y borrar.
 - Un perfil aporta el audio de referencia, el texto de referencia y, si ya se calcularon, `.spk` y `.rvq`.
@@ -20,4 +20,4 @@ La pestaña Synthesize habla con Qwen3-TTS a través de `qwen_worker.py`.
 
 ## Pendiente
 
-- Crear `.venvs/xtts`. `setup-env.ps1` ya lo incluye y no se ha ejecutado. Una síntesis con un checkpoint real no se ha oído. Ver [modelos.md](modelos.md).
+- Descargar el checkpoint de XTTS v2 desde la pestaña Models y oír una síntesis real (el entorno `.venvs/xtts` ya está creado y verificado en `/health`). Ver [modelos.md](modelos.md).
