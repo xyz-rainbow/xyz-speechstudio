@@ -4,12 +4,7 @@
 
 Local Windows desktop app for text-to-speech, voice cloning, and transcription.
 
-[![CI](https://img.shields.io/github/actions/workflow/status/xyz-rainbow/xyz-speechstudio/ci.yml?branch=main&style=flat-square&label=CI)](https://github.com/xyz-rainbow/xyz-speechstudio/actions/workflows/ci.yml)
-[![GitHub release](https://img.shields.io/github/v/release/xyz-rainbow/xyz-speechstudio?style=flat-square)](https://github.com/xyz-rainbow/xyz-speechstudio/releases)
-[![Last commit](https://img.shields.io/github/last-commit/xyz-rainbow/xyz-speechstudio?style=flat-square)](https://github.com/xyz-rainbow/xyz-speechstudio/commits/main)
-[![Stars](https://img.shields.io/github/stars/xyz-rainbow/xyz-speechstudio?style=flat-square)](https://github.com/xyz-rainbow/xyz-speechstudio/stargazers)
-[![Top language](https://img.shields.io/github/languages/top/xyz-rainbow/xyz-speechstudio?style=flat-square)](https://github.com/xyz-rainbow/xyz-speechstudio)
-[![Sponsor](https://img.shields.io/badge/Sponsor-xyz--rainbow-ea4aaa?style=flat-square&logo=github-sponsors)](https://github.com/sponsors/xyz-rainbow)
+[![CI](https://github.com/xyz-rainbow/xyz-speechstudio/actions/workflows/ci.yml/badge.svg)](https://github.com/xyz-rainbow/xyz-speechstudio/actions/workflows/ci.yml) [![License: Proprietary](https://img.shields.io/badge/license-proprietary-red?style=flat-square)](LICENSE) [![Windows](https://img.shields.io/badge/platform-Windows-0078d4?style=flat-square&logo=windows&logoColor=white)](https://www.microsoft.com/windows) [![Tauri](https://img.shields.io/badge/Tauri-2-24c8db?style=flat-square&logo=tauri&logoColor=white)](https://tauri.app/) [![Python](https://img.shields.io/badge/Python-3.11%2B-3776ab?style=flat-square&logo=python&logoColor=white)](https://www.python.org/)
 
 Speech Studio is a [Tauri 2](https://tauri.app/) desktop shell (React + TypeScript + Rust) with a Python FastAPI orchestrator. It runs **Qwen3-TTS** locally for synthesis and voice profiles, and **faster-whisper** for file transcription. The current tree is Windows-only (version `0.1.0`).
 
@@ -140,4 +135,8 @@ If the project is useful, you can [sponsor xyz-rainbow](https://github.com/spons
 
 ## License
 
-This repository does not include a license file yet. Rights remain with the authors until a license is published.
+Proprietary — all rights reserved. Copyright (c) 2026 Rainbow Technology (xyz-rainbow).
+
+The source may be viewed and evaluated in this repository. Copying, redistribution, sublicensing, published forks, derivative works, and any commercial or production use are prohibited without prior written permission. Issues and pull requests are welcome. A GitHub fork is allowed only to prepare pull requests to this repository.
+
+See [LICENSE](LICENSE) for the full terms, including the contribution assignment, and [CONTRIBUTING.md](CONTRIBUTING.md) if you want to send a change.
