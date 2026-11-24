@@ -10,7 +10,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 - Redesigned local model manager: `Models` shows only installed local models and active downloads with a unified `(+)` modal featuring three paginated tabs — **Featured** (one grouped card per family with inline variant & quantization selectors), **Explore Hub** (live Hugging Face search with file inspection), and **Import** (Hugging Face / ModelScope / direct URLs plus local folder or file import). Added Fish Audio to the catalog metadata.
-- Global `speechstudio` terminal CLI (`backend/cli/main.py`, `scripts/speechstudio.cmd`): connects to a running Speech Studio backend via `data/runtime.json` or starts a temporary headless orchestrator that cleans up on exit; supports `play`, `status`/`inspect`, `models` (`list`, `search`, `inspect`, `download`, `install-url`, `import`, `load`, `eject`, `remove`), `profiles`, `transcribe`, `config`, and `endpoints` with top-level shorthands (`--models`, `--status`, `--profiles`, `--config`, `--endpoints`) and `--json` output.
+- Global `speechstudio` terminal CLI (`backend/cli/main.py`, `scripts/speechstudio.cmd`, `scripts/speechstudio`): connects to a running Speech Studio backend via `data/runtime.json` or starts a temporary headless orchestrator that cleans up on exit across Windows, Linux, and macOS (`play`, `status`/`inspect`, `models`, `profiles`, `transcribe`, `config`, `endpoints`, shorthands `--models`/`--status`/`--profiles`/`--config`/`--endpoints`, and `--json`).
+- Discord-style paginated 2×2 window picker (`WindowPickerModal.tsx`) for Live Captions with side page arrows, bottom pagination dots, app icons, and live window thumbnail previews across Windows (`PrintWindow`), Linux X11 (`wmctrl` + ImageMagick `import`), and macOS (`CGWindowListCopyWindowInfo` + `screencapture`/`sips`).
+- Native cross-platform file & folder picker (`dialogs.rs` via `rfd`) restoring reliable `Select Audio` / folder dialogs without COM parent-HWND stalls.
+- Close confirmation popup (`CloseConfirmModal.tsx`) with stacked lime-green **Minimize App** (`Minimizar la App`) and red **Close & Shut Down** (`Cerrar y Apagar`) actions plus optional `"Remember my choice"`, paired with a single-line system autostart (`ON | OFF`) toggle in Settings (`autostart.rs` supporting Windows `Run` + Task Manager `StartupApproved`, Linux `.desktop`, and macOS `LaunchAgents`).
 - Unified Glass model dropdowns in Synthesize and Transcriber with `Local` and `External` (`Externo`) sections, provider + model subtitles on external endpoints, automatic `tts_source` / `stt_source` switching, and honest empty-state labels when no local model or external endpoint is configured.
 - Created and verified `.venvs/xtts` (`coqui-tts==0.28.0`, `torch==2.15.0+cu132`, `torchaudio==2.11.1+cu132`, `torchcodec==0.17.0+cu132`) with `xtts_worker.py` `/health` check.
 
@@ -29,6 +32,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Fixed Windows WASAPI process-loopback Live Captions failing with `E_NOTIMPL` on `GetMixFormat()` by initializing `IAudioClient` with an explicit 16 kHz / 48 kHz PCM `WAVEFORMATEX` and `AUDCLNT_STREAMFLAGS_AUTOCONVERTPCM`.
+- Fixed tray Exit button and clean process/tray teardown (`shutdown_and_exit`), plus Linux/macOS CLI playback (`paplay`/`pw-play`/`aplay`/`ffplay`/`afplay`) and POSIX process-group cleanup.
 - Linux live captions keep one row per sink-input. A process with several streams is chosen by that stream's index, and stop signals `parec` as soon as its process id is published. A PipeWire or PulseAudio session was not heard.
 
 ### Changed

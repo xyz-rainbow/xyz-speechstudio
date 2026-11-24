@@ -106,12 +106,17 @@
     "sampleCaption": "—",
     "activeStt": "Selected STT",
     "noEndpoint": "No STT endpoint selected",
-    "noApps": "No windows",
-    "refreshApps": "Refresh windows",
+    "noApps": "No windows found",
+    "refreshApps": "Refresh",
     "waiting": "Waiting for speech",
     "history": "Session",
     "working": "Starting",
-    "unsupportedPlatform": "Live captions are not available on this system yet."
+    "unsupportedPlatform": "Live captions are not available on this system yet.",
+    "pickerTitle": "Select Window or Audio Source",
+    "chooseWindow": "Select Window",
+    "searchWindows": "Search windows or apps...",
+    "noPreview": "No window preview",
+    "noSttInstalled": "No local STT model is installed yet. Open Models (+) to install Faster-Whisper."
   },
   "models": {
     "title": "Models & Endpoints",
@@ -270,7 +275,20 @@
     "emptyEndpoints": "No custom endpoints saved for this section yet.",
     "unnamedEndpoint": "Untitled Endpoint",
     "setActive": "Set Active",
+    "autostartLabel": "Start app with system",
+    "autostartHint": "Launches minimized to the tray at login (configurable in Task Manager)",
+    "closeBehaviorLabel": "When closing window",
+    "closeBehaviorAsk": "Always ask",
+    "closeBehaviorMinimize": "Minimize to tray",
+    "closeBehaviorQuit": "Close & shut down",
     "saved": "Settings saved",
     "save": "Save"
+  },
+  "closeModal": {
+    "title": "Close Speech Studio",
+    "body": "Do you want to keep Speech Studio running in the system tray or shut down all engines completely?",
+    "minimizeBtn": "Minimize App",
+    "quitBtn": "Close & Shut Down",
+    "remember": "Remember my choice"
   }
 }

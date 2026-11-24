@@ -98,7 +98,7 @@ pub fn create_tray(app: &AppHandle) -> tauri::Result<()> {
                 let _ = app.emit("tray-action", "eject");
             }
             "exit" => {
-                app.exit(0);
+                crate::shutdown_and_exit(app);
             }
             _ => {}
         })

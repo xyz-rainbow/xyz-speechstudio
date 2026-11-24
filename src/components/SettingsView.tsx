@@ -1,5 +1,4 @@
-import React, { useState } from "react";
-import { open as openDialog } from "@tauri-apps/plugin-dialog";
+import React, { useEffect, useState } from "react";
 import {
   Bell,
   Check,
@@ -21,10 +20,19 @@ import {
 } from "lucide-react";
 import { clsx } from "clsx";
 import { AVAILABLE_LANGUAGES, useI18n, type LanguageCode } from "../i18n";
-import { isTauri, sendWindowsToast, setReadHotkey, testExternalEndpoint } from "../services/api";
+import {
+  getAutostartEnabled,
+  isTauri,
+  sendWindowsToast,
+  setAutostartEnabled,
+  setReadHotkey,
+  testExternalEndpoint,
+} from "../services/api";
+import { pickFolder as pickNativeFolder } from "../services/fileDialog";
 import type {
   AccentPreset,
   AppSettings,
+  CloseBehavior,
   EndpointProtocol,
   EndpointTestResponse,
   ExternalEndpointConfig,
@@ -99,6 +107,30 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
 
   const [recordingHotkey, setRecordingHotkey] = useState(false);
   const [hotkeyError, setHotkeyError] = useState<string | null>(null);
+  const [autostartOn, setAutostartOn] = useState(false);
+  const [autostartBusy, setAutostartBusy] = useState(false);
+  const [autostartError, setAutostartError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!isTauri()) return;
+    getAutostartEnabled()
+      .then(setAutostartOn)
+      .catch(() => {});
+  }, []);
+
+  const toggleAutostart = async () => {
+    if (!isTauri() || autostartBusy) return;
+    setAutostartBusy(true);
+    setAutostartError(null);
+    try {
+      const res = await setAutostartEnabled(!autostartOn);
+      setAutostartOn(res);
+    } catch (err) {
+      setAutostartError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setAutostartBusy(false);
+    }
+  };
 
   const applyHotkey = async (accel: string) => {
     try {
@@ -145,9 +177,8 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
   };
 
   const pickFolder = async (field: "models_dir" | "outputs_dir") => {
-    if (!isTauri()) return;
-    const selected = await openDialog({ directory: true, multiple: false });
-    if (typeof selected === "string" && selected.length > 0) {
+    const selected = await pickNativeFolder();
+    if (selected) {
       await commit({ ...draft, [field]: selected });
     }
   };
@@ -294,6 +325,69 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                   {l.label}
                 </option>
               ))}
+            </select>
+          </div>
+
+          <div className="flex items-center justify-between gap-3">
+            <span className="text-xs truncate" title={t("settings.autostartHint")} style={{ color: "var(--text-secondary)" }}>
+              {t("settings.autostartLabel")}
+            </span>
+            <button
+              type="button"
+              disabled={!isTauri() || autostartBusy}
+              onClick={toggleAutostart}
+              title={t("settings.autostartHint")}
+              className="relative flex items-center w-[88px] h-7 rounded-full p-0.5 border transition-colors shrink-0 disabled:opacity-45"
+              style={{
+                backgroundColor: "var(--bg-input)",
+                borderColor: autostartOn ? "rgba(16, 185, 129, 0.5)" : "rgba(244, 63, 94, 0.45)",
+              }}
+            >
+              <span
+                className={clsx(
+                  "absolute top-0.5 bottom-0.5 w-[41px] rounded-full transition-transform duration-200",
+                  autostartOn
+                    ? "translate-x-0 bg-emerald-500/25 border border-emerald-400/60"
+                    : "translate-x-[41px] bg-rose-500/25 border border-rose-400/60"
+                )}
+              />
+              <span
+                className={clsx(
+                  "relative z-10 w-1/2 text-center font-mono text-[11px] font-semibold",
+                  autostartOn ? "text-emerald-300" : "opacity-55"
+                )}
+              >
+                ON
+              </span>
+              <span
+                className={clsx(
+                  "relative z-10 w-1/2 text-center font-mono text-[11px] font-semibold",
+                  !autostartOn ? "text-rose-300" : "opacity-55"
+                )}
+              >
+                OFF
+              </span>
+            </button>
+          </div>
+          {autostartError && <span className="text-[11px] text-rose-300">{autostartError}</span>}
+
+          <div className="flex items-center justify-between gap-3">
+            <label className="text-xs" style={{ color: "var(--text-secondary)" }}>
+              {t("settings.closeBehaviorLabel")}
+            </label>
+            <select
+              value={draft.close_behavior || "ask"}
+              onChange={(e) => commit({ ...draft, close_behavior: e.target.value as CloseBehavior })}
+              className="rounded-xl border px-3 py-1.5 text-xs outline-none"
+              style={{
+                backgroundColor: "var(--bg-input)",
+                borderColor: "var(--border-glass)",
+                color: "var(--text-primary)",
+              }}
+            >
+              <option value="ask">{t("settings.closeBehaviorAsk")}</option>
+              <option value="minimize">{t("settings.closeBehaviorMinimize")}</option>
+              <option value="quit">{t("settings.closeBehaviorQuit")}</option>
             </select>
           </div>
 

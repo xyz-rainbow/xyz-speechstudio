@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { listen } from "@tauri-apps/api/event";
 import { AsciiAmbientPool } from "./components/AsciiAmbientPool";
+import { CloseConfirmModal } from "./components/CloseConfirmModal";
 import { ModelsView } from "./components/ModelsView";
 import { ProfilesView } from "./components/ProfilesView";
 import { SettingsView } from "./components/SettingsView";
@@ -18,8 +19,10 @@ import {
   fetchWorkers,
   getBackendInfo,
   getVramStatus,
+  hideMainWindow,
   isTauri,
   notify,
+  quitApp,
   saveSettings,
   setCaptionsLock,
   stopLiveCaptions,
@@ -59,6 +62,7 @@ const DEFAULT_SETTINGS: AppSettings = {
   api_bind_host: "127.0.0.1",
   api_bearer_token: "",
   read_hotkey: "",
+  close_behavior: "ask",
   external_endpoints: [],
 };
 
@@ -69,7 +73,8 @@ function MainStudio() {
   const [resolvedModelsDir, setResolvedModelsDir] = useState("data/models");
   const [resolvedOutputsDir, setResolvedOutputsDir] = useState("data/outputs");
   const [profiles, setProfiles] = useState<VoiceProfile[]>([]);
-  const [selectedProfileId, setSelectedProfileId] = useState("mario");
+  const [selectedProfileId, setSelectedProfileId] = useState("");
+  const [closePromptOpen, setClosePromptOpen] = useState(false);
   const [history, setHistory] = useState<GenerationRecord[]>([]);
   const [vram, setVram] = useState<VramStatus>({
     available: false,
@@ -195,6 +200,27 @@ function MainStudio() {
       }
       setActiveTab("synthesize");
       setIncomingSpeak((prev) => ({ text, nonce: (prev?.nonce ?? 0) + 1 }));
+    }).then((fn) => {
+      unlisten = fn;
+    });
+    return () => unlisten?.();
+  }, []);
+
+  // Window close confirmation popup / saved close behavior
+  const settingsRef = useRef(settings);
+  settingsRef.current = settings;
+  useEffect(() => {
+    if (!isTauri()) return;
+    let unlisten: (() => void) | undefined;
+    listen("close-requested", () => {
+      const behavior = settingsRef.current.close_behavior;
+      if (behavior === "minimize") {
+        void hideMainWindow();
+      } else if (behavior === "quit") {
+        void quitApp();
+      } else {
+        setClosePromptOpen(true);
+      }
     }).then((fn) => {
       unlisten = fn;
     });
@@ -354,6 +380,25 @@ function MainStudio() {
           )}
         </main>
       </div>
+
+      <CloseConfirmModal
+        open={closePromptOpen}
+        onCancel={() => setClosePromptOpen(false)}
+        onMinimize={async (remember) => {
+          setClosePromptOpen(false);
+          if (remember) {
+            await handleSaveSettings({ ...settings, close_behavior: "minimize" }).catch(() => {});
+          }
+          await hideMainWindow();
+        }}
+        onQuit={async (remember) => {
+          setClosePromptOpen(false);
+          if (remember) {
+            await handleSaveSettings({ ...settings, close_behavior: "quit" }).catch(() => {});
+          }
+          await quitApp();
+        }}
+      />
     </div>
   );
 }

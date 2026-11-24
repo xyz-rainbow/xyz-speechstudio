@@ -3,18 +3,49 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import shutil
+import signal
 import subprocess
 import sys
 import tempfile
 import time
 import urllib.parse
-import winsound
 from pathlib import Path
 from typing import Any, Optional
 
 import httpx
 
 from backend.orchestrator.config import APP_ROOT, RUNTIME_JSON_PATH
+
+
+def _play_wav_file(wav_path: Path) -> None:
+    """Play a WAV file over system speakers on Windows, macOS, or Linux."""
+    if sys.platform == "win32":
+        import winsound
+
+        winsound.PlaySound(str(wav_path), winsound.SND_FILENAME)
+        return
+    if sys.platform == "darwin":
+        if shutil.which("afplay"):
+            subprocess.run(["afplay", str(wav_path)], check=True)
+            return
+        raise RuntimeError("afplay not found on macOS to play audio.")
+
+    for player in ("paplay", "pw-play", "aplay", "ffplay"):
+        exe = shutil.which(player)
+        if not exe:
+            continue
+        cmd = (
+            [exe, "-nodisp", "-autoexit", "-loglevel", "quiet", str(wav_path)]
+            if player == "ffplay"
+            else [exe, str(wav_path)]
+        )
+        subprocess.run(cmd, check=True)
+        return
+
+    raise RuntimeError(
+        "No supported audio player found on Linux (install paplay, pw-play, aplay, or ffplay)."
+    )
 
 
 def _print_json(data: Any) -> None:
@@ -63,18 +94,20 @@ class OrchestratorClient:
                 pass
 
         # Spawn temporary headless orchestrator on an ephemeral port
-        creationflags = getattr(subprocess, "CREATE_NO_WINDOW", 0)
         cmd = [sys.executable, "-u", "-m", "backend.orchestrator.main", "--port", "0"]
-        self._proc = subprocess.Popen(
-            cmd,
-            cwd=str(APP_ROOT),
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            text=True,
-            encoding="utf-8",
-            errors="replace",
-            creationflags=creationflags,
-        )
+        popen_kwargs: dict[str, Any] = {
+            "cwd": str(APP_ROOT),
+            "stdout": subprocess.PIPE,
+            "stderr": subprocess.PIPE,
+            "text": True,
+            "encoding": "utf-8",
+            "errors": "replace",
+        }
+        if sys.platform == "win32":
+            popen_kwargs["creationflags"] = getattr(subprocess, "CREATE_NO_WINDOW", 0)
+        else:
+            popen_kwargs["start_new_session"] = True
+        self._proc = subprocess.Popen(cmd, **popen_kwargs)
 
         deadline = time.monotonic() + 25.0
         while time.monotonic() < deadline:
@@ -123,6 +156,16 @@ class OrchestratorClient:
                         stderr=subprocess.DEVNULL,
                         creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
                     )
+                except Exception:
+                    pass
+            elif pid:
+                try:
+                    os.killpg(pid, signal.SIGTERM)
+                    deadline = time.monotonic() + 2.0
+                    while self._proc.poll() is None and time.monotonic() < deadline:
+                        time.sleep(0.05)
+                    if self._proc.poll() is None:
+                        os.killpg(pid, signal.SIGKILL)
                 except Exception:
                     pass
             try:
@@ -287,7 +330,7 @@ def _cmd_play(client: OrchestratorClient, args: argparse.Namespace) -> int:
     played = False
     try:
         if not args.no_play and out_path is not None:
-            winsound.PlaySound(str(out_path), winsound.SND_FILENAME)
+            _play_wav_file(out_path)
             played = True
     finally:
         if tmp_file is not None:

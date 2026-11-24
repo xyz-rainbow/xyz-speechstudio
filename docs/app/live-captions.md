@@ -4,9 +4,9 @@ Los subtítulos usan el STT que esté elegido en Modelos: un faster-whisper loca
 
 ## Ahora
 
-La pestaña Subtitles lista las ventanas abiertas (también WhatsApp, aunque su ventana WinUI esté oculta en la bandeja) y, además, los procesos que ya tienen sesión de audio. El historial de esa sesión se corta en `captions_max_history` (5–200, por defecto 20).
+La pestaña Subtitles lista las ventanas abiertas con vista previa visual en un modal paginado 2×2 estilo Discord (flechas laterales izquierda/derecha, puntos de página abajo, icono de app y miniatura de ventana vía `PrintWindow` en Windows, `wmctrl`+`import` en Linux X11 y `CGWindowListCopyWindowInfo`+`screencapture` en macOS) además de las sesiones de audio activas. El historial de la sesión se corta en `captions_max_history` (5–200, por defecto 20).
 
-Rust abre el loopback del árbol de procesos (`PROCESS_LOOPBACK_MODE_INCLUDE_TARGET_PROCESS_TREE`), pasa el mix a 16 kHz mono s16le y manda un frame binario cada 100 ms. El cliente siempre entra por el orquestador:
+Rust abre el loopback del árbol de procesos en Windows (`VIRTUAL_AUDIO_DEVICE_PROCESS_LOOPBACK` + `PROCESS_LOOPBACK_MODE_INCLUDE_TARGET_PROCESS_TREE`) inicializando `IAudioClient` directamente con `WAVEFORMATEX` 16 kHz mono / 48 kHz estéreo PCM + `AUDCLNT_STREAMFLAGS_AUTOCONVERTPCM` (ya que el endpoint de loopback por proceso no implementa `GetMixFormat`), remuestrea a 16 kHz mono s16le y manda un frame binario cada 100 ms. En macOS está habilitado con `ffmpeg -f avfoundation` (requiere dispositivo virtual tipo BlackHole). El cliente siempre entra por el orquestador:
 
 ```text
 WASAPI Process Loopback

@@ -1,4 +1,6 @@
 mod audio_capture;
+mod autostart;
+mod dialogs;
 mod notify;
 mod selection;
 mod sidecar;
@@ -6,11 +8,40 @@ mod tray;
 mod vram;
 
 use std::process::Command;
+use std::sync::atomic::{AtomicBool, Ordering};
 use tauri::{Emitter, Manager, RunEvent, State, WindowEvent};
 use tauri_plugin_global_shortcut::{GlobalShortcutExt, ShortcutState};
 
 use sidecar::{BackendInfo, BackendState};
 use vram::VramStatus;
+
+static EXITING: AtomicBool = AtomicBool::new(false);
+
+pub fn shutdown_and_exit(app: &tauri::AppHandle) {
+    EXITING.store(true, Ordering::SeqCst);
+    audio_capture::stop_live_captions().ok();
+    app.state::<BackendState>().shutdown();
+    let _ = app.remove_tray_by_id(tray::TRAY_ID);
+    if let Some(win) = app.get_webview_window("overlay") {
+        let _ = win.destroy();
+    }
+    if let Some(win) = app.get_webview_window("main") {
+        let _ = win.destroy();
+    }
+    app.exit(0);
+}
+
+#[tauri::command]
+fn hide_main_window(app: tauri::AppHandle) {
+    if let Some(win) = app.get_webview_window("main") {
+        let _ = win.hide();
+    }
+}
+
+#[tauri::command]
+fn quit_app(app: tauri::AppHandle) {
+    shutdown_and_exit(&app);
+}
 
 #[tauri::command]
 fn get_vram_status() -> VramStatus {
@@ -182,6 +213,11 @@ pub fn run() {
         .manage(backend)
         .setup(|app| {
             tray::create_tray(app.handle())?;
+            if std::env::args().any(|arg| arg == "--minimized") {
+                if let Some(win) = app.get_webview_window("main") {
+                    let _ = win.hide();
+                }
+            }
             #[cfg(any(windows, target_os = "linux"))]
             {
                 let root = app.state::<BackendState>().app_root.clone();
@@ -196,8 +232,11 @@ pub fn run() {
         .on_window_event(|window, event| {
             if window.label() == "main" {
                 if let WindowEvent::CloseRequested { api, .. } = event {
+                    if EXITING.load(Ordering::SeqCst) {
+                        return;
+                    }
                     api.prevent_close();
-                    let _ = window.hide();
+                    let _ = window.emit("close-requested", ());
                 }
             }
         })
@@ -210,6 +249,11 @@ pub fn run() {
             audio_capture::list_audio_apps,
             audio_capture::start_live_captions,
             audio_capture::stop_live_captions,
+            autostart::get_autostart_enabled,
+            autostart::set_autostart_enabled,
+            dialogs::pick_path,
+            hide_main_window,
+            quit_app,
             send_toast,
             reveal_in_explorer,
             set_read_hotkey,
@@ -220,6 +264,7 @@ pub fn run() {
 
     app.run(|app_handle, event| {
         if let RunEvent::Exit = event {
+            EXITING.store(true, Ordering::SeqCst);
             audio_capture::stop_live_captions().ok();
             let state = app_handle.state::<BackendState>();
             state.shutdown();

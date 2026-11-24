@@ -78,7 +78,31 @@ export async function showOverlayWindow(): Promise<void> {
 export interface AudioAppRow {
   pid: number;
   name: string;
+  app_name?: string;
   stream_index?: number;
+  thumbnail?: string;
+  icon?: string;
+  has_audio?: boolean;
+}
+
+export async function getAutostartEnabled(): Promise<boolean> {
+  if (!isTauri()) return false;
+  return invoke<boolean>("get_autostart_enabled");
+}
+
+export async function setAutostartEnabled(enabled: boolean): Promise<boolean> {
+  if (!isTauri()) return false;
+  return invoke<boolean>("set_autostart_enabled", { enabled });
+}
+
+export async function hideMainWindow(): Promise<void> {
+  if (!isTauri()) return;
+  await invoke("hide_main_window");
+}
+
+export async function quitApp(): Promise<void> {
+  if (!isTauri()) return;
+  await invoke("quit_app");
 }
 
 export async function listAudioApps(): Promise<AudioAppRow[]> {

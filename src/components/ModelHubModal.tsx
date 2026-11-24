@@ -1,5 +1,4 @@
 import React, { useEffect, useMemo, useState } from "react";
-import { open as openDialog } from "@tauri-apps/plugin-dialog";
 import {
   ArrowLeft,
   ChevronLeft,
@@ -21,10 +20,10 @@ import {
   importLocalModel,
   inspectModelUrl,
   installModelFromUrl,
-  isTauri,
   searchModelHub,
   startModelDownload,
 } from "../services/api";
+import { pickFile, pickFolder } from "../services/fileDialog";
 import type {
   CatalogModelEntry,
   DownloadJob,
@@ -210,14 +209,18 @@ export const ModelHubModal: React.FC<ModelHubModalProps> = ({
   };
 
   const pickLocal = async (directory: boolean) => {
-    if (!isTauri()) return;
-    const selected = await openDialog({ directory, multiple: false });
-    if (typeof selected === "string" && selected.length > 0) {
-      setLocalPath(selected);
-      if (!localName.trim()) {
-        const base = selected.split(/[\\/]/).filter(Boolean).pop() || "";
-        setLocalName(base.replace(/\.[^.]+$/, ""));
+    setError(null);
+    try {
+      const selected = directory ? await pickFolder() : await pickFile();
+      if (selected) {
+        setLocalPath(selected);
+        if (!localName.trim()) {
+          const base = selected.split(/[\\/]/).filter(Boolean).pop() || "";
+          setLocalName(base.replace(/\.[^.]+$/, ""));
+        }
       }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
     }
   };
 

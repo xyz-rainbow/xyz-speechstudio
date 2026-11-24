@@ -12,6 +12,7 @@ export type ThemeMode = "dark" | "light";
 export type AccentPreset = "cyber" | "emerald" | "amber" | "rose";
 export type EngineKind = "qwen" | "xtts";
 export type EndpointProtocol = "openai" | "elevenlabs" | "deepgram";
+export type CloseBehavior = "ask" | "minimize" | "quit";
 
 export interface ExternalEndpointConfig {
   id: string;
@@ -48,6 +49,7 @@ export interface AppSettings {
   api_bind_host: "127.0.0.1" | "0.0.0.0";
   api_bearer_token: string;
   read_hotkey: string;
+  close_behavior: CloseBehavior;
   external_endpoints: ExternalEndpointConfig[];
 }
 

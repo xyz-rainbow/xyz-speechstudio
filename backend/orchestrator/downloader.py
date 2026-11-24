@@ -1025,7 +1025,7 @@ def import_local_model(
     name: str,
     kind: Literal["tts", "stt"],
 ) -> CatalogModelEntry:
-    src = Path(source_path.strip())
+    src = Path(source_path.strip()).expanduser().resolve()
     if not src.exists():
         raise FileNotFoundError(f"Path not found: {src}")
 

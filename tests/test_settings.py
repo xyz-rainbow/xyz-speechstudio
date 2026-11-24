@@ -34,6 +34,7 @@ def test_default_settings() -> None:
     assert settings.api_bind_host == "127.0.0.1"
     assert settings.api_bearer_token == ""
     assert settings.active_stt_model == "faster-whisper-base"
+    assert settings.close_behavior == "ask"
 
 
 def test_builtin_catalog_ids_are_unique() -> None:
