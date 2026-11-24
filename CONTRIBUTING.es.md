@@ -1,20 +1,18 @@
 [English](CONTRIBUTING.md) | **Español**
 
-# Contribuir a Speech Studio
+# Contribuir a xyz-speechstudio
 
-Gracias por tomarte el tiempo de contribuir. Lee también el [Código de conducta](CODE_OF_CONDUCT.es.md).
+Gracias por tomarte el tiempo de contribuir. Windows desktop app (Tauri 2 + React/TypeScript + Python FastAPI workers) for local TTS and transcription.
 
-## Cómo ayudar
+## Licencia y contribuciones
 
-- Abre un informe de error o una solicitud de función con las plantillas (inglés o español).
-- Usa [Discussions](https://github.com/xyz-rainbow/xyz-speechstudio/discussions) para preguntas e ideas.
-- Envía una pull request contra la rama por defecto, `main`.
+Al abrir un issue o enviar una pull request aceptas la cláusula de contribución de [LICENSE](LICENSE): cedes a Rainbow Technology todos los derechos sobre lo que aportas o, si esa cesión no fuera eficaz, le concedes una licencia perpetua, irrevocable y exclusiva, y garantizas que tienes derecho a aportarlo.
 
-No abras un issue público para una vulnerabilidad. Sigue [SECURITY.md](SECURITY.md).
+No abras un issue público para una vulnerabilidad; usa el formulario de avisos de seguridad del repositorio si está disponible.
 
 ## Entorno de desarrollo
 
-Hoy la app es solo para Windows. Sigue las secciones **Requisitos**, **Instalación** y **Desarrollo** de [README.es.md](README.es.md) para clonar el repo, crear los tres entornos `.venvs\` y ejecutar `npm run tauri dev`.
+Hoy la app es solo para Windows. Sigue las secciones **Requisitos**, **Instalación** y **Desarrollo** de [README.es.md](README.es.md) para clonar el repo, crear los tres entornos `.venvs\\` y ejecutar `npm run tauri dev`.
 
 Comprobaciones útiles antes de subir cambios:
 
@@ -28,23 +26,8 @@ El CI ejecuta el build del frontend, la compilación de Python + pytest, y `carg
 
 ## Pull requests
 
-1. Crea una rama de trabajo desde `main` (por ejemplo `fix/transcriber-copy` o `docs/api-examples`).
-2. Mantén el cambio acotado. No mezcles refactors con correcciones salvo que no se puedan separar.
-3. Actualiza [CHANGELOG.md](CHANGELOG.md) y añade una línea en `docs/logs/YYYY-MM.md` en el mismo commit cuando el cambio sea visible o toque el proceso o la documentación.
-4. Mantén alineados [README.md](README.md) y [README.es.md](README.es.md) (y las dos guías de contribución) si cambias uno de ellos.
-5. No subas secretos, claves de API, perfiles de voz, pesos de modelos ni archivos de `data/`.
-6. Espera a que el CI esté en verde. Los responsables fusionan con squash en `main`.
-
-Usa la plantilla de pull request. Explica qué has cambiado, por qué y cómo lo has probado.
-
-## Notas de código
-
-- Frontend: React 19 + TypeScript + Vite + Tailwind en `src/`. `npm run build` debe pasar (`tsc --noEmit` y Vite).
-- Escritorio: Rust / Tauri 2 en `src-tauri/`. Este crate usa APIs de Windows y no compila en Linux ni en macOS.
-- Backend: orquestador Python en `backend/orchestrator/` y workers en `backend/workers/`. Aún no hay `requirements.txt`; documenta las dependencias nuevas en las tablas del README.
-- Los textos de la app están en `src/i18n/locales/en.json` y `es.json`. Mantén el mismo árbol de claves en los dos.
-- `spikes/` es histórico; no lo uses como punto de entrada soportado.
-
-## Licencia
-
-El repositorio todavía no incluye un archivo de licencia. Al contribuir aceptas que tu trabajo pueda distribuirse con el proyecto bajo la licencia que publiquen después los responsables.
+1. Crea una rama de trabajo desde la rama por defecto (`main`).
+2. Mantén el cambio acotado.
+3. Actualiza [CHANGELOG.md](CHANGELOG.md) y añade una línea en `docs/logs/YYYY-MM.md` cuando el cambio sea visible o toque el proceso o la documentación.
+4. No subas secretos, claves de API ni datos privados.
+5. Espera a que el CI esté en verde si el repositorio tiene workflows. Los responsables fusionan con squash en la rama por defecto.

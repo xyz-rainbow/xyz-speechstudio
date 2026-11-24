@@ -4,12 +4,7 @@
 
 App de escritorio para Windows, local, de síntesis de voz, clonación de voz y transcripción.
 
-[![CI](https://img.shields.io/github/actions/workflow/status/xyz-rainbow/xyz-speechstudio/ci.yml?branch=main&style=flat-square&label=CI)](https://github.com/xyz-rainbow/xyz-speechstudio/actions/workflows/ci.yml)
-[![GitHub release](https://img.shields.io/github/v/release/xyz-rainbow/xyz-speechstudio?style=flat-square)](https://github.com/xyz-rainbow/xyz-speechstudio/releases)
-[![Último commit](https://img.shields.io/github/last-commit/xyz-rainbow/xyz-speechstudio?style=flat-square)](https://github.com/xyz-rainbow/xyz-speechstudio/commits/main)
-[![Stars](https://img.shields.io/github/stars/xyz-rainbow/xyz-speechstudio?style=flat-square)](https://github.com/xyz-rainbow/xyz-speechstudio/stargazers)
-[![Lenguaje principal](https://img.shields.io/github/languages/top/xyz-rainbow/xyz-speechstudio?style=flat-square)](https://github.com/xyz-rainbow/xyz-speechstudio)
-[![Sponsor](https://img.shields.io/badge/Sponsor-xyz--rainbow-ea4aaa?style=flat-square&logo=github-sponsors)](https://github.com/sponsors/xyz-rainbow)
+[![CI](https://github.com/xyz-rainbow/xyz-speechstudio/actions/workflows/ci.yml/badge.svg)](https://github.com/xyz-rainbow/xyz-speechstudio/actions/workflows/ci.yml) [![License: Proprietary](https://img.shields.io/badge/license-proprietary-red?style=flat-square)](LICENSE) [![Windows](https://img.shields.io/badge/platform-Windows-0078d4?style=flat-square&logo=windows&logoColor=white)](https://www.microsoft.com/windows) [![Tauri](https://img.shields.io/badge/Tauri-2-24c8db?style=flat-square&logo=tauri&logoColor=white)](https://tauri.app/) [![Python](https://img.shields.io/badge/Python-3.11%2B-3776ab?style=flat-square&logo=python&logoColor=white)](https://www.python.org/)
 
 Speech Studio es un escritorio [Tauri 2](https://tauri.app/) (React + TypeScript + Rust) con un orquestador FastAPI en Python. Ejecuta **Qwen3-TTS** en local para sintetizar y clonar voces, y **faster-whisper** para transcribir archivos. El árbol actual es solo para Windows (versión `0.1.0`).
 
@@ -140,4 +135,8 @@ Si el proyecto te resulta útil, puedes [patrocinar a xyz-rainbow](https://githu
 
 ## Licencia
 
-Este repositorio todavía no incluye un archivo de licencia. Los derechos permanecen en los autores hasta que se publique una.
+Propietaria — todos los derechos reservados. Copyright (c) 2026 Rainbow Technology (xyz-rainbow).
+
+El código se puede ver y evaluar en este repositorio. Queda prohibido copiarlo, redistribuirlo, sublicenciarlo, publicar forks o trabajos derivados, y cualquier uso comercial o en producción, salvo permiso escrito. Se admiten issues y pull requests. El fork en GitHub solo está permitido para preparar pull requests hacia este repositorio.
+
+Consulta [LICENSE](LICENSE) para el texto completo, incluida la cesión de contribuciones, y [CONTRIBUTING.es.md](CONTRIBUTING.es.md) si quieres enviar un cambio.

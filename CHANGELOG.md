@@ -5,6 +5,13 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Changed
+
+- Adopted the Rainbow Technology proprietary license (all rights reserved). Contributions are assigned to Rainbow Technology as described in LICENSE.
+- Fixed README badges: native GitHub CI badge, static license/platform badges, and removed the release badge (no installable release yet).
+
 ## [0.1.0] - 2026-11-24
 
 Initial public repository for Speech Studio, a Windows Tauri 2 desktop app for local TTS, voice cloning, and transcription.
