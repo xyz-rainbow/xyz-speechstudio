@@ -19,12 +19,14 @@ import { clsx } from "clsx";
 import { useI18n } from "../i18n";
 import {
   deleteHistoryRecord,
+  fetchModelsCatalog,
   isTauri,
   LiveCaptionsConflictError,
   notify,
   revealInExplorer,
   saveHistoryAs,
   synthesizeTts,
+  uninstallLanguagePack,
 } from "../services/api";
 import type {
   AppSettings,
@@ -49,20 +51,41 @@ interface TtsStudioViewProps {
   onAfterGpuAction: () => void;
   incomingSpeak?: { text: string; nonce: number } | null;
   notificationsEnabled: boolean;
+  onOpenModels?: () => void;
+  onCatalogChange?: (models: CatalogModelEntry[]) => void;
+  onInstalledLanguagesChange?: (next: Record<string, string[]>) => void;
 }
 
-const LANGUAGES = [
-  "Spanish",
-  "English",
-  "French",
-  "German",
-  "Italian",
-  "Portuguese",
-  "Japanese",
-  "Korean",
-  "Chinese",
-  "Russian",
-];
+/** ISO code → legacy display label still expected by Qwen/XTTS synthesize. */
+const LANG_CODE_TO_LABEL: Record<string, string> = {
+  es: "Spanish",
+  en: "English",
+  fr: "French",
+  de: "German",
+  it: "Italian",
+  pt: "Portuguese",
+  ja: "Japanese",
+  ko: "Korean",
+  zh: "Chinese",
+  ru: "Russian",
+  hi: "Hindi",
+  ar: "Arabic",
+  nl: "Dutch",
+  pl: "Polish",
+  tr: "Turkish",
+  da: "Danish",
+  fi: "Finnish",
+  sv: "Swedish",
+  sw: "Swahili",
+  cs: "Czech",
+  hu: "Hungarian",
+};
+
+const LABEL_TO_CODE: Record<string, string> = Object.fromEntries(
+  Object.entries(LANG_CODE_TO_LABEL).map(([code, label]) => [label, code]),
+);
+
+const FALLBACK_LANGUAGES = Object.values(LANG_CODE_TO_LABEL);
 
 function normalizeTtsModelId(id: string): string {
   if (id.startsWith("qwen3-1.7b-base")) return "qwen3-1.7b-base";
@@ -70,6 +93,10 @@ function normalizeTtsModelId(id: string): string {
   if (id.startsWith("qwen3-0.6b-base")) return "qwen3-0.6b-base";
   if (id.startsWith("xtts")) return "xtts-v2";
   return id;
+}
+
+function labelForCode(code: string): string {
+  return LANG_CODE_TO_LABEL[code] || code;
 }
 
 export const TtsStudioView: React.FC<TtsStudioViewProps> = ({
@@ -85,6 +112,9 @@ export const TtsStudioView: React.FC<TtsStudioViewProps> = ({
   onAfterGpuAction,
   incomingSpeak,
   notificationsEnabled,
+  onOpenModels,
+  onCatalogChange,
+  onInstalledLanguagesChange,
 }) => {
   const { t } = useI18n();
   const [subView, setSubView] = useState<"editor" | "exported">("editor");
@@ -98,46 +128,138 @@ export const TtsStudioView: React.FC<TtsStudioViewProps> = ({
     null
   );
   const [menuOpen, setMenuOpen] = useState(false);
+  const [langMenuOpen, setLangMenuOpen] = useState(false);
+  const [langBusy, setLangBusy] = useState(false);
   const menuRef = useRef<HTMLDivElement | null>(null);
+  const langMenuRef = useRef<HTMLDivElement | null>(null);
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const catalogTts = React.useMemo(
-    () => catalog.filter((m) => m.kind === "tts" && m.runtime_supported && m.installed),
+    () =>
+      catalog.filter(
+        (m) =>
+          m.kind === "tts" &&
+          m.installed &&
+          (m.runtime_supported || m.capabilities?.voice_mode === "builtin_voices"),
+      ),
     [catalog]
   );
 
   useEffect(() => {
-    if (!menuOpen) return;
+    if (!menuOpen && !langMenuOpen) return;
     const onPointerDown = (ev: MouseEvent) => {
-      if (menuRef.current && !menuRef.current.contains(ev.target as Node)) {
+      const target = ev.target as Node;
+      if (menuOpen && menuRef.current && !menuRef.current.contains(target)) {
         setMenuOpen(false);
+      }
+      if (langMenuOpen && langMenuRef.current && !langMenuRef.current.contains(target)) {
+        setLangMenuOpen(false);
       }
     };
     window.addEventListener("mousedown", onPointerDown);
     return () => window.removeEventListener("mousedown", onPointerDown);
-  }, [menuOpen]);
+  }, [menuOpen, langMenuOpen]);
+
+  // Keep TTS catalog fresh while this view stays mounted across tabs.
+  useEffect(() => {
+    if (!baseUrl || !onCatalogChange) return;
+    let cancelled = false;
+    void fetchModelsCatalog(baseUrl)
+      .then((res) => {
+        if (!cancelled) onCatalogChange(res.models);
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [baseUrl, settings.active_tts_model, onCatalogChange]);
 
   const activeModelId = normalizeTtsModelId(settings.active_tts_model || "qwen3-1.7b-base");
   const isEndpointMode = settings.tts_source === "endpoint";
   const ttsEndpoints = settings.external_endpoints.filter((e) => e.kind === "tts");
   const activeEp = ttsEndpoints.find((e) => e.id === settings.active_tts_endpoint_id);
 
-  const localOptions: { id: string; name: string; subtitle: string; engine: "qwen" | "xtts" }[] =
-    React.useMemo(
-      () =>
-        catalogTts.map((m) => ({
-          id: m.id,
-          name: m.name,
-          subtitle: `${m.installed_quant || m.quants[0]?.id || m.engine} · ~${(
-            m.vram_mib / 1024
-          ).toFixed(1)} GB`,
-          engine: (m.engine === "xtts" ? "xtts" : "qwen") as "qwen" | "xtts",
-        })),
-      [catalogTts]
+  const activeEntry = React.useMemo(() => {
+    const raw = settings.active_tts_model || "";
+    return (
+      catalog.find((m) => m.id === raw) ||
+      catalog.find((m) => m.id === activeModelId) ||
+      catalog.find((m) => normalizeTtsModelId(m.id) === activeModelId) ||
+      catalogTts[0] ||
+      null
     );
+  }, [catalog, catalogTts, settings.active_tts_model, activeModelId]);
 
-  const activeLocal = localOptions.find((m) => m.id === activeModelId) || localOptions[0];
-  const modelFamily = (activeLocal?.id || activeModelId).startsWith("xtts") ? "xtts" : "qwen";
-  const visibleProfiles = profiles.filter((p) => p.engine === modelFamily);
+  const installMode = activeEntry?.capabilities?.install_mode ?? "shared_weights";
+  const voiceMode = activeEntry?.capabilities?.voice_mode ?? "clone_profile";
+  const usesCloneProfiles = !isEndpointMode && voiceMode === "clone_profile";
+  const usesBuiltinVoices = !isEndpointMode && voiceMode === "builtin_voices";
+  const showLangTrash =
+    !isEndpointMode &&
+    (installMode === "per_language_checkpoint" || installMode === "voices_pack");
+
+  const readyLanguageCodes = React.useMemo(() => {
+    if (isEndpointMode || !activeEntry) return [];
+    const caps = activeEntry.capabilities?.languages ?? [];
+    if (installMode === "shared_weights") {
+      return activeEntry.installed || activeEntry.runtime_supported ? caps : [];
+    }
+    const familyId = activeEntry.family_id;
+    const fromSettings = settings.installed_languages?.[familyId] ?? [];
+    const fromVariants = catalog
+      .filter((m) => m.family_id === familyId && m.installed)
+      .flatMap((m) => m.capabilities?.languages ?? []);
+    const ready = new Set([...fromSettings, ...fromVariants]);
+    return caps.filter((code) => ready.has(code));
+  }, [
+    isEndpointMode,
+    activeEntry,
+    installMode,
+    settings.installed_languages,
+    catalog,
+  ]);
+
+  const availableLanguages = React.useMemo(() => {
+    if (isEndpointMode) return FALLBACK_LANGUAGES;
+    if (readyLanguageCodes.length > 0) {
+      return readyLanguageCodes.map(labelForCode);
+    }
+    // Shared clone engines without caps metadata: keep legacy list.
+    if (installMode === "shared_weights" && usesCloneProfiles) {
+      return FALLBACK_LANGUAGES;
+    }
+    return [];
+  }, [isEndpointMode, readyLanguageCodes, installMode, usesCloneProfiles]);
+
+  const localOptions: {
+    id: string;
+    name: string;
+    subtitle: string;
+    engine: string;
+    runtime_supported: boolean;
+  }[] = React.useMemo(
+    () =>
+      catalogTts.map((m) => ({
+        id: m.id,
+        name: m.name,
+        subtitle: `${m.installed_quant || m.quants[0]?.id || m.engine} · ~${(
+          m.vram_mib / 1024
+        ).toFixed(1)} GB${!m.runtime_supported ? " · no runtime" : ""}`,
+        engine: m.engine,
+        runtime_supported: m.runtime_supported,
+      })),
+    [catalogTts]
+  );
+
+  const activeLocal = localOptions.find((m) => m.id === activeEntry?.id) || localOptions[0];
+  const modelFamily = (() => {
+    const eng = activeEntry?.engine || activeLocal?.engine || "";
+    if (eng === "xtts" || (activeLocal?.id || activeModelId).startsWith("xtts")) return "xtts";
+    if (eng === "qwen" || eng.startsWith("qwen")) return "qwen";
+    return eng || "qwen";
+  })();
+  const visibleProfiles = usesCloneProfiles
+    ? profiles.filter((p) => p.engine === modelFamily || (modelFamily === "qwen" && p.engine === "qwen"))
+    : [];
   const selectedProfile =
     visibleProfiles.find((p) => p.id === selectedProfileId) || visibleProfiles[0];
 
@@ -149,7 +271,7 @@ export const TtsStudioView: React.FC<TtsStudioViewProps> = ({
 
   const selectLocalModel = async (id: string) => {
     setMenuOpen(false);
-    if (settings.tts_source === "local" && normalizeTtsModelId(settings.active_tts_model) === id) {
+    if (settings.tts_source === "local" && settings.active_tts_model === id) {
       return;
     }
     await onSaveSettings({
@@ -171,16 +293,60 @@ export const TtsStudioView: React.FC<TtsStudioViewProps> = ({
     });
   };
 
-  useEffect(() => {
-    if (visibleProfiles.some((p) => p.id === selectedProfileId)) return;
-    if (visibleProfiles[0]) onSelectProfileId(visibleProfiles[0].id);
-  }, [activeModelId, profiles, selectedProfileId, onSelectProfileId, visibleProfiles]);
+  const removeReadyLanguage = async (code: string) => {
+    if (!baseUrl || !activeEntry || !showLangTrash) return;
+    if (installMode !== "per_language_checkpoint" && installMode !== "voices_pack") return;
+    setLangBusy(true);
+    setError(null);
+    try {
+      const res = await uninstallLanguagePack(
+        baseUrl,
+        activeEntry.family_id,
+        code,
+        installMode,
+      );
+      onInstalledLanguagesChange?.(res.installed_languages);
+      if (onCatalogChange) {
+        const cat = await fetchModelsCatalog(baseUrl);
+        onCatalogChange(cat.models);
+      }
+      const nextLabels = (activeEntry.capabilities?.languages ?? [])
+        .filter((c) => (res.installed_languages[activeEntry.family_id] ?? []).includes(c))
+        .map(labelForCode);
+      if (!nextLabels.includes(language)) {
+        setLanguage(nextLabels[0] || "Spanish");
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setLangBusy(false);
+    }
+  };
 
   useEffect(() => {
-    if (selectedProfile) {
-      setLanguage(selectedProfile.language || "Spanish");
+    if (!usesCloneProfiles) return;
+    if (visibleProfiles.some((p) => p.id === selectedProfileId)) return;
+    if (visibleProfiles[0]) onSelectProfileId(visibleProfiles[0].id);
+  }, [
+    activeModelId,
+    profiles,
+    selectedProfileId,
+    onSelectProfileId,
+    visibleProfiles,
+    usesCloneProfiles,
+  ]);
+
+  useEffect(() => {
+    if (usesCloneProfiles && selectedProfile) {
+      const fromProfile = selectedProfile.language || availableLanguages[0] || "Spanish";
+      setLanguage(fromProfile);
+      return;
     }
-  }, [selectedProfile?.id]);
+    if (availableLanguages.length > 0 && !availableLanguages.includes(language)) {
+      setLanguage(availableLanguages[0]);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- sync when catalog readiness or profile changes
+  }, [selectedProfile?.id, usesCloneProfiles, availableLanguages]);
 
   const synthTokenRef = useRef(0);
   const lastSpokenRef = useRef("");
@@ -188,7 +354,13 @@ export const TtsStudioView: React.FC<TtsStudioViewProps> = ({
   const canSynthesize =
     !busyMode &&
     !!text.trim() &&
-    (isEndpointMode ? !!activeEp : !!activeLocal && !!selectedProfile);
+    (isEndpointMode
+      ? !!activeEp
+      : usesCloneProfiles
+        ? !!activeLocal?.runtime_supported && !!selectedProfile
+        : usesBuiltinVoices
+          ? !!activeLocal?.runtime_supported && availableLanguages.length > 0
+          : false);
 
   const runSynth = async (
     mode: "play" | "wav",
@@ -196,8 +368,9 @@ export const TtsStudioView: React.FC<TtsStudioViewProps> = ({
     textOverride?: string
   ) => {
     if (!baseUrl) return;
-    if (!isEndpointMode && !selectedProfile) return;
     if (isEndpointMode && !activeEp) return;
+    if (!isEndpointMode && usesCloneProfiles && !selectedProfile) return;
+    if (!isEndpointMode && usesBuiltinVoices && !activeLocal?.runtime_supported) return;
     const myToken = ++synthTokenRef.current;
     if (mode === "play") lastSpokenRef.current = (textOverride ?? text).trim();
     setBusyMode(mode);
@@ -205,7 +378,7 @@ export const TtsStudioView: React.FC<TtsStudioViewProps> = ({
     setPendingForceMode(null);
     try {
       const res = await synthesizeTts(baseUrl, {
-        profile_id: selectedProfile?.id || "mario",
+        profile_id: selectedProfile?.id || (usesBuiltinVoices ? "builtin" : "mario"),
         text: textOverride ?? text,
         language,
         mode,
@@ -555,7 +728,20 @@ export const TtsStudioView: React.FC<TtsStudioViewProps> = ({
               )}
             </div>
 
-            {!isEndpointMode ? (
+            {isEndpointMode ? (
+              activeEp && (
+                <span
+                  className="rounded-xl border px-2.5 py-1.5 text-xs font-mono"
+                  style={{
+                    backgroundColor: "var(--bg-input)",
+                    borderColor: "var(--border-glass)",
+                    color: "var(--text-secondary)",
+                  }}
+                >
+                  {activeEp.voice || activeEp.model || t("synthesize.endpointActive")}
+                </span>
+              )
+            ) : usesCloneProfiles ? (
               <select
                 value={selectedProfile?.id || ""}
                 onChange={(e) => onSelectProfileId(e.target.value)}
@@ -577,36 +763,117 @@ export const TtsStudioView: React.FC<TtsStudioViewProps> = ({
                 )}
               </select>
             ) : (
-              activeEp && (
+              <div className="flex items-center gap-1.5">
                 <span
-                  className="rounded-xl border px-2.5 py-1.5 text-xs font-mono"
+                  className="rounded-xl border px-2.5 py-1.5 text-xs"
                   style={{
                     backgroundColor: "var(--bg-input)",
                     borderColor: "var(--border-glass)",
                     color: "var(--text-secondary)",
                   }}
                 >
-                  {activeEp.voice || activeEp.model || t("synthesize.endpointActive")}
+                  {t("synthesize.builtinVoices")}
                 </span>
-              )
+                {(!activeLocal?.runtime_supported || availableLanguages.length === 0) &&
+                  onOpenModels && (
+                    <button
+                      type="button"
+                      onClick={onOpenModels}
+                      className="rounded-xl border px-2.5 py-1.5 text-xs font-medium hover:bg-white/10"
+                      style={{
+                        borderColor: "var(--border-glass)",
+                        color: "var(--text-primary)",
+                      }}
+                    >
+                      {t("synthesize.installInModels")}
+                    </button>
+                  )}
+              </div>
             )}
 
-            <select
-              value={language}
-              onChange={(e) => setLanguage(e.target.value)}
-              className="rounded-xl border px-2.5 py-1.5 text-xs outline-none"
-              style={{
-                backgroundColor: "var(--bg-input)",
-                borderColor: "var(--border-glass)",
-                color: "var(--text-primary)",
-              }}
-            >
-              {LANGUAGES.map((l) => (
-                <option key={l} value={l}>
-                  {l}
-                </option>
-              ))}
-            </select>
+            <div className="relative" ref={langMenuRef}>
+              <button
+                type="button"
+                onClick={() => setLangMenuOpen((o) => !o)}
+                disabled={availableLanguages.length === 0 && !isEndpointMode}
+                className="rounded-xl border px-2.5 py-1.5 text-xs outline-none flex items-center gap-1.5 min-w-[7rem]"
+                style={{
+                  backgroundColor: "var(--bg-input)",
+                  borderColor: "var(--border-glass)",
+                  color: "var(--text-primary)",
+                }}
+              >
+                <span className="truncate">
+                  {availableLanguages.length === 0 && !isEndpointMode
+                    ? t("synthesize.noLanguagesReady")
+                    : language}
+                </span>
+                <ChevronDown className="w-3.5 h-3.5 opacity-60 shrink-0" />
+              </button>
+              {langMenuOpen && (
+                <div
+                  className="absolute z-30 mt-1 min-w-[12rem] max-h-56 overflow-y-auto rounded-xl border p-1 shadow-lg"
+                  style={{
+                    backgroundColor: "var(--bg-panel)",
+                    borderColor: "var(--border-glass)",
+                  }}
+                >
+                  {(isEndpointMode ? FALLBACK_LANGUAGES : availableLanguages).map((l) => {
+                    const code = LABEL_TO_CODE[l] || l.toLowerCase().slice(0, 2);
+                    return (
+                      <div
+                        key={l}
+                        className={clsx(
+                          "flex items-center gap-1 rounded-lg px-1.5 py-1 text-xs",
+                          language === l && "bg-white/10",
+                        )}
+                      >
+                        <button
+                          type="button"
+                          className="flex-1 text-left px-1 py-0.5 truncate hover:opacity-90"
+                          style={{ color: "var(--text-primary)" }}
+                          onClick={() => {
+                            setLanguage(l);
+                            setLangMenuOpen(false);
+                          }}
+                        >
+                          {l}
+                        </button>
+                        {showLangTrash && (
+                          <button
+                            type="button"
+                            title={t("synthesize.removeLanguage")}
+                            disabled={langBusy}
+                            className="p-1 rounded-md text-rose-300/80 hover:bg-rose-500/15 hover:text-rose-200 disabled:opacity-40"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              void removeReadyLanguage(code);
+                            }}
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        )}
+                      </div>
+                    );
+                  })}
+                  {!isEndpointMode &&
+                    availableLanguages.length === 0 &&
+                    onOpenModels && (
+                      <button
+                        type="button"
+                        className="w-full text-left rounded-lg px-2.5 py-1.5 text-xs hover:bg-white/10"
+                        style={{ color: "var(--text-primary)" }}
+                        onClick={() => {
+                          setLangMenuOpen(false);
+                          onOpenModels();
+                        }}
+                      >
+                        {t("synthesize.installInModels")}
+                      </button>
+                    )}
+                </div>
+              )}
+            </div>
           </div>
         </div>
 

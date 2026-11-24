@@ -50,7 +50,11 @@
     "stopCaptionsAndRun": "Detener Subtítulos y Ejecutar",
     "cancel": "Cancelar",
     "noProfiles": "No existe ningún perfil",
-    "endpointActive": "Endpoint Externo"
+    "endpointActive": "Endpoint Externo",
+    "builtinVoices": "Voces integradas",
+    "installInModels": "Instalar en Modelos",
+    "noLanguagesReady": "No hay packs de idioma listos para este motor",
+    "removeLanguage": "Quitar pack de idioma"
   },
   "profiles": {
     "title": "Perfiles de Voz",

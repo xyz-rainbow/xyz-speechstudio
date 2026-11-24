@@ -339,6 +339,11 @@ function MainStudio() {
               onAfterGpuAction={refreshSystem}
               incomingSpeak={incomingSpeak}
               notificationsEnabled={settings.notifications_enabled}
+              onOpenModels={() => setActiveTab("models")}
+              onCatalogChange={setCatalog}
+              onInstalledLanguagesChange={(next) =>
+                void handleSaveSettings({ ...settings, installed_languages: next })
+              }
             />
           </div>
 

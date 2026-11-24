@@ -50,7 +50,11 @@
     "stopCaptionsAndRun": "Stop Live Captions & Run",
     "cancel": "Cancel",
     "noProfiles": "No voice profile",
-    "endpointActive": "External Endpoint"
+    "endpointActive": "External Endpoint",
+    "builtinVoices": "Built-in voices",
+    "installInModels": "Install in Models",
+    "noLanguagesReady": "No language packs ready for this engine",
+    "removeLanguage": "Remove language pack"
   },
   "profiles": {
     "title": "Voice Profiles",
