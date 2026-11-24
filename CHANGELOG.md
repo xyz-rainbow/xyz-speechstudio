@@ -33,6 +33,7 @@ Initial public repository for Speech Studio, a Windows Tauri 2 desktop app for l
 - The Inno Setup program has not been installed on a clean machine. The XTTS environment is not created. Tauri MSI and NSIS bundles do not install Python.
 - macOS and Linux builds do not exist. Tray and toasts for those systems are untested.
 - UI languages other than English and Spanish are absent.
-- GitHub Releases do not attach `speech-studio.exe` or the setup program.
+
+The Windows release workflow builds and attaches `SpeechStudio_0.1.0_Setup.exe`. That program has not been installed on a clean machine.
 
 The published note for this tag is [docs/releases/v0.1.0.md](docs/releases/v0.1.0.md).

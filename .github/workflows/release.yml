@@ -1,6 +1,7 @@
 # Publish a GitHub Release when a v* tag is pushed.
-# Source/tag release only. The note in docs/releases/<tag>.md is the
-# release body, including what still does not work. Binaries are not uploaded.
+# The note in docs/releases/<tag>.md is the body, including what still
+# does not work. The Windows job builds the Inno Setup installer and
+# uploads SpeechStudio_*_Setup.exe. It does not run the installer.
 
 name: Release
 
@@ -16,6 +17,8 @@ jobs:
   release:
     name: Create GitHub Release
     runs-on: ubuntu-24.04
+    outputs:
+      tag: ${{ steps.meta.outputs.tag }}
     steps:
       - name: Checkout
         uses: actions/checkout@v7
@@ -23,18 +26,73 @@ jobs:
           fetch-depth: 0
 
       - name: Create release
+        id: meta
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
+          echo "tag=${GITHUB_REF_NAME}" >> "$GITHUB_OUTPUT"
           NOTES="docs/releases/${GITHUB_REF_NAME}.md"
+          TITLE="Speech Studio ${GITHUB_REF_NAME}"
           if [ -f "$NOTES" ]; then
-            gh release create "$GITHUB_REF_NAME" \
-              --verify-tag \
-              --title "Speech Studio ${GITHUB_REF_NAME}" \
-              --notes-file "$NOTES"
+            if gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
+              gh release edit "$GITHUB_REF_NAME" --title "$TITLE" --notes-file "$NOTES"
+            else
+              gh release create "$GITHUB_REF_NAME" \
+                --verify-tag \
+                --title "$TITLE" \
+                --notes-file "$NOTES"
+            fi
           else
             gh release create "$GITHUB_REF_NAME" \
               --verify-tag \
               --generate-notes \
-              --title "Speech Studio ${GITHUB_REF_NAME}"
+              --title "$TITLE"
           fi
+
+  installer:
+    name: Build Windows installer
+    needs: release
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Setup Node
+        uses: actions/setup-node@v7
+        with:
+          node-version: "22"
+          cache: npm
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build speech-studio.exe
+        run: npx tauri build --no-bundle
+
+      - name: Install Inno Setup
+        shell: pwsh
+        run: |
+          choco install innosetup --yes --no-progress
+          if ($LASTEXITCODE -eq 3010) { exit 0 }
+          exit $LASTEXITCODE
+
+      - name: Compile installer
+        shell: pwsh
+        run: .\installer\windows\build.ps1
+
+      - name: Upload installer
+        shell: pwsh
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          $setup = Get-ChildItem -LiteralPath installer\Output -Filter "*_Setup.exe" | Select-Object -First 1
+          if (-not $setup) { throw "No se encontro SpeechStudio_*_Setup.exe" }
+          gh release upload "${{ github.ref_name }}" $setup.FullName --clobber

@@ -8,7 +8,7 @@ La ruta por defecto es `C:\Program Files\XYZ-Productions\Speech Studio`. No usa 
 
 `installer/setup-env.ps1` crea con `uv` y Python 3.12 `.venvs/core`, `.venvs/qwen` y `.venvs/stt` a partir de `requirements-*.txt`. Esos pines salen de los entornos ya creados a mano. `xtts` tiene un manifiesto vacío y no se instala.
 
-`npx tauri build` sigue produciendo el `.exe` suelto y, de paso, MSI y NSIS. Esos bundles no son este instalador.
+Al publicar un tag `v*`, el workflow de release compila `speech-studio.exe` en Windows (`tauri build --no-bundle`), lanza `build.ps1` y adjunta `SpeechStudio_*_Setup.exe` a la release. `npx tauri build` en local sigue pudiendo emitir MSI y NSIS. Esos bundles no son este instalador y no se suben.
 
 La app se desarrolla en `N:\`, que es un `subst` de `Z:\[🛠️] [Tools]\xyz-speech-studio`. El `.exe` busca `backend/` y `.venvs/core` subiendo desde su carpeta.
 
