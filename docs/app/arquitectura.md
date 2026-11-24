@@ -21,9 +21,9 @@ Entornos que existen en disco, fuera de git:
 | `.venvs/core` | `backend.orchestrator.main` | Sí |
 | `.venvs/qwen` | `backend/workers/qwen_worker.py` | Sí |
 | `.venvs/stt` | `backend/workers/stt_worker.py` | Sí |
-| `.venvs/xtts` | `backend/workers/xtts_worker.py` | Script sí. Entorno no creado |
+| `.venvs/xtts` | `backend/workers/xtts_worker.py` | Sí (`coqui-tts==0.28.0` + PyTorch CUDA) |
 
-El supervisor nombra la familia `xtts` en `/api/workers`. `script_ready` sale verdadero. `venv_ready` sale falso hasta que se cree el entorno.
+El supervisor nombra la familia `xtts` en `/api/workers` con `script_ready` y `venv_ready` verdaderos.
 
 Rust también lee la VRAM con NVML, muestra el icono de bandeja, registra el hotkey global y puede abrir la ventana `overlay`.
 
@@ -34,4 +34,4 @@ Rust captura el audio y lo entrega al orquestador en `/api/captions/stream`. El 
 ## Pendiente
 
 - Probar una captura WASAPI real. El canal está escrito y no se ha oído todavía.
-- Crear `.venvs/xtts` con `setup-env.ps1`. Esa creación no se ha ejecutado y una síntesis no se ha oído.
+- Descargar los pesos de XTTS v2 desde Models y oír una síntesis real.

@@ -2,12 +2,14 @@ import { invoke } from "@tauri-apps/api/core";
 import type {
   AppSettings,
   BackendInfo,
+  CatalogModelEntry,
   DeviceMode,
   DownloadJob,
   EndpointTestResponse,
   EngineKind,
   GenerationRecord,
   HfInspectResponse,
+  HubSearchResponse,
   ModelsCatalogResponse,
   SettingsResponse,
   SynthesizeResponse,
@@ -457,4 +459,67 @@ export async function installHfModel(
   });
   const data = await parseErrorOrJson<{ job: DownloadJob }>(res);
   return data.job;
+}
+
+export async function searchModelHub(
+  baseUrl: string,
+  kind: "tts" | "stt",
+  query = "",
+  page = 1,
+  pageSize = 6
+): Promise<HubSearchResponse> {
+  const params = new URLSearchParams({
+    kind,
+    q: query,
+    page: String(page),
+    page_size: String(pageSize),
+  });
+  const res = await fetch(`${baseUrl}/api/models/hub/search?${params.toString()}`);
+  return parseErrorOrJson<HubSearchResponse>(res);
+}
+
+export async function inspectModelUrl(baseUrl: string, url: string): Promise<HfInspectResponse> {
+  const res = await fetch(`${baseUrl}/api/models/url/inspect`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ url }),
+  });
+  return parseErrorOrJson<HfInspectResponse>(res);
+}
+
+export async function installModelFromUrl(
+  baseUrl: string,
+  payload: {
+    source: "huggingface" | "modelscope" | "direct";
+    repo_id: string;
+    name: string;
+    kind: "tts" | "stt";
+    files: string[];
+    direct_urls: Record<string, string>;
+  }
+): Promise<DownloadJob> {
+  const res = await fetch(`${baseUrl}/api/models/url/install`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+  const data = await parseErrorOrJson<{ job: DownloadJob }>(res);
+  return data.job;
+}
+
+export async function importLocalModel(
+  baseUrl: string,
+  payload: {
+    source_path: string;
+    name: string;
+    kind: "tts" | "stt";
+  }
+): Promise<CatalogModelEntry> {
+  const res = await fetch(`${baseUrl}/api/models/local/import`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+  const data = await parseErrorOrJson<{ model: CatalogModelEntry }>(res);
+  return data.model;
 }

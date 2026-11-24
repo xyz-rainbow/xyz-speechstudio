@@ -15,6 +15,7 @@ DEFAULT_PROFILES_DIR = DATA_DIR / "profiles"
 DEFAULT_OUTPUTS_DIR = DATA_DIR / "outputs"
 DEFAULT_TMP_DIR = DATA_DIR / "tmp"
 SETTINGS_PATH = DATA_DIR / "settings.json"
+RUNTIME_JSON_PATH = DATA_DIR / "runtime.json"
 
 
 class AppSettings(BaseModel):

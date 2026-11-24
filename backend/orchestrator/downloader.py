@@ -6,18 +6,15 @@ import shutil
 import threading
 import time
 import uuid
-from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Callable, Literal, Optional
-from urllib.parse import urlparse
+from urllib.parse import unquote, urlparse
 
 import httpx
 from huggingface_hub import HfApi, hf_hub_url
 from pydantic import BaseModel, Field
 
 from .config import AppSettings, resolved_models_dir
-
-FALLBACK_QWEN_DIR = Path(r"Z:\[🤖] [Models]\tts\qwen3-1.7b")
 
 
 class QuantOption(BaseModel):
@@ -35,6 +32,9 @@ class CatalogModelEntry(BaseModel):
     name: str
     kind: Literal["tts", "stt"]
     engine: str
+    family_id: str = ""
+    family_name: str = ""
+    variant_label: str = ""
     repo_id: str
     description: str = ""
     runtime_supported: bool = True
@@ -69,13 +69,34 @@ class HfInspectFile(BaseModel):
     size_bytes: int
     size_mb: float
     recommended: bool = False
+    download_url: Optional[str] = None
 
 
 class HfInspectResponse(BaseModel):
+    source: Literal["huggingface", "modelscope", "direct"] = "huggingface"
     repo_id: str
     suggested_name: str
     suggested_kind: Literal["tts", "stt"]
     files: list[HfInspectFile]
+
+
+class HubModelSummary(BaseModel):
+    repo_id: str
+    name: str
+    author: str = ""
+    downloads: int = 0
+    likes: int = 0
+    tags: list[str] = Field(default_factory=list)
+    pipeline_tag: str = ""
+
+
+class HubSearchResponse(BaseModel):
+    kind: Literal["tts", "stt"]
+    query: str = ""
+    page: int = 1
+    page_size: int = 6
+    has_more: bool = False
+    items: list[HubModelSummary] = Field(default_factory=list)
 
 
 BUILTIN_MODELS: list[dict[str, Any]] = [
@@ -85,9 +106,12 @@ BUILTIN_MODELS: list[dict[str, Any]] = [
         "name": "Qwen3-TTS 1.7B Base",
         "kind": "tts",
         "engine": "qwen",
+        "family_id": "qwen3-tts",
+        "family_name": "Qwen3-TTS",
+        "variant_label": "1.7B Base (Voice Clone)",
         "repo_id": "Serveurperso/Qwen3-TTS-GGUF",
         "dir_names": ["qwen3-1.7b", "qwen3-1.7b-base"],
-        "description": "High-fidelity zero-shot voice cloning GGUF (Talker + 12Hz codec).",
+        "description": "Zero-shot voice cloning GGUF (Talker + 12Hz codec).",
         "runtime_supported": True,
         "quants": [
             {
@@ -119,9 +143,12 @@ BUILTIN_MODELS: list[dict[str, Any]] = [
         "name": "Qwen3-TTS 0.6B Base",
         "kind": "tts",
         "engine": "qwen",
+        "family_id": "qwen3-tts",
+        "family_name": "Qwen3-TTS",
+        "variant_label": "0.6B Base (Compact)",
         "repo_id": "Serveurperso/Qwen3-TTS-GGUF",
         "dir_names": ["qwen3-0.6b-base"],
-        "description": "Compact fast Qwen3-TTS GGUF voice cloner for low-VRAM GPUs.",
+        "description": "Compact Qwen3-TTS GGUF voice cloner for low-VRAM GPUs.",
         "runtime_supported": True,
         "quants": [
             {
@@ -153,9 +180,12 @@ BUILTIN_MODELS: list[dict[str, Any]] = [
         "name": "Qwen3-TTS 1.7B CustomVoice",
         "kind": "tts",
         "engine": "qwen",
+        "family_id": "qwen3-tts",
+        "family_name": "Qwen3-TTS",
+        "variant_label": "1.7B CustomVoice",
         "repo_id": "Serveurperso/Qwen3-TTS-GGUF",
         "dir_names": ["qwen3-1.7b-customvoice"],
-        "description": "Instruction-steerable Qwen3-TTS variant with custom style & emotion control.",
+        "description": "Instruction-steerable Qwen3-TTS with style and emotion control.",
         "runtime_supported": True,
         "quants": [
             {
@@ -196,9 +226,12 @@ BUILTIN_MODELS: list[dict[str, Any]] = [
         "name": "Coqui XTTS v2",
         "kind": "tts",
         "engine": "xtts",
+        "family_id": "xtts-v2",
+        "family_name": "Coqui XTTS v2",
+        "variant_label": "v2 Multilingual",
         "repo_id": "coqui/XTTS-v2",
         "dir_names": ["xtts-v2"],
-        "description": "Multilingual XTTS v2 voice cloner. Synthesis uses the profile reference audio. Weights use the Coqui Public Model License.",
+        "description": "Multilingual expressive voice cloning (Coqui Public Model License).",
         "runtime_supported": True,
         "quants": [
             {
@@ -211,12 +244,43 @@ BUILTIN_MODELS: list[dict[str, Any]] = [
             },
         ],
     },
+    {
+        "id": "fish-speech-1.5",
+        "name": "Fish Speech 1.5",
+        "kind": "tts",
+        "engine": "fish-audio",
+        "family_id": "fish-audio",
+        "family_name": "Fish Audio",
+        "variant_label": "Fish Speech 1.5",
+        "repo_id": "fishaudio/fish-speech-1.5",
+        "dir_names": ["fish-speech-1.5"],
+        "description": "Multilingual neural TTS from Fish Audio (catalog download; worker upcoming).",
+        "runtime_supported": False,
+        "quants": [
+            {
+                "id": "fp16",
+                "label": "FP16 Weights",
+                "disk_mb": 1400,
+                "vram_mib": 2200,
+                "files": [
+                    "config.json",
+                    "model.pth",
+                    "firefly-gan-vq-fsq-8x1024-21hz-generator.pth",
+                    "tokenizer.tiktoken",
+                ],
+                "recommended": True,
+            },
+        ],
+    },
     # --- STT Models ---
     {
         "id": "faster-whisper-tiny",
         "name": "Faster-Whisper Tiny",
         "kind": "stt",
         "engine": "faster-whisper",
+        "family_id": "faster-whisper",
+        "family_name": "Whisper (CTranslate2)",
+        "variant_label": "Tiny",
         "repo_id": "Systran/faster-whisper-tiny",
         "model_size": "tiny",
         "description": "Ultra-fast CTranslate2 speech recognition (~250 MiB VRAM).",
@@ -251,9 +315,12 @@ BUILTIN_MODELS: list[dict[str, Any]] = [
         "name": "Faster-Whisper Base",
         "kind": "stt",
         "engine": "faster-whisper",
+        "family_id": "faster-whisper",
+        "family_name": "Whisper (CTranslate2)",
+        "variant_label": "Base",
         "repo_id": "Systran/faster-whisper-base",
         "model_size": "base",
-        "description": "Fast everyday transcription & Live Captions default (~350 MiB VRAM).",
+        "description": "Balanced everyday transcription & Live Captions default.",
         "runtime_supported": True,
         "quants": [
             {
@@ -285,6 +352,9 @@ BUILTIN_MODELS: list[dict[str, Any]] = [
         "name": "Faster-Whisper Small",
         "kind": "stt",
         "engine": "faster-whisper",
+        "family_id": "faster-whisper",
+        "family_name": "Whisper (CTranslate2)",
+        "variant_label": "Small",
         "repo_id": "Systran/faster-whisper-small",
         "model_size": "small",
         "description": "Strong multilingual accuracy with modest VRAM (~700 MiB).",
@@ -319,6 +389,9 @@ BUILTIN_MODELS: list[dict[str, Any]] = [
         "name": "Faster-Whisper Medium",
         "kind": "stt",
         "engine": "faster-whisper",
+        "family_id": "faster-whisper",
+        "family_name": "Whisper (CTranslate2)",
+        "variant_label": "Medium",
         "repo_id": "Systran/faster-whisper-medium",
         "model_size": "medium",
         "description": "High-precision multilingual transcription (~1500 MiB VRAM).",
@@ -353,9 +426,12 @@ BUILTIN_MODELS: list[dict[str, Any]] = [
         "name": "Faster-Whisper Large v3 Turbo",
         "kind": "stt",
         "engine": "faster-whisper",
+        "family_id": "faster-whisper",
+        "family_name": "Whisper (CTranslate2)",
+        "variant_label": "Large v3 Turbo",
         "repo_id": "Systran/faster-whisper-large-v3-turbo",
         "model_size": "large-v3-turbo",
-        "description": "Near-flagship speed & accuracy for RTX 2060 (~2100 MiB VRAM).",
+        "description": "Near-flagship speed & accuracy for 6 GB+ GPUs (~2.1 GB VRAM).",
         "runtime_supported": True,
         "quants": [
             {
@@ -387,8 +463,11 @@ BUILTIN_MODELS: list[dict[str, Any]] = [
         "name": "NVIDIA Parakeet TDT 0.6B v3",
         "kind": "stt",
         "engine": "onnx-asr",
+        "family_id": "parakeet-v3",
+        "family_name": "NVIDIA Parakeet v3",
+        "variant_label": "TDT 0.6B v3 (ONNX)",
         "repo_id": "istupakov/parakeet-tdt-0.6b-v3-onnx",
-        "description": "Fast ONNX ASR model (downloadable; ONNX runtime hooks in Phase 4).",
+        "description": "Fast ONNX ASR model (downloadable; sherpa-onnx worker upcoming).",
         "runtime_supported": False,
         "quants": [
             {
@@ -413,8 +492,11 @@ BUILTIN_MODELS: list[dict[str, Any]] = [
         "name": "Moonshine Base ONNX",
         "kind": "stt",
         "engine": "onnx-asr",
+        "family_id": "moonshine",
+        "family_name": "Moonshine",
+        "variant_label": "Base ONNX",
         "repo_id": "onnx-community/moonshine-base-ONNX",
-        "description": "Ultra-lightweight edge English STT (downloadable; ONNX runtime in Phase 4).",
+        "description": "Lightweight edge English STT (downloadable; ONNX worker upcoming).",
         "runtime_supported": False,
         "quants": [
             {
@@ -431,7 +513,7 @@ BUILTIN_MODELS: list[dict[str, Any]] = [
 
 BUILTIN_BY_ID: dict[str, dict[str, Any]] = {m["id"]: m for m in BUILTIN_MODELS}
 
-_ALLOWED_HF_EXTS = (".gguf", ".onnx", ".bin", ".safetensors", ".pth", ".pt")
+_ALLOWED_HF_EXTS = (".gguf", ".onnx", ".bin", ".safetensors", ".pth", ".pt", ".tiktoken")
 _META_HF_EXTS = (".json", ".txt", ".model")
 
 
@@ -497,15 +579,13 @@ def _detect_builtin_install(entry: dict[str, Any], settings: AppSettings) -> tup
 
     if engine == "qwen":
         dir_names: list[str] = entry.get("dir_names", [mid])
-        candidates: list[tuple[Path, bool]] = []
+        candidates: list[Path] = []
         for dn in dir_names:
-            candidates.append((models_root / "tts" / dn, False))
-            candidates.append((models_root / dn, False))
-        candidates.append((models_root, False))
-        if mid == "qwen3-1.7b-base":
-            candidates.append((FALLBACK_QWEN_DIR, True))
+            candidates.append(models_root / "tts" / dn)
+            candidates.append(models_root / dn)
+        candidates.append(models_root)
 
-        for base_dir, is_ext in candidates:
+        for base_dir in candidates:
             if not base_dir.is_dir():
                 continue
             for q in entry["quants"]:
@@ -521,7 +601,7 @@ def _detect_builtin_install(entry: dict[str, Any], settings: AppSettings) -> tup
                         max(1, round((base_dir / f).stat().st_size / (1024 * 1024)))
                         for f in q["files"]
                     )
-                    return True, meta_q, base_dir, is_ext, size_mb
+                    return True, meta_q, base_dir, False, size_mb
         return False, None, None, False, 0
 
     if kind == "stt":
@@ -541,21 +621,19 @@ def _detect_builtin_install(entry: dict[str, Any], settings: AppSettings) -> tup
             if has_weights:
                 return True, meta_q, direct_dir, False, _dir_size_mb(direct_dir)
 
-        # Also detect HuggingFace Hub cache downloaded by faster-whisper itself under stt/
         repo_cache_name = f"models--{entry['repo_id'].replace('/', '--')}"
         cache_dir = stt_root / repo_cache_name
         if cache_dir.is_dir() and any(cache_dir.rglob("model.bin")):
             return True, "int8_float16", cache_dir, False, _dir_size_mb(cache_dir)
         return False, None, None, False, 0
 
-    # Other TTS (e.g. xtts-v2)
+    # Other TTS (xtts-v2, fish-speech-1.5, etc.)
     tts_dir = models_root / "tts" / mid
     if tts_dir.is_dir() and any(
-        (tts_dir / fn).is_file() for fn in ("model.pth", "config.json", "model.safetensors")
+        (tts_dir / fn).is_file() for fn in ("model.pth", "model.safetensors")
     ):
-        if (tts_dir / "model.pth").is_file() or (tts_dir / "model.safetensors").is_file():
-            q_id = entry["quants"][0]["id"] if entry["quants"] else "fp16"
-            return True, q_id, tts_dir, False, _dir_size_mb(tts_dir)
+        q_id = entry["quants"][0]["id"] if entry["quants"] else "fp16"
+        return True, q_id, tts_dir, False, _dir_size_mb(tts_dir)
     return False, None, None, False, 0
 
 
@@ -584,9 +662,10 @@ def resolve_xtts_dir(settings: AppSettings, model_id: Optional[str] = None) -> t
 def resolve_qwen_paths(settings: AppSettings, model_id: Optional[str] = None) -> tuple[Path, Path, str]:
     """Find best installed Qwen3-TTS (talker_gguf, codec_gguf, resolved_model_id)."""
     preferred_id = model_id or settings.active_tts_model or "qwen3-1.7b-base"
-    # Map legacy default name "qwen3-1.7b-base-Q8_0" -> "qwen3-1.7b-base"
-    if preferred_id.startswith("qwen3-1.7b-base"):
-        preferred_id = "qwen3-1.7b-base"
+    for suffix in ("-Q8_0", "-Q4_K_M", "-BF16", "-F32"):
+        if preferred_id.endswith(suffix):
+            preferred_id = preferred_id[: -len(suffix)]
+            break
 
     order = [BUILTIN_BY_ID[preferred_id]] if preferred_id in BUILTIN_BY_ID else []
     for m in BUILTIN_MODELS:
@@ -617,7 +696,7 @@ def resolve_qwen_paths(settings: AppSettings, model_id: Optional[str] = None) ->
                         return talkers[0], codecs[0], custom["id"]
 
     raise FileNotFoundError(
-        f"Qwen3-TTS GGUF files not found in {models_root} or {FALLBACK_QWEN_DIR}."
+        f"Qwen3-TTS model not installed in {models_root}. Open Models (+) to download one."
     )
 
 
@@ -637,7 +716,6 @@ def resolve_stt_load_target(settings: AppSettings, model_id: str) -> tuple[str, 
             return str(install_dir), compute_type, vram_est
         return entry.get("model_size", "base"), compute_type, vram_est
 
-    # Custom HF STT model
     for custom in load_custom_registry(settings):
         if custom["id"] == model_id and custom.get("kind") == "stt":
             cdir = resolved_models_dir(settings) / "stt" / model_id
@@ -663,6 +741,9 @@ def build_catalog(settings: AppSettings) -> list[CatalogModelEntry]:
                 name=m["name"],
                 kind=m["kind"],
                 engine=m["engine"],
+                family_id=m.get("family_id", m["id"]),
+                family_name=m.get("family_name", m["name"]),
+                variant_label=m.get("variant_label", m["name"]),
                 repo_id=m["repo_id"],
                 description=m.get("description", ""),
                 runtime_supported=m.get("runtime_supported", True),
@@ -678,7 +759,6 @@ def build_catalog(settings: AppSettings) -> list[CatalogModelEntry]:
             )
         )
 
-    # Custom HF models from registry.json
     for custom in load_custom_registry(settings):
         cid = custom["id"]
         kind = custom.get("kind", "stt")
@@ -689,21 +769,29 @@ def build_catalog(settings: AppSettings) -> list[CatalogModelEntry]:
         )
         disk_mb = _dir_size_mb(cdir) if installed else int(custom.get("disk_mb", 0))
         files = [str(f) for f in custom.get("files", [])]
-        is_ct2 = kind == "stt" and any(Path(f).name == "model.bin" for f in files)
-        is_gguf_qwen = kind == "tts" and any(f.lower().endswith(".gguf") for f in files)
+        source = custom.get("source", "huggingface")
+        is_ct2 = kind == "stt" and (
+            any(Path(f).name == "model.bin" for f in files) or (cdir / "model.bin").is_file()
+        )
+        is_gguf_qwen = kind == "tts" and (
+            any(f.lower().endswith(".gguf") for f in files) or any(cdir.glob("*.gguf"))
+        )
         entries.append(
             CatalogModelEntry(
                 id=cid,
                 name=custom.get("name", cid),
                 kind=kind,
-                engine="faster-whisper" if is_ct2 else ("qwen" if is_gguf_qwen else "custom-hf"),
-                repo_id=custom.get("repo_id", ""),
-                description=f"Custom HF: {custom.get('repo_id', '')}",
+                engine="faster-whisper" if is_ct2 else ("qwen" if is_gguf_qwen else f"custom-{source}"),
+                family_id=cid,
+                family_name=custom.get("name", cid),
+                variant_label=source,
+                repo_id=custom.get("repo_id", source),
+                description=f"{source}: {custom.get('repo_id', '')}",
                 runtime_supported=is_ct2 or is_gguf_qwen,
                 quants=[
                     QuantOption(
-                        id="custom",
-                        label="Custom HF Selection",
+                        id=source,
+                        label=f"Imported ({source})",
                         disk_mb=int(custom.get("disk_mb", disk_mb or 500)),
                         vram_mib=int(custom.get("vram_mib", 1200)),
                         files=files,
@@ -711,7 +799,7 @@ def build_catalog(settings: AppSettings) -> list[CatalogModelEntry]:
                     )
                 ],
                 installed=installed,
-                installed_quant="custom" if installed else None,
+                installed_quant=source if installed else None,
                 install_dir=str(cdir) if installed else None,
                 external=False,
                 removable=installed and _is_within(cdir, models_root),
@@ -721,9 +809,59 @@ def build_catalog(settings: AppSettings) -> list[CatalogModelEntry]:
             )
         )
 
-    # Sort: installed first (external/local ready before downloadable), then curated catalog order
     entries.sort(key=lambda e: (0 if e.installed else 1, e.kind))
     return entries
+
+
+def search_hf_hub(
+    kind: Literal["tts", "stt"],
+    query: str = "",
+    page: int = 1,
+    page_size: int = 6,
+) -> HubSearchResponse:
+    safe_page = max(1, page)
+    safe_size = max(1, min(20, page_size))
+    pipeline_tag = "text-to-speech" if kind == "tts" else "automatic-speech-recognition"
+
+    api = HfApi()
+    limit = safe_page * safe_size + 1
+    models = list(
+        api.list_models(
+            pipeline_tag=pipeline_tag,
+            search=query.strip() or None,
+            sort="downloads",
+            limit=limit,
+        )
+    )
+    start = (safe_page - 1) * safe_size
+    page_items = models[start : start + safe_size]
+    has_more = len(models) > start + safe_size
+
+    out: list[HubModelSummary] = []
+    for m in page_items:
+        rid = getattr(m, "id", "") or ""
+        parts = rid.split("/", 1)
+        author = parts[0] if len(parts) == 2 else ""
+        short_name = parts[1] if len(parts) == 2 else rid
+        out.append(
+            HubModelSummary(
+                repo_id=rid,
+                name=short_name,
+                author=author,
+                downloads=int(getattr(m, "downloads", 0) or 0),
+                likes=int(getattr(m, "likes", 0) or 0),
+                tags=[str(t) for t in (getattr(m, "tags", None) or [])[:6]],
+                pipeline_tag=str(getattr(m, "pipeline_tag", pipeline_tag) or pipeline_tag),
+            )
+        )
+    return HubSearchResponse(
+        kind=kind,
+        query=query.strip(),
+        page=safe_page,
+        page_size=safe_size,
+        has_more=has_more,
+        items=out,
+    )
 
 
 def parse_hf_repo_id(url_or_id: str) -> str:
@@ -755,7 +893,15 @@ def inspect_hf_repo(url_or_id: str) -> HfInspectResponse:
         fname = getattr(s, "rfilename", "") or ""
         size = int(getattr(s, "size", 0) or 0)
         low = fname.lower()
-        if low.endswith(_ALLOWED_HF_EXTS) or low in ("config.json", "tokenizer.json", "vocabulary.txt", "vocabulary.json", "preprocessor_config.json", "vocab.txt", "vocab.json"):
+        if low.endswith(_ALLOWED_HF_EXTS) or low in (
+            "config.json",
+            "tokenizer.json",
+            "vocabulary.txt",
+            "vocabulary.json",
+            "preprocessor_config.json",
+            "vocab.txt",
+            "vocab.json",
+        ):
             rec = low.endswith((".gguf", ".onnx", "model.bin")) and "f32" not in low
             files.append(
                 HfInspectFile(
@@ -767,15 +913,169 @@ def inspect_hf_repo(url_or_id: str) -> HfInspectResponse:
             )
 
     low_repo = repo_id.lower()
-    is_tts = any(k in low_repo for k in ("tts", "xtts", "kokoro", "qwen3-tts", "bark", "f5"))
+    is_tts = any(k in low_repo for k in ("tts", "xtts", "kokoro", "qwen3-tts", "bark", "f5", "fish"))
     suggested_kind: Literal["tts", "stt"] = "tts" if is_tts else "stt"
     suggested_name = repo_id.split("/")[-1].replace("-", " ")
     return HfInspectResponse(
+        source="huggingface",
         repo_id=repo_id,
         suggested_name=suggested_name,
         suggested_kind=suggested_kind,
         files=files,
     )
+
+
+def _inspect_modelscope(url: str) -> HfInspectResponse:
+    parsed = urlparse(url.strip())
+    parts = [p for p in parsed.path.split("/") if p]
+    if len(parts) >= 3 and parts[0] == "models":
+        owner, repo = parts[1], parts[2]
+    elif len(parts) >= 2:
+        owner, repo = parts[0], parts[1]
+    else:
+        raise ValueError("Could not extract owner/repo from ModelScope URL.")
+
+    api_url = f"https://modelscope.cn/api/v1/models/{owner}/{repo}/repo/files?Recursive=True"
+    with httpx.Client(follow_redirects=True, timeout=20.0) as client:
+        resp = client.get(api_url)
+        resp.raise_for_status()
+        payload = resp.json()
+
+    raw_files = (payload.get("Data") or {}).get("Files") or []
+    files: list[HfInspectFile] = []
+    for item in raw_files:
+        if item.get("Type") != "blob":
+            continue
+        fpath = str(item.get("Path") or "")
+        size = int(item.get("Size") or 0)
+        low = fpath.lower()
+        if low.endswith(_ALLOWED_HF_EXTS + _META_HF_EXTS):
+            dl_url = f"https://modelscope.cn/models/{owner}/{repo}/resolve/master/{fpath}"
+            files.append(
+                HfInspectFile(
+                    filename=fpath,
+                    size_bytes=size,
+                    size_mb=round(size / (1024 * 1024), 1),
+                    recommended=low.endswith((".gguf", ".onnx", "model.bin", ".pth")),
+                    download_url=dl_url,
+                )
+            )
+    low_repo = f"{owner}/{repo}".lower()
+    is_tts = any(k in low_repo for k in ("tts", "xtts", "kokoro", "cosyvoice", "fish"))
+    return HfInspectResponse(
+        source="modelscope",
+        repo_id=f"{owner}/{repo}",
+        suggested_name=repo.replace("-", " "),
+        suggested_kind="tts" if is_tts else "stt",
+        files=files,
+    )
+
+
+def _inspect_direct_url(url: str) -> HfInspectResponse:
+    clean = url.strip()
+    parsed = urlparse(clean)
+    fname = Path(unquote(parsed.path)).name or "model.bin"
+    size = 0
+    try:
+        with httpx.Client(follow_redirects=True, timeout=15.0) as client:
+            r = client.head(clean)
+            if r.status_code < 400:
+                size = int(r.headers.get("content-length") or 0)
+    except Exception:
+        pass
+
+    low = fname.lower()
+    is_tts = any(k in clean.lower() for k in ("tts", "qwen", "xtts", "kokoro", "fish"))
+    return HfInspectResponse(
+        source="direct",
+        repo_id=clean,
+        suggested_name=Path(fname).stem.replace("-", " "),
+        suggested_kind="tts" if is_tts else "stt",
+        files=[
+            HfInspectFile(
+                filename=fname,
+                size_bytes=size,
+                size_mb=round(size / (1024 * 1024), 1),
+                recommended=True,
+                download_url=clean,
+            )
+        ],
+    )
+
+
+def inspect_model_url(url_or_id: str) -> HfInspectResponse:
+    raw = url_or_id.strip()
+    if not raw:
+        raise ValueError("Model URL is empty.")
+    low = raw.lower()
+    if low.startswith(("http://", "https://")):
+        host = urlparse(raw).netloc.lower()
+        if "huggingface.co" in host:
+            return inspect_hf_repo(raw)
+        if "modelscope.cn" in host:
+            return _inspect_modelscope(raw)
+        return _inspect_direct_url(raw)
+    return inspect_hf_repo(raw)
+
+
+def import_local_model(
+    settings: AppSettings,
+    *,
+    source_path: str,
+    name: str,
+    kind: Literal["tts", "stt"],
+) -> CatalogModelEntry:
+    src = Path(source_path.strip())
+    if not src.exists():
+        raise FileNotFoundError(f"Path not found: {src}")
+
+    clean_id = _slugify(name or src.stem)
+    models_root = resolved_models_dir(settings)
+    sub = "stt" if kind == "stt" else "tts"
+    dest_dir = models_root / sub / clean_id
+    dest_dir.mkdir(parents=True, exist_ok=True)
+
+    copied_files: list[str] = []
+    if src.is_file():
+        dst = dest_dir / src.name
+        shutil.copy2(src, dst)
+        copied_files.append(src.name)
+    else:
+        for item in src.rglob("*"):
+            if item.is_file():
+                rel = item.relative_to(src)
+                dst = dest_dir / rel
+                dst.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copy2(item, dst)
+                copied_files.append(rel.as_posix())
+
+    if not copied_files:
+        raise ValueError("Selected folder contains no files.")
+
+    disk_mb = _dir_size_mb(dest_dir)
+    _meta_file(dest_dir).write_text(
+        json.dumps({"source": "local", "quant": "local", "files": copied_files}, indent=2),
+        encoding="utf-8",
+    )
+
+    reg = [r for r in load_custom_registry(settings) if r.get("id") != clean_id]
+    reg.append(
+        {
+            "id": clean_id,
+            "name": (name or src.stem).strip(),
+            "kind": kind,
+            "source": "local",
+            "repo_id": str(src),
+            "files": copied_files,
+            "disk_mb": disk_mb,
+            "vram_mib": 1200 if kind == "tts" else 800,
+        }
+    )
+    save_custom_registry(settings, reg)
+    cat = build_catalog(settings)
+    entry = next((m for m in cat if m.id == clean_id), None)
+    assert entry is not None
+    return entry
 
 
 def remove_installed_model(settings: AppSettings, model_id: str) -> dict[str, Any]:
@@ -794,7 +1094,6 @@ def remove_installed_model(settings: AppSettings, model_id: str) -> dict[str, An
         raise PermissionError("Refusing to delete files outside Speech Studio models folder.")
 
     if install_path == models_root:
-        # Remove only this model's known quant files if installed at root
         removed_files = 0
         for q in target.quants:
             for fname in q.files:
@@ -871,16 +1170,19 @@ class DownloadManager:
             dest_dir=dest_dir,
             explicit_files=explicit_files,
             engine=entry["engine"],
+            direct_urls={},
         )
 
-    def start_custom_hf_download(
+    def start_url_download(
         self,
         settings: AppSettings,
         *,
+        source: Literal["huggingface", "modelscope", "direct"] = "huggingface",
         repo_id: str,
         name: str,
         kind: Literal["tts", "stt"],
         selected_files: list[str],
+        direct_urls: Optional[dict[str, str]] = None,
     ) -> DownloadJob:
         clean_id = _slugify(name or repo_id.split("/")[-1])
         models_root = resolved_models_dir(settings)
@@ -893,6 +1195,7 @@ class DownloadManager:
                 "id": clean_id,
                 "name": name.strip() or clean_id,
                 "kind": kind,
+                "source": source,
                 "repo_id": repo_id,
                 "files": selected_files,
                 "disk_mb": 0,
@@ -905,11 +1208,31 @@ class DownloadManager:
             model_id=clean_id,
             name=name.strip() or clean_id,
             kind=kind,
-            quant="custom",
+            quant=source,
             repo_id=repo_id,
             dest_dir=dest_dir,
             explicit_files=selected_files,
-            engine="custom-hf",
+            engine=f"custom-{source}",
+            direct_urls=direct_urls or {},
+        )
+
+    # Kept as an alias for older callers
+    def start_custom_hf_download(
+        self,
+        settings: AppSettings,
+        *,
+        repo_id: str,
+        name: str,
+        kind: Literal["tts", "stt"],
+        selected_files: list[str],
+    ) -> DownloadJob:
+        return self.start_url_download(
+            settings,
+            source="huggingface",
+            repo_id=repo_id,
+            name=name,
+            kind=kind,
+            selected_files=selected_files,
         )
 
     def _enqueue(
@@ -923,6 +1246,7 @@ class DownloadManager:
         dest_dir: Path,
         explicit_files: list[str],
         engine: str,
+        direct_urls: dict[str, str],
     ) -> DownloadJob:
         with self._lock:
             for existing in self._jobs.values():
@@ -945,7 +1269,7 @@ class DownloadManager:
 
         t = threading.Thread(
             target=self._run_job,
-            args=(job_id, repo_id, dest_dir, explicit_files, engine, quant, ev),
+            args=(job_id, repo_id, dest_dir, explicit_files, engine, quant, direct_urls, ev),
             daemon=True,
         )
         t.start()
@@ -959,6 +1283,7 @@ class DownloadManager:
         explicit_files: list[str],
         engine: str,
         quant: str,
+        direct_urls: dict[str, str],
         cancel_ev: threading.Event,
     ) -> None:
         part_files: list[Path] = []
@@ -971,30 +1296,34 @@ class DownloadManager:
                 job.status = "downloading"
 
             dest_dir.mkdir(parents=True, exist_ok=True)
-            api = HfApi()
-            info = api.model_info(repo_id, files_metadata=True)
             size_map: dict[str, int] = {}
-            all_repo_files: list[str] = []
-            for s in info.siblings or []:
-                rf = getattr(s, "rfilename", "") or ""
-                if rf:
-                    all_repo_files.append(rf)
-                    size_map[rf] = int(getattr(s, "size", 0) or 0)
 
-            if explicit_files:
-                target_files = explicit_files
-            elif engine == "faster-whisper":
-                target_files = [
-                    rf
-                    for rf in all_repo_files
-                    if rf == "model.bin"
-                    or rf.endswith(_META_HF_EXTS)
-                    or rf in ("config.json", "preprocessor_config.json", "tokenizer.json", "vocabulary.txt", "vocabulary.json")
-                ]
+            if direct_urls:
+                target_files = explicit_files or list(direct_urls.keys())
             else:
-                target_files = [
-                    rf for rf in all_repo_files if rf.lower().endswith(_ALLOWED_HF_EXTS + _META_HF_EXTS)
-                ]
+                api = HfApi()
+                info = api.model_info(repo_id, files_metadata=True)
+                all_repo_files: list[str] = []
+                for s in info.siblings or []:
+                    rf = getattr(s, "rfilename", "") or ""
+                    if rf:
+                        all_repo_files.append(rf)
+                        size_map[rf] = int(getattr(s, "size", 0) or 0)
+
+                if explicit_files:
+                    target_files = explicit_files
+                elif engine == "faster-whisper":
+                    target_files = [
+                        rf
+                        for rf in all_repo_files
+                        if rf == "model.bin"
+                        or rf.endswith(_META_HF_EXTS)
+                        or rf in ("config.json", "preprocessor_config.json", "tokenizer.json", "vocabulary.txt", "vocabulary.json")
+                    ]
+                else:
+                    target_files = [
+                        rf for rf in all_repo_files if rf.lower().endswith(_ALLOWED_HF_EXTS + _META_HF_EXTS)
+                    ]
 
             if not target_files:
                 raise RuntimeError(f"No matching downloadable files found in {repo_id}.")
@@ -1017,7 +1346,7 @@ class DownloadManager:
 
                     part_path = out_path.with_name(out_path.name + ".part")
                     part_files.append(part_path)
-                    url = hf_hub_url(repo_id=repo_id, filename=rel_path)
+                    url = direct_urls.get(rel_path) or hf_hub_url(repo_id=repo_id, filename=rel_path)
 
                     with self._lock:
                         self._jobs[job_id].current_file = Path(rel_path).name

@@ -1,7 +1,7 @@
 {
   "app": {
     "name": "Speech Studio",
-    "phaseBadge": "Phase 3A STT"
+    "phaseBadge": "v0.1.0"
   },
   "nav": {
     "synthesize": "Synthesize",
@@ -120,6 +120,8 @@
     "sttSection": "STT Models",
     "local": "Local",
     "endpoint": "Endpoint",
+    "externalGroup": "External",
+    "noExternalConfigured": "No endpoints configured",
     "ejectTts": "Eject TTS",
     "ejectStt": "Eject STT",
     "load": "Load",
@@ -162,7 +164,30 @@
     "epModalEdit": "Edit Endpoint",
     "quickPresets": "Optional Quick Presets",
     "epName": "Profile Name",
-    "epProtocol": "Protocol"
+    "epProtocol": "Protocol",
+    "tabFeatured": "Featured",
+    "tabHub": "Explore Hub",
+    "tabImport": "Import",
+    "variant": "Variant",
+    "quantization": "Quantization",
+    "install": "Install",
+    "installedBadge": "Installed",
+    "noLocalInstalled": "No local models installed",
+    "searchPlaceholder": "Search Hugging Face models (e.g. kokoro, whisper, chatterbox)...",
+    "search": "Search",
+    "prevPage": "Previous",
+    "nextPage": "Next",
+    "pageLabel": "Page",
+    "downloadsCount": "downloads",
+    "importUrlTitle": "Download from URL (Hugging Face, ModelScope or direct file)",
+    "importUrlPlaceholder": "https://huggingface.co/owner/repo, modelscope.cn/... or .gguf/.onnx link",
+    "importLocalTitle": "Import local folder or file",
+    "pickFolder": "Select Folder",
+    "pickFile": "Select File",
+    "importNow": "Import Model",
+    "emptySectionHint": "No models installed yet. Click (+) to browse Featured, Explore Hub or Import.",
+    "backToResults": "Back to results",
+    "localPathPlaceholder": "Folder or file path..."
   },
   "tray": {
     "open": "Open Speech Studio",

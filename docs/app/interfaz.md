@@ -16,7 +16,7 @@ Apariencia:
 
 Idiomas de la interfaz: inglés (por defecto) y español. Los archivos son `src/i18n/locales/en.json` y `es.json`.
 
-La barra superior enseña la VRAM en vivo y el toggle GPU/CPU de TTS y de STT. El puerto del orquestador se ve en Ajustes.
+La barra superior enseña la VRAM en vivo y el toggle GPU/CPU de TTS y de STT. El puerto del orquestador se ve en Ajustes. Además, toda la app se puede inspeccionar y controlar desde terminal con el comando global `speechstudio` (`--status`, `--models`, `--profiles`, `--config`, `play`, `transcribe`, `endpoints`).
 
 Cerrar la ventana la esconde. Salir de verdad está en la bandeja. En Windows el clic izquierdo muestra la ventana. En Linux y macOS ese clic abre el menú y, en macOS, el icono se trata como plantilla. Esas dos compilaciones siguen pendientes.
 

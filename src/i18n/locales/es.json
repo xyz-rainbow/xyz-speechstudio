@@ -1,7 +1,7 @@
 {
   "app": {
     "name": "Speech Studio",
-    "phaseBadge": "Fase 3A STT"
+    "phaseBadge": "v0.1.0"
   },
   "nav": {
     "synthesize": "Sintetizar",
@@ -120,6 +120,8 @@
     "sttSection": "Modelos STT",
     "local": "Local",
     "endpoint": "Endpoint",
+    "externalGroup": "Externo",
+    "noExternalConfigured": "Sin endpoints configurados",
     "ejectTts": "Eject TTS",
     "ejectStt": "Eject STT",
     "load": "Cargar",
@@ -162,7 +164,30 @@
     "epModalEdit": "Editar Endpoint",
     "quickPresets": "Presets Rápidos (opcional)",
     "epName": "Nombre del Perfil",
-    "epProtocol": "Protocolo"
+    "epProtocol": "Protocolo",
+    "tabFeatured": "Destacados",
+    "tabHub": "Explorar Hub",
+    "tabImport": "Importar",
+    "variant": "Modalidad",
+    "quantization": "Cuantización",
+    "install": "Instalar",
+    "installedBadge": "Instalado",
+    "noLocalInstalled": "Sin modelos locales descargados",
+    "searchPlaceholder": "Buscar en Hugging Face (ej. kokoro, whisper, chatterbox)...",
+    "search": "Buscar",
+    "prevPage": "Anterior",
+    "nextPage": "Siguiente",
+    "pageLabel": "Página",
+    "downloadsCount": "descargas",
+    "importUrlTitle": "Descargar por URL (Hugging Face, ModelScope o enlace directo)",
+    "importUrlPlaceholder": "https://huggingface.co/owner/repo, modelscope.cn/... o enlace .gguf/.onnx",
+    "importLocalTitle": "Importar desde carpeta o archivo local",
+    "pickFolder": "Elegir Carpeta",
+    "pickFile": "Elegir Archivo",
+    "importNow": "Importar Modelo",
+    "emptySectionHint": "Aún no hay modelos instalados. Pulsa (+) para abrir Destacados, Explorar Hub o Importar.",
+    "backToResults": "Volver a resultados",
+    "localPathPlaceholder": "Ruta de carpeta o archivo..."
   },
   "tray": {
     "open": "Abrir Speech Studio",

@@ -13,6 +13,7 @@ import { clsx } from "clsx";
 import { useI18n } from "../i18n";
 import { fetchModelsCatalog, isTauri, notify, transcribeAudioFile } from "../services/api";
 import type { AppSettings, CatalogModelEntry, TranscriptSegment } from "../types";
+import { endpointProviderSubtitle } from "../utils/endpointPresets";
 import { BorderBeamButton } from "./BorderBeamButton";
 import { GlassCard } from "./GlassCard";
 
@@ -88,31 +89,42 @@ export const TranscriberView: React.FC<TranscriberViewProps> = ({
   const activeEp = sttEndpoints.find((e) => e.id === settings.active_stt_endpoint_id);
   const isEndpointMode = settings.stt_source === "endpoint";
 
-  const sourceLabel = isEndpointMode
-    ? `Endpoint · ${activeEp ? activeEp.name : t("transcriber.unconfigured")}`
-    : `Local · ${settings.active_stt_model} (${settings.stt_device.toUpperCase()})`;
+  const localOptions: { id: string; name: string; subtitle: string }[] = React.useMemo(
+    () =>
+      localModels.map((m) => ({
+        id: m.id,
+        name: m.name,
+        subtitle: `${m.installed_quant || m.engine} · ~${m.vram_mib} MB`,
+      })),
+    [localModels]
+  );
 
-  const localOptions: { id: string; name: string }[] = React.useMemo(() => {
-    const items = localModels.map((m) => ({ id: m.id, name: m.name }));
-    if (
-      settings.active_stt_model &&
-      !items.some((i) => i.id === settings.active_stt_model)
-    ) {
-      items.unshift({ id: settings.active_stt_model, name: settings.active_stt_model });
-    }
-    return items;
-  }, [localModels, settings.active_stt_model]);
+  const activeLocal =
+    localOptions.find((m) => m.id === settings.active_stt_model) || localOptions[0];
+  const sourceLabel = isEndpointMode
+    ? `${t("models.externalGroup")} · ${activeEp ? activeEp.name : t("transcriber.unconfigured")}`
+    : activeLocal
+      ? `${t("models.local")} · ${activeLocal.name} (${settings.stt_device.toUpperCase()})`
+      : `${t("models.local")} · ${t("models.noLocalInstalled")}`;
 
   const selectLocalModel = async (id: string) => {
     setMenuOpen(false);
-    if (id === settings.active_stt_model) return;
-    await onSaveSettings({ ...settings, active_stt_model: id });
+    if (settings.stt_source === "local" && id === settings.active_stt_model) return;
+    await onSaveSettings({
+      ...settings,
+      stt_source: "local",
+      active_stt_model: id,
+    });
   };
 
   const selectEndpoint = async (id: string) => {
     setMenuOpen(false);
-    if (id === settings.active_stt_endpoint_id) return;
-    await onSaveSettings({ ...settings, active_stt_endpoint_id: id });
+    if (settings.stt_source === "endpoint" && id === settings.active_stt_endpoint_id) return;
+    await onSaveSettings({
+      ...settings,
+      stt_source: "endpoint",
+      active_stt_endpoint_id: id,
+    });
   };
 
   const pickAudio = async () => {
@@ -188,54 +200,22 @@ export const TranscriberView: React.FC<TranscriberViewProps> = ({
 
             {menuOpen && (
               <div
-                className="absolute right-0 mt-1.5 z-40 min-w-[230px] max-w-[290px] rounded-2xl border p-1.5 shadow-2xl backdrop-blur-xl flex flex-col gap-0.5"
+                className="absolute right-0 mt-1.5 z-40 min-w-[245px] max-w-[300px] max-h-[320px] overflow-y-auto rounded-2xl border p-1.5 shadow-2xl backdrop-blur-xl flex flex-col gap-0.5"
                 style={{
                   backgroundColor: "var(--bg-elevated)",
                   borderColor: "var(--border-glass)",
                 }}
               >
                 <span
-                  className="px-2.5 py-1 text-[10px] font-mono uppercase tracking-wider"
+                  className="px-2.5 pt-1 pb-0.5 text-[10px] font-mono uppercase tracking-wider"
                   style={{ color: "var(--text-muted)" }}
                 >
-                  {isEndpointMode ? t("transcriber.endpointModels") : t("transcriber.localModels")}
+                  {t("models.local")}
                 </span>
 
-                {isEndpointMode ? (
-                  sttEndpoints.length > 0 ? (
-                    sttEndpoints.map((ep) => {
-                      const active = ep.id === settings.active_stt_endpoint_id;
-                      return (
-                        <button
-                          key={ep.id}
-                          type="button"
-                          onClick={() => selectEndpoint(ep.id)}
-                          className={clsx(
-                            "w-full text-left rounded-xl px-2.5 py-1.5 text-xs flex items-center justify-between gap-2 hover:bg-white/10",
-                            active && "bg-emerald-500/15 text-emerald-300"
-                          )}
-                        >
-                          <div className="min-w-0">
-                            <div className="font-medium truncate">{ep.name}</div>
-                            <div className="text-[10px] font-mono opacity-70 truncate">
-                              {ep.protocol} · {ep.model || "—"}
-                            </div>
-                          </div>
-                          {active && <Check className="w-3.5 h-3.5 shrink-0 text-emerald-400" />}
-                        </button>
-                      );
-                    })
-                  ) : (
-                    <div
-                      className="px-2.5 py-2 text-[11px]"
-                      style={{ color: "var(--text-secondary)" }}
-                    >
-                      {t("transcriber.noEndpoints")}
-                    </div>
-                  )
-                ) : (
+                {localOptions.length > 0 ? (
                   localOptions.map((m) => {
-                    const active = m.id === settings.active_stt_model;
+                    const active = !isEndpointMode && m.id === activeLocal?.id;
                     return (
                       <button
                         key={m.id}
@@ -248,12 +228,62 @@ export const TranscriberView: React.FC<TranscriberViewProps> = ({
                       >
                         <div className="min-w-0">
                           <div className="font-medium truncate">{m.name}</div>
-                          <div className="text-[10px] font-mono opacity-65 truncate">{m.id}</div>
+                          <div className="text-[10px] font-mono opacity-65 truncate">
+                            {m.subtitle}
+                          </div>
                         </div>
                         {active && <Check className="w-3.5 h-3.5 shrink-0 text-cyan-400" />}
                       </button>
                     );
                   })
+                ) : (
+                  <div
+                    className="px-2.5 py-1.5 text-[11px]"
+                    style={{ color: "var(--text-secondary)" }}
+                  >
+                    {t("models.noLocalInstalled")}
+                  </div>
+                )}
+
+                <div className="my-1 h-px bg-white/10" />
+
+                <span
+                  className="px-2.5 pt-0.5 pb-0.5 text-[10px] font-mono uppercase tracking-wider"
+                  style={{ color: "var(--text-muted)" }}
+                >
+                  {t("models.externalGroup")}
+                </span>
+
+                {sttEndpoints.length > 0 ? (
+                  sttEndpoints.map((ep) => {
+                    const active = isEndpointMode && ep.id === settings.active_stt_endpoint_id;
+                    return (
+                      <button
+                        key={ep.id}
+                        type="button"
+                        onClick={() => selectEndpoint(ep.id)}
+                        className={clsx(
+                          "w-full text-left rounded-xl px-2.5 py-1.5 text-xs flex items-center justify-between gap-2 hover:bg-white/10",
+                          active && "bg-emerald-500/15 text-emerald-300"
+                        )}
+                      >
+                        <div className="min-w-0">
+                          <div className="font-medium truncate">{ep.name}</div>
+                          <div className="text-[10px] font-mono opacity-70 truncate">
+                            {endpointProviderSubtitle(ep)}
+                          </div>
+                        </div>
+                        {active && <Check className="w-3.5 h-3.5 shrink-0 text-emerald-400" />}
+                      </button>
+                    );
+                  })
+                ) : (
+                  <div
+                    className="px-2.5 py-1.5 text-[11px]"
+                    style={{ color: "var(--text-secondary)" }}
+                  >
+                    {t("models.noExternalConfigured")}
+                  </div>
                 )}
               </div>
             )}

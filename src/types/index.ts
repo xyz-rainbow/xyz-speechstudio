@@ -170,6 +170,9 @@ export interface CatalogModelEntry {
   name: string;
   kind: "tts" | "stt";
   engine: string;
+  family_id: string;
+  family_name: string;
+  variant_label: string;
   repo_id: string;
   description: string;
   runtime_supported: boolean;
@@ -210,11 +213,32 @@ export interface HfInspectFile {
   size_bytes: number;
   size_mb: number;
   recommended: boolean;
+  download_url?: string | null;
 }
 
 export interface HfInspectResponse {
+  source: "huggingface" | "modelscope" | "direct";
   repo_id: string;
   suggested_name: string;
   suggested_kind: "tts" | "stt";
   files: HfInspectFile[];
+}
+
+export interface HubModelSummary {
+  repo_id: string;
+  name: string;
+  author: string;
+  downloads: number;
+  likes: number;
+  tags: string[];
+  pipeline_tag: string;
+}
+
+export interface HubSearchResponse {
+  kind: "tts" | "stt";
+  query: string;
+  page: number;
+  page_size: number;
+  has_more: boolean;
+  items: HubModelSummary[];
 }

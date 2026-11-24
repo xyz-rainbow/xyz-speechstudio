@@ -25,6 +25,7 @@ from .config import (
     APP_ROOT,
     DEFAULT_PROFILES_DIR,
     DEFAULT_TMP_DIR,
+    RUNTIME_JSON_PATH,
     AppSettings,
     load_settings,
     resolved_models_dir,
@@ -38,18 +39,6 @@ from .supervisor import (
     WorkerSupervisor,
     query_nvidia_vram,
 )
-
-FALLBACK_QWEN_DIR = Path(r"Z:\[🤖] [Models]\tts\qwen3-1.7b")
-TALKER_NAME = "qwen-talker-1.7b-base-Q8_0.gguf"
-CODEC_NAME = "qwen-tokenizer-12hz-Q8_0.gguf"
-
-STT_CATALOG: dict[str, tuple[str, int]] = {
-    "faster-whisper-tiny": ("tiny", 250),
-    "faster-whisper-base": ("base", 350),
-    "faster-whisper-small": ("small", 700),
-    "faster-whisper-medium": ("medium", 1500),
-    "faster-whisper-large-v3-turbo": ("large-v3-turbo", 2100),
-}
 
 supervisor = WorkerSupervisor()
 runtime_info = {"port": 0, "pid": os.getpid(), "host": "127.0.0.1"}
@@ -79,6 +68,21 @@ class HfInstallRequest(BaseModel):
     name: str
     kind: Literal["tts", "stt"] = "stt"
     files: list[str]
+
+
+class UrlInstallRequest(BaseModel):
+    source: Literal["huggingface", "modelscope", "direct"] = "huggingface"
+    repo_id: str
+    name: str
+    kind: Literal["tts", "stt"] = "stt"
+    files: list[str]
+    direct_urls: dict[str, str] = {}
+
+
+class LocalImportRequest(BaseModel):
+    source_path: str
+    name: str
+    kind: Literal["tts", "stt"] = "stt"
 
 
 class LoadSttRequest(BaseModel):
@@ -381,9 +385,30 @@ def _cleanup_tmp_previews(max_keep: int = 10) -> None:
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     load_settings()
-    profiles.ensure_mario_imported()
+    try:
+        RUNTIME_JSON_PATH.parent.mkdir(parents=True, exist_ok=True)
+        RUNTIME_JSON_PATH.write_text(
+            json.dumps(
+                {
+                    "port": runtime_info["port"],
+                    "pid": runtime_info["pid"],
+                    "host": runtime_info["host"],
+                    "started_at": time.time(),
+                }
+            ),
+            encoding="utf-8",
+        )
+    except Exception:
+        pass
     print(json.dumps({"port": runtime_info["port"], "pid": runtime_info["pid"]}), flush=True)
     yield
+    try:
+        if RUNTIME_JSON_PATH.is_file():
+            cur = json.loads(RUNTIME_JSON_PATH.read_text(encoding="utf-8"))
+            if cur.get("pid") == runtime_info["pid"]:
+                RUNTIME_JSON_PATH.unlink(missing_ok=True)
+    except Exception:
+        pass
     supervisor.shutdown_all()
 
 
@@ -496,6 +521,91 @@ def install_hf_model(req: HfInstallRequest):
         selected_files=req.files,
     )
     return {"job": job.model_dump()}
+
+
+@app.get("/api/models/hub/search")
+def search_models_hub(
+    kind: Literal["tts", "stt"] = "tts",
+    q: str = "",
+    page: int = 1,
+    page_size: int = 6,
+):
+    try:
+        return downloader.search_hf_hub(kind=kind, query=q, page=page, page_size=page_size).model_dump()
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail=f"Hub search failed: {exc}")
+
+
+@app.post("/api/models/url/inspect")
+def inspect_url_model(req: HfInspectRequest):
+    try:
+        return downloader.inspect_model_url(req.url).model_dump()
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+
+
+@app.post("/api/models/url/install")
+def install_url_model(req: UrlInstallRequest):
+    if not req.files:
+        raise HTTPException(status_code=400, detail="Select at least one model file to download.")
+    s = load_settings()
+    job = download_manager.start_url_download(
+        s,
+        source=req.source,
+        repo_id=req.repo_id,
+        name=req.name,
+        kind=req.kind,
+        selected_files=req.files,
+        direct_urls=req.direct_urls,
+    )
+    return {"job": job.model_dump()}
+
+
+@app.post("/api/models/local/import")
+def import_local_model_route(req: LocalImportRequest):
+    s = load_settings()
+    try:
+        entry = downloader.import_local_model(
+            s,
+            source_path=req.source_path,
+            name=req.name,
+            kind=req.kind,
+        )
+        return {"model": entry.model_dump()}
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc))
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+
+
+@app.get("/api/inspect")
+def inspect_app_state():
+    s = load_settings()
+    total_mib, free_mib = query_nvidia_vram()
+    catalog = downloader.build_catalog(s)
+    return {
+        "health": {
+            "ok": True,
+            "pid": runtime_info["pid"],
+            "port": runtime_info["port"],
+            "host": runtime_info["host"],
+            "app_root": str(APP_ROOT),
+        },
+        "vram": {
+            "total_mib": total_mib,
+            "free_mib": free_mib,
+            "used_mib": max(0, total_mib - free_mib),
+        },
+        "settings": s.model_dump(),
+        "resolved_models_dir": str(resolved_models_dir(s)),
+        "resolved_outputs_dir": str(resolved_outputs_dir(s)),
+        "workers": supervisor.status_snapshot(),
+        "models_installed": [m.model_dump() for m in catalog if m.installed],
+        "downloads": [j.model_dump() for j in download_manager.list_jobs()],
+        "profiles": [p.model_dump() for p in profiles.list_profiles()],
+        "history": [h.model_dump() for h in history.list_history()],
+        "endpoints": [e.model_dump() for e in s.external_endpoints],
+    }
 
 
 @app.delete("/api/models/{model_id}")
@@ -875,9 +985,12 @@ def openai_speech(request: Request, req: SpeechRequest):
 
     prof = profiles.get_profile(req.voice)
     if prof is None and s.tts_source == "local":
-        all_p = [p for p in profiles.list_profiles() if p.engine == "qwen" and p.ready]
+        all_p = [p for p in profiles.list_profiles() if p.ready]
         if not all_p:
-            raise HTTPException(status_code=404, detail=f"Voice '{req.voice}' not found.")
+            raise HTTPException(
+                status_code=404,
+                detail="No local voice profile found. Create a profile or switch TTS to an external endpoint.",
+            )
         prof = all_p[0]
 
     lang = (req.language or (prof.language if prof else "Spanish") or "Spanish").strip()
@@ -912,7 +1025,16 @@ async def openai_transcriptions(
     tmp_in = DEFAULT_TMP_DIR / f"stt_api_{uuid.uuid4().hex[:10]}{suffix}"
     try:
         tmp_in.write_bytes(await file.read())
-        target_model = model if model in STT_CATALOG else None
+        known_stt_ids = {
+            m_id
+            for m_id, entry in downloader.BUILTIN_BY_ID.items()
+            if entry.get("kind") == "stt"
+        } | {
+            c["id"]
+            for c in downloader.load_custom_registry(s)
+            if c.get("kind") == "stt"
+        }
+        target_model = model if model in known_stt_ids else None
         return _run_stt(tmp_in, language=language, model_id=target_model)
     finally:
         tmp_in.unlink(missing_ok=True)

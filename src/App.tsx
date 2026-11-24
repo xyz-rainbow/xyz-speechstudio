@@ -282,6 +282,8 @@ function MainStudio() {
           >
             <TtsStudioView
               baseUrl={backend.base_url}
+              settings={settings}
+              onSaveSettings={handleSaveSettings}
               profiles={profiles}
               selectedProfileId={selectedProfileId}
               onSelectProfileId={setSelectedProfileId}
