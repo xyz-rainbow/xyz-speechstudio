@@ -57,3 +57,6 @@ Desktop.ini
 # installers
 *.msi
 *.exe
+installer/windows/app_payload/**
+!installer/windows/app_payload/.gitkeep
+installer/Output/

@@ -20,7 +20,7 @@ import {
   LiveCaptionsConflictError,
   revealInExplorer,
   saveHistoryAs,
-  sendWindowsToast,
+  notify,
   synthesizeTts,
 } from "../services/api";
 import type { GenerationRecord, VoiceProfile } from "../types";
@@ -36,6 +36,7 @@ interface TtsStudioViewProps {
   onHistoryChange: (next: GenerationRecord[]) => void;
   onAfterGpuAction: () => void;
   incomingSpeak?: { text: string; nonce: number } | null;
+  notificationsEnabled: boolean;
 }
 
 const LANGUAGES = [
@@ -60,6 +61,7 @@ export const TtsStudioView: React.FC<TtsStudioViewProps> = ({
   onHistoryChange,
   onAfterGpuAction,
   incomingSpeak,
+  notificationsEnabled,
 }) => {
   const { t } = useI18n();
   const [subView, setSubView] = useState<"editor" | "exported">("editor");
@@ -119,6 +121,7 @@ export const TtsStudioView: React.FC<TtsStudioViewProps> = ({
           rtf: res.record.rtf,
         });
       } else {
+        void notify(notificationsEnabled, t("toast.title"), t("toast.playing"));
         setLastStats({
           dur: res.duration_s ?? 0,
           elapsed: res.elapsed_s ?? 0,
@@ -133,7 +136,9 @@ export const TtsStudioView: React.FC<TtsStudioViewProps> = ({
       if (err instanceof LiveCaptionsConflictError) {
         setPendingForceMode(mode);
       } else {
-        setError(err instanceof Error ? err.message : String(err));
+        const message = err instanceof Error ? err.message : String(err);
+        setError(message);
+        void notify(notificationsEnabled, t("toast.title"), t("toast.failed"));
       }
     } finally {
       setBusyMode(null);
@@ -156,17 +161,18 @@ export const TtsStudioView: React.FC<TtsStudioViewProps> = ({
     }
     if (sameText && isPaused) {
       audio!.play().catch(() => {});
+      void notify(notificationsEnabled, t("toast.title"), t("toast.playing"));
       return;
     }
     if (incoming === "") {
       if (!isPlaying && !isPaused) {
-        void sendWindowsToast("Speech Studio", t("hotkey.noSelection"));
+        void notify(notificationsEnabled, t("toast.title"), t("hotkey.noSelection"));
       }
       return;
     }
 
     audio?.pause();
-    void sendWindowsToast("Speech Studio", t("hotkey.processing"));
+    void notify(notificationsEnabled, t("toast.title"), t("hotkey.processing"));
     setSubView("editor");
     setText(incoming);
     lastSpokenRef.current = incoming;
@@ -183,6 +189,7 @@ export const TtsStudioView: React.FC<TtsStudioViewProps> = ({
     if (!dest) return;
     const updated = await saveHistoryAs(baseUrl, rec.id, dest);
     onHistoryChange(history.map((h) => (h.id === rec.id ? updated : h)));
+    void notify(notificationsEnabled, t("toast.title"), t("toast.saved"));
   };
 
   const handleReveal = async (rec: GenerationRecord) => {
@@ -193,6 +200,7 @@ export const TtsStudioView: React.FC<TtsStudioViewProps> = ({
     if (!baseUrl) return;
     await deleteHistoryRecord(baseUrl, rec.id);
     onHistoryChange(history.filter((h) => h.id !== rec.id));
+    void notify(notificationsEnabled, t("toast.title"), t("toast.deletedAudio"));
   };
 
   if (subView === "exported") {
@@ -276,6 +284,7 @@ export const TtsStudioView: React.FC<TtsStudioViewProps> = ({
                         onClick={() => {
                           setPreviewUrl(url);
                           setTimeout(() => audioRef.current?.play().catch(() => {}), 50);
+                          void notify(notificationsEnabled, t("toast.title"), t("toast.playing"));
                         }}
                         className="inline-flex items-center gap-1 rounded-xl border px-2.5 py-1 text-xs hover:border-cyan-400/50"
                         style={{ borderColor: "var(--border-glass)", backgroundColor: "var(--bg-elevated)" }}

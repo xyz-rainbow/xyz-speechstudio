@@ -1,3 +1,4 @@
+mod audio_capture;
 mod notify;
 mod selection;
 mod sidecar;
@@ -52,6 +53,16 @@ fn toggle_overlay(app: tauri::AppHandle) -> Result<bool, String> {
         let _ = win.show();
         Ok(true)
     }
+}
+
+#[tauri::command]
+fn show_overlay(app: tauri::AppHandle) -> Result<(), String> {
+    if let Some(win) = app.get_webview_window("overlay") {
+        win.show().map_err(|e| e.to_string())?;
+        let _ = win.set_always_on_top(true);
+        return Ok(());
+    }
+    toggle_overlay(app).map(|_| ())
 }
 
 #[tauri::command]
@@ -155,7 +166,11 @@ pub fn run() {
             get_vram_status,
             get_backend_info,
             toggle_overlay,
+            show_overlay,
             set_overlay_pinned,
+            audio_capture::list_audio_apps,
+            audio_capture::start_live_captions,
+            audio_capture::stop_live_captions,
             send_toast,
             reveal_in_explorer,
             set_read_hotkey,
@@ -166,6 +181,7 @@ pub fn run() {
 
     app.run(|app_handle, event| {
         if let RunEvent::Exit = event {
+            audio_capture::stop_live_captions().ok();
             let state = app_handle.state::<BackendState>();
             state.shutdown();
         }

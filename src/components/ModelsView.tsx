@@ -28,6 +28,7 @@ import {
   installHfModel,
   loadQwenWorker,
   loadSttWorker,
+  notify,
   removeInstalledModel,
   startModelDownload,
   testExternalEndpoint,
@@ -297,8 +298,14 @@ export const ModelsView: React.FC<ModelsViewProps> = ({
         settings.active_stt_endpoint_id
       ),
     };
-    await onSaveSettings(nextSettings);
-    setEpDraft(null);
+    try {
+      await onSaveSettings(nextSettings);
+      setEpDraft(null);
+      void notify(settings.notifications_enabled, t("toast.title"), t("toast.endpointDeleted"));
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+      void notify(settings.notifications_enabled, t("toast.title"), t("toast.failed"));
+    }
   };
 
   const handleGroupEject = async (group: "tts" | "stt") => {
@@ -309,8 +316,10 @@ export const ModelsView: React.FC<ModelsViewProps> = ({
       const snap = await ejectWorkerGroup(baseUrl, group);
       onWorkersChange(snap);
       onAfterGpuAction();
+      void notify(settings.notifications_enabled, t("toast.title"), t("toast.ejected"));
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
+      void notify(settings.notifications_enabled, t("toast.title"), t("toast.failed"));
     } finally {
       setBusyKey(null);
     }
@@ -331,8 +340,10 @@ export const ModelsView: React.FC<ModelsViewProps> = ({
         onWorkersChange(snap);
       }
       onAfterGpuAction();
+      void notify(settings.notifications_enabled, t("toast.title"), t("toast.modelLoaded"));
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
+      void notify(settings.notifications_enabled, t("toast.title"), t("toast.failed"));
     } finally {
       setBusyKey(null);
     }
@@ -346,8 +357,10 @@ export const ModelsView: React.FC<ModelsViewProps> = ({
       const snap = await ejectWorker(baseUrl, family);
       onWorkersChange(snap);
       onAfterGpuAction();
+      void notify(settings.notifications_enabled, t("toast.title"), t("toast.ejected"));
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
+      void notify(settings.notifications_enabled, t("toast.title"), t("toast.failed"));
     } finally {
       setBusyKey(null);
     }
@@ -379,6 +392,7 @@ export const ModelsView: React.FC<ModelsViewProps> = ({
       await refreshCatalog();
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
+      void notify(settings.notifications_enabled, t("toast.title"), t("toast.failed"));
     }
   };
 
@@ -389,6 +403,7 @@ export const ModelsView: React.FC<ModelsViewProps> = ({
       await refreshCatalog();
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
+      void notify(settings.notifications_enabled, t("toast.title"), t("toast.failed"));
     }
   };
 
@@ -401,8 +416,10 @@ export const ModelsView: React.FC<ModelsViewProps> = ({
       setRemoveTarget(null);
       await refreshCatalog();
       onAfterGpuAction();
+      void notify(settings.notifications_enabled, t("toast.title"), t("toast.modelRemoved"));
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
+      void notify(settings.notifications_enabled, t("toast.title"), t("toast.failed"));
     } finally {
       setBusyKey(null);
     }

@@ -11,9 +11,12 @@ $AppRoot = Split-Path -Parent $ScriptDir
 
 $Candidates = @()
 if ($IconPath) { $Candidates += $IconPath }
+$Candidates += 'U:\Pictures\Icons\unicorn.jpg'
+$Candidates += (Join-Path $env:USERPROFILE 'Pictures\Icons\unicorn.jpg')
 $Candidates += (Join-Path $AppRoot 'src-tauri\icons\icon.png')
-$Candidates += 'C:\Users\rainb\.gemini\config\skills\windows-notify\assets\icons\unicorn.jpg'
-$Candidates += "$env:USERPROFILE\Pictures\Icons\custom.png"
+$Candidates += (Join-Path $env:USERPROFILE '.grok\skills\windows-notify\assets\icons\unicorn.jpg')
+$Candidates += (Join-Path $env:USERPROFILE '.gemini\config\skills\windows-notify\assets\icons\unicorn.jpg')
+$Candidates += (Join-Path $env:USERPROFILE 'Pictures\Icons\custom.png')
 
 $AppLogo = $Candidates | Where-Object { $_ -and (Test-Path -LiteralPath $_) } | Select-Object -First 1
 

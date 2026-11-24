@@ -1,6 +1,6 @@
 # Publish a GitHub Release when a v* tag is pushed.
-# Source/tag release only: the app still requires the Windows source tree
-# and local Python venvs; installer artifacts are not produced yet.
+# Source/tag release only. The note in docs/releases/<tag>.md is the
+# release body, including what still does not work. Binaries are not uploaded.
 
 name: Release
 
@@ -26,7 +26,15 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          gh release create "$GITHUB_REF_NAME" \
-            --verify-tag \
-            --generate-notes \
-            --title "Speech Studio ${GITHUB_REF_NAME}"
+          NOTES="docs/releases/${GITHUB_REF_NAME}.md"
+          if [ -f "$NOTES" ]; then
+            gh release create "$GITHUB_REF_NAME" \
+              --verify-tag \
+              --title "Speech Studio ${GITHUB_REF_NAME}" \
+              --notes-file "$NOTES"
+          else
+            gh release create "$GITHUB_REF_NAME" \
+              --verify-tag \
+              --generate-notes \
+              --title "Speech Studio ${GITHUB_REF_NAME}"
+          fi

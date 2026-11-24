@@ -11,7 +11,7 @@ import {
 } from "lucide-react";
 import { clsx } from "clsx";
 import { useI18n } from "../i18n";
-import { fetchModelsCatalog, isTauri, transcribeAudioFile } from "../services/api";
+import { fetchModelsCatalog, isTauri, notify, transcribeAudioFile } from "../services/api";
 import type { AppSettings, CatalogModelEntry, TranscriptSegment } from "../types";
 import { BorderBeamButton } from "./BorderBeamButton";
 import { GlassCard } from "./GlassCard";
@@ -139,8 +139,10 @@ export const TranscriberView: React.FC<TranscriberViewProps> = ({
       setSegments(res.segments || []);
       setStats(`${res.language} · ${res.duration_s.toFixed(1)}s in ${res.elapsed_s.toFixed(2)}s`);
       onAfterGpuAction();
+      void notify(settings.notifications_enabled, t("toast.title"), t("toast.transcribed"));
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
+      void notify(settings.notifications_enabled, t("toast.title"), t("toast.failed"));
     } finally {
       setBusy(false);
     }

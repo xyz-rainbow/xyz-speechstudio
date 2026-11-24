@@ -1023,9 +1023,15 @@ class DownloadManager:
                                     if pct >= ms and last_milestone < ms:
                                         last_milestone = ms
                                         if self._notify_cb:
+                                            from .toasts import say
+
                                             self._notify_cb(
-                                                "Speech Studio",
-                                                f"Downloading {self._jobs[job_id].name} ({quant})",
+                                                say("app"),
+                                                say(
+                                                    "download_progress",
+                                                    name=self._jobs[job_id].name,
+                                                    quant=quant,
+                                                ),
                                                 ms,
                                             )
 
@@ -1043,7 +1049,13 @@ class DownloadManager:
                 j.progress = 100
                 j.current_file = ""
             if self._notify_cb:
-                self._notify_cb("Speech Studio", f"{self._jobs[job_id].name} ({quant}) ready", 100)
+                from .toasts import say
+
+                self._notify_cb(
+                    say("app"),
+                    say("download_ready", name=self._jobs[job_id].name, quant=quant),
+                    100,
+                )
 
         except _DownloadCancelled:
             for pf in part_files:
@@ -1072,4 +1084,6 @@ class DownloadManager:
                 self._jobs[job_id].error = str(exc)
                 self._jobs[job_id].current_file = ""
             if self._notify_cb:
-                self._notify_cb("Speech Studio", f"Download failed: {self._jobs[job_id].name}", None)
+                from .toasts import say
+
+                self._notify_cb(say("app"), say("download_failed", name=self._jobs[job_id].name), None)

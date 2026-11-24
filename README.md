@@ -19,7 +19,7 @@ Speech Studio is a [Tauri 2](https://tauri.app/) desktop shell (React + TypeScri
 - **Windows desktop shell** — system tray (show/hide, captions shortcut, eject models, exit), single-instance, close-to-tray, NVIDIA VRAM meter, GPU or CPU device selectors, and a global hotkey that reads the selected text via UI Automation (the clipboard is not used) and sends it to TTS Studio.
 - **Notifications** — optional Windows toast notifications through `scripts/notify.ps1` (BurntToast / [xyz-windows-notify](https://github.com/xyz-rainbow/xyz-windows-notify)).
 - **UI** — English or Spanish (follows the in-app language setting), dark/light themes, accent colors, and an optional ASCII background.
-- **Live Captions overlay** — a floating, always-on-top overlay window is available. Per-app WASAPI loopback capture is described in the UI as the intended design and is **not wired up yet**.
+- **Live Captions overlay** — the Subtitles tab picks an app and streams its process-loopback audio to the selected STT (local faster-whisper or an external endpoint). The overlay shows that text. A live capture session has not been tried yet.
 
 ## Requirements
 
@@ -124,6 +124,10 @@ Do not commit `data/`, voice profiles, API keys, or model weights. They are giti
 Lightweight tests live in `tests/` and run in CI (`pytest`). The `spikes/` tree holds earlier end-to-end experiments and is not part of CI.
 
 See [CONTRIBUTING.md](CONTRIBUTING.md) for pull request conventions.
+
+## Documentation
+
+[docs/README.md](docs/README.md) indexes the changelog, the community spec, known issues, and the living app notes in [docs/app/](docs/app/README.md).
 
 ## Contributing
 

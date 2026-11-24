@@ -97,13 +97,20 @@
   },
   "subtitles": {
     "title": "Subtítulos en Vivo",
-    "subtitle": "Captura aislada por aplicación con WASAPI Process Tree Loopback",
+    "subtitle": "Elige la ventana que está sonando. Los subtítulos usan el STT elegido en Modelos, local o endpoint.",
     "start": "Iniciar",
     "stop": "Detener",
     "overlay": "Overlay",
     "clear": "Limpiar",
-    "testOverlayHint": "Abre ahora la cápsula flotante Glass estilo macOS para probar transparencia, arrastre y controles hover en Windows.",
-    "sampleCaption": "Overlay Glass de Subtítulos listo — arrastra libremente o pasa el ratón para ver controles."
+    "testOverlayHint": "Elige la ventana que está sonando. Los subtítulos usan el STT elegido en Modelos, local o endpoint.",
+    "sampleCaption": "—",
+    "activeStt": "STT elegido",
+    "noEndpoint": "Ningún endpoint STT elegido",
+    "noApps": "Ninguna ventana",
+    "refreshApps": "Actualizar ventanas",
+    "waiting": "Esperando voz",
+    "history": "Sesión",
+    "working": "Arrancando"
   },
   "models": {
     "title": "Modelos y Endpoints",
@@ -168,6 +175,22 @@
     "processing": "Procesando texto seleccionado…",
     "noSelection": "No se pudo leer la selección"
   },
+  "toast": {
+    "title": "Speech Studio",
+    "playing": "Reproduciendo audio",
+    "saved": "Audio guardado",
+    "deletedAudio": "Audio borrado",
+    "captionsOn": "Subtítulos iniciados",
+    "captionsOff": "Subtítulos detenidos",
+    "profileSaved": "Perfil guardado",
+    "profileDeleted": "Perfil borrado",
+    "transcribed": "Transcripción lista",
+    "ejected": "Modelo descargado",
+    "modelLoaded": "Modelo cargado",
+    "modelRemoved": "Modelo borrado",
+    "endpointDeleted": "Endpoint borrado",
+    "failed": "La acción ha fallado"
+  },
   "settings": {
     "title": "Ajustes",
     "subtitle": "Idioma, tema visual, rutas de almacenamiento y endpoints API",
@@ -210,7 +233,7 @@
     "testConnection": "Probar",
     "copyCurl": "Copiar cURL",
     "hotkeySection": "Hotkey: leer selección",
-    "hotkeyHint": "Selecciona texto en cualquier app y pulsa el hotkey para leerlo en voz alta. Púlsalo de nuevo para pausar; con texto nuevo reinicia. Nunca toca el portapapeles.",
+    "hotkeyHint": "Selecciona texto en cualquier app y pulsa el hotkey para leerlo en voz alta. Púlsalo de nuevo para pausar; con texto nuevo reinicia. Nunca toca el portapapeles. El atajo guarda la tecla física (Alt+Shift+Digit7, Super+Slash), no el carácter impreso.",
     "hotkeyUnassigned": "Sin asignar",
     "hotkeyPressNow": "Pulsa la combinación… (Esc para cancelar)",
     "hotkeyRecord": "Grabar",

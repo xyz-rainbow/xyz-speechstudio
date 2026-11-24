@@ -15,7 +15,7 @@ from typing import Literal, Optional
 
 import httpx
 import uvicorn
-from fastapi import FastAPI, File, Form, HTTPException, Request, UploadFile
+from fastapi import FastAPI, File, Form, HTTPException, Request, UploadFile, WebSocket
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse, Response
 from pydantic import BaseModel
@@ -136,31 +136,9 @@ class SpeechRequest(BaseModel):
 
 
 def fire_toast(title: str, message: str, progress: Optional[int] = None) -> None:
-    s = load_settings()
-    if not s.notifications_enabled:
-        return
-    script = APP_ROOT / "scripts" / "notify.ps1"
-    if not script.exists():
-        return
-    cmd = [
-        "powershell",
-        "-NoProfile",
-        "-ExecutionPolicy",
-        "Bypass",
-        "-File",
-        str(script),
-        "-Title",
-        title,
-        "-Message",
-        message,
-    ]
-    if progress is not None:
-        cmd.extend(["-Progress", str(max(0, min(100, progress)))])
-    creationflags = getattr(subprocess, "CREATE_NO_WINDOW", 0)
-    try:
-        subprocess.Popen(cmd, creationflags=creationflags)
-    except Exception:
-        pass
+    from .toasts import deliver
+
+    deliver(title, message, progress)
 
 
 download_manager = downloader.DownloadManager(notify_cb=fire_toast)
@@ -328,7 +306,9 @@ def build_qwen_profile(prof: profiles.VoiceProfile, force_stop_captions: bool = 
         rvq_path=str(rvq_p),
     )
     assert updated is not None
-    fire_toast("Speech Studio", f"Voice profile '{updated.name}' ready")
+    from .toasts import say
+
+    fire_toast(say("app"), say("profile_ready", name=updated.name))
     return updated
 
 
@@ -522,6 +502,14 @@ def set_captions_lock(req: CaptionsLockRequest):
     return {"live_captions_active": supervisor.live_captions_active}
 
 
+@app.websocket("/api/captions/stream")
+async def captions_stream(ws: WebSocket):
+    from .captions import handle_caption_socket
+
+    await ws.accept()
+    await handle_caption_socket(ws)
+
+
 @app.post("/api/endpoints/{endpoint_id}/test")
 def test_endpoint_route(endpoint_id: str):
     s = load_settings()
@@ -690,7 +678,9 @@ def tts_synthesize(req: SynthesizeRequest):
         elapsed_s=res["elapsed_s"],
         rtf=res["rtf"],
     )
-    fire_toast("Speech Studio", f"WAV exported ({speaker_label}, {rec.duration_s:.1f}s)")
+    from .toasts import say
+
+    fire_toast(say("app"), say("wav_saved", speaker=speaker_label, seconds=f"{rec.duration_s:.1f}"))
     return {
         "mode": "wav",
         "record": rec.model_dump(),

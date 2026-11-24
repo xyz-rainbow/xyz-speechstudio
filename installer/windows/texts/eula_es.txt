@@ -1,0 +1,40 @@
+====================================================================
+  RAINBOW TECHNOLOGY / XYZ-PRODUCTIONS - ACCESO EXCLUSIVO
+  SPEECH STUDIO v0.1.0 [INTERNAL MASTER RELEASE]
+====================================================================
+
+AVISO DE SOFTWARE PROPIETARIO Y CONFIDENCIAL:
+ESTE SOFTWARE ES DE USO INTERNO Y EXCLUSIVO. QUEDA TERMINANTEMENTE
+PROHIBIDA SU REVENTA, REDISTRIBUCIÓN, COPIA PÚBLICA, COMERCIALIZACIÓN O
+PIRATERÍA BAJO CUALQUIER FORMA O PLATAFORMA.
+
+1. CONCESIÓN DE LICENCIA
+   Este paquete de Speech Studio, incluidos el ejecutable, los workers
+   y los entornos que el instalador prepara, es propiedad intelectual
+   de Rainbow Technology & XYZ-Productions. Se concede únicamente
+   acceso personal, intransferible y no exclusivo para uso local.
+
+2. PROHIBICIÓN TOTAL DE REVENTA Y DISTRIBUCIÓN PÚBLICA
+   - Queda expresamente prohibido vender, sublicenciar, alquilar o
+     transferir este software a terceros.
+   - Queda prohibida la carga (upload) del instalador en repositorios
+     públicos, redes de pares (P2P), trackers torrent, canales de
+     Telegram, foros o servicios de almacenamiento para acceso público.
+   - Cualquier intento de monetización por parte de terceros
+     constituirá una violación directa de los derechos de autor y
+     propiedad industrial.
+
+3. MODELOS Y PERFILES LOCALES
+   Los modelos descargados, los perfiles de voz y los audios generados
+   viven en la carpeta data de la instalación. No se autoriza extraer
+   el motor empaquetado para redistribuirlo por separado.
+
+4. SIN GARANTÍAS COMERCIALES (AS-IS)
+   Este software se entrega "TAL CUAL" ("AS IS"), sin garantías de
+   comerciabilidad o idoneidad para un propósito no especificado. El
+   usuario asume toda la responsabilidad derivada de su ejecución local.
+
+--------------------------------------------------------------------
+AL CONTINUAR CON LA INSTALACIÓN, CONFIRMAS Y ACEPTAS QUE ACATAS
+ÍNTEGRAMENTE TODAS LAS CONDICIONES ANTERIORES.
+====================================================================

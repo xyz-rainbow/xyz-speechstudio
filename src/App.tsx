@@ -1,14 +1,12 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { listen } from "@tauri-apps/api/event";
-import { Captions } from "lucide-react";
 import { AsciiAmbientPool } from "./components/AsciiAmbientPool";
-import { BorderBeamButton } from "./components/BorderBeamButton";
-import { GlassCard } from "./components/GlassCard";
 import { ModelsView } from "./components/ModelsView";
 import { ProfilesView } from "./components/ProfilesView";
 import { SettingsView } from "./components/SettingsView";
 import { Sidebar } from "./components/Sidebar";
 import { TopBar } from "./components/TopBar";
+import { SubtitlesView } from "./components/SubtitlesView";
 import { TranscriberView } from "./components/TranscriberView";
 import { TtsStudioView } from "./components/TtsStudioView";
 import { I18nProvider, useI18n } from "./i18n";
@@ -21,8 +19,10 @@ import {
   getBackendInfo,
   getVramStatus,
   isTauri,
+  notify,
   saveSettings,
-  toggleOverlayWindow,
+  setCaptionsLock,
+  stopLiveCaptions,
   updateTrayMenu,
 } from "./services/api";
 import type {
@@ -185,22 +185,21 @@ function MainStudio() {
       if (ev.payload === "subtitles") {
         setActiveTab("subtitles");
       } else if (ev.payload === "stop_subtitles" && base) {
-        await fetch(`${base}/api/captions/lock`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ active: false }),
-        }).catch(() => {});
+        await stopLiveCaptions().catch(() => {});
+        await setCaptionsLock(base, false).catch(() => {});
         refreshSystem();
+        void notify(settings.notifications_enabled, t("toast.title"), t("toast.captionsOff"));
       } else if (ev.payload === "eject" && base) {
         await ejectWorkerGroup(base, "tts").catch(() => {});
         await ejectWorkerGroup(base, "stt").catch(() => {});
         refreshSystem();
+        void notify(settings.notifications_enabled, t("toast.title"), t("toast.ejected"));
       }
     }).then((fn) => {
       unlisten = fn;
     });
     return () => unlisten?.();
-  }, [refreshSystem]);
+  }, [refreshSystem, settings.notifications_enabled, t]);
 
   // Keep tray labels localized and in sync with Live Captions state.
   const captionsActive = !!workers?.live_captions_active;
@@ -265,6 +264,7 @@ function MainStudio() {
               onHistoryChange={setHistory}
               onAfterGpuAction={refreshSystem}
               incomingSpeak={incomingSpeak}
+              notificationsEnabled={settings.notifications_enabled}
             />
           </div>
 
@@ -279,6 +279,7 @@ function MainStudio() {
                 setActiveTab("synthesize");
               }}
               onAfterGpuAction={refreshSystem}
+              notificationsEnabled={settings.notifications_enabled}
             />
           )}
 
@@ -292,30 +293,11 @@ function MainStudio() {
           )}
 
           {activeTab === "subtitles" && (
-            <GlassCard className="p-5 flex flex-col gap-3">
-              <div className="flex items-center justify-between flex-wrap gap-3">
-                <div>
-                  <h1 className="text-lg font-semibold">{t("subtitles.title")}</h1>
-                  <p className="text-xs" style={{ color: "var(--text-secondary)" }}>
-                    {t("subtitles.subtitle")}
-                  </p>
-                </div>
-                <BorderBeamButton onClick={() => toggleOverlayWindow()}>
-                  <Captions className="w-4 h-4" />
-                  {t("subtitles.overlay")}
-                </BorderBeamButton>
-              </div>
-              <div
-                className="rounded-2xl border p-3.5 text-xs"
-                style={{
-                  borderColor: "var(--border-glass)",
-                  backgroundColor: "var(--bg-input)",
-                  color: "var(--text-secondary)",
-                }}
-              >
-                {t("subtitles.testOverlayHint")}
-              </div>
-            </GlassCard>
+            <SubtitlesView
+              baseUrl={backend.base_url}
+              settings={settings}
+              onAfterGpuAction={refreshSystem}
+            />
           )}
 
           {activeTab === "models" && (

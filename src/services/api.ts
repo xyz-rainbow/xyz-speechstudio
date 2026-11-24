@@ -66,6 +66,34 @@ export async function getBackendInfo(): Promise<BackendInfo> {
   return invoke<BackendInfo>("get_backend_info");
 }
 
+export async function showOverlayWindow(): Promise<void> {
+  if (!isTauri()) return;
+  await invoke("show_overlay");
+}
+
+export async function listAudioApps(): Promise<{ pid: number; name: string }[]> {
+  if (!isTauri()) return [];
+  return invoke("list_audio_apps");
+}
+
+export async function startLiveCaptions(pid: number, wsUrl: string, language: string): Promise<void> {
+  if (!isTauri()) return;
+  await invoke("start_live_captions", { pid, wsUrl, language });
+}
+
+export async function stopLiveCaptions(): Promise<void> {
+  if (!isTauri()) return;
+  await invoke("stop_live_captions");
+}
+
+export async function setCaptionsLock(baseUrl: string, active: boolean): Promise<void> {
+  await fetch(`${baseUrl}/api/captions/lock`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ active }),
+  });
+}
+
 export async function toggleOverlayWindow(): Promise<boolean> {
   if (!isTauri()) return false;
   return invoke<boolean>("toggle_overlay");
@@ -83,6 +111,15 @@ export async function sendWindowsToast(
 ): Promise<void> {
   if (!isTauri()) return;
   await invoke("send_toast", { title, message, progress: progress ?? null });
+}
+
+export async function notify(enabled: boolean, title: string, message: string): Promise<void> {
+  if (!enabled) return;
+  try {
+    await sendWindowsToast(title, message);
+  } catch {
+    /* A missing toast must not block the action. */
+  }
 }
 
 export async function revealInExplorer(path: string): Promise<void> {

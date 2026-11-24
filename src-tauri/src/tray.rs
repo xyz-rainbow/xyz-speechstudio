@@ -74,10 +74,14 @@ pub fn create_tray(app: &AppHandle) -> tauri::Result<()> {
     let labels = TrayLabels::default();
     let menu = build_menu(app, &labels)?;
 
+    // Linux and macOS open the menu with the primary click. Windows keeps
+    // that click for showing the window. Those builds are still pending.
+    let menu_on_left_click = cfg!(any(target_os = "linux", target_os = "macos"));
     let mut builder = TrayIconBuilder::with_id(TRAY_ID)
         .tooltip("Speech Studio")
         .menu(&menu)
-        .show_menu_on_left_click(false)
+        .show_menu_on_left_click(menu_on_left_click)
+        .icon_as_template(cfg!(target_os = "macos"))
         .on_menu_event(|app, event| match event.id.as_ref() {
             "open" => show_main_window(app),
             "show_hide" => toggle_main_window(app),
@@ -103,7 +107,12 @@ pub fn create_tray(app: &AppHandle) -> tauri::Result<()> {
                 ..
             } = event
             {
+                // Linux and macOS use this click for the menu. Showing the
+                // window here would fight that. Those builds are still pending.
+                #[cfg(windows)]
                 show_main_window(tray.app_handle());
+                #[cfg(not(windows))]
+                let _ = tray;
             }
         });
 

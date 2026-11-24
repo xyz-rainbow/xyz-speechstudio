@@ -1,0 +1,7 @@
+# Output generated installers
+Output/
+*.tmp
+*.log
+Thumbs.db
+Desktop.ini
+.DS_Store

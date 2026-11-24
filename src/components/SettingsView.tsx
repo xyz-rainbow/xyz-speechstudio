@@ -55,21 +55,18 @@ const ACCENTS: { id: AccentPreset; color: string; label: string }[] = [
   { id: "rose", color: "#f43f5e", label: "Rose" },
 ];
 
-function hotkeyKeyFromCode(code: string): string | null {
-  let m = /^Key([A-Z])$/.exec(code);
-  if (m) return m[1];
-  m = /^Digit(\d)$/.exec(code);
-  if (m) return m[1];
-  if (/^F([1-9]|1\d|2[0-4])$/.test(code)) return code;
-  const named = [
-    "Space", "Enter", "Tab", "Backspace", "Delete", "Insert", "Home", "End",
-    "PageUp", "PageDown", "ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight",
-  ];
-  return named.includes(code) ? code : null;
-}
-
-function prettyHotkey(accel: string): string {
-  return accel.replace(/Arrow/g, "").replace(/Super/g, "Win");
+// Physical key, not the character the layout prints. `KeyboardEvent.code`
+// matches the names global-hotkey already parses (KeyM, Digit7, Slash, NumpadDivide).
+function acceleratorFromEvent(ev: KeyboardEvent): string | null {
+  if (ev.repeat || !ev.code || ev.code === "Unidentified") return null;
+  if (/^(Control|Shift|Alt|Meta)(Left|Right)$/.test(ev.code)) return null;
+  const mods: string[] = [];
+  if (ev.ctrlKey) mods.push("Ctrl");
+  if (ev.altKey) mods.push("Alt");
+  if (ev.shiftKey) mods.push("Shift");
+  if (ev.metaKey) mods.push("Super");
+  if (mods.length === 0) return null;
+  return [...mods, ev.code].join("+");
 }
 
 export const SettingsView: React.FC<SettingsViewProps> = ({
@@ -118,21 +115,20 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
     const onKeyDown = (ev: KeyboardEvent) => {
       ev.preventDefault();
       ev.stopPropagation();
-      if (ev.code === "Escape") {
+      if (
+        ev.code === "Escape" &&
+        !ev.ctrlKey &&
+        !ev.altKey &&
+        !ev.shiftKey &&
+        !ev.metaKey
+      ) {
         setRecordingHotkey(false);
         return;
       }
-      if (/^(Control|Shift|Alt|Meta)(Left|Right)$/.test(ev.code)) return;
-      const key = hotkeyKeyFromCode(ev.code);
-      if (!key) return;
-      const mods: string[] = [];
-      if (ev.ctrlKey) mods.push("Ctrl");
-      if (ev.altKey) mods.push("Alt");
-      if (ev.shiftKey) mods.push("Shift");
-      if (ev.metaKey) mods.push("Super");
-      if (mods.length === 0) return;
+      const accel = acceleratorFromEvent(ev);
+      if (!accel) return;
       setRecordingHotkey(false);
-      void applyHotkey([...mods, key].join("+"));
+      void applyHotkey(accel);
     };
     window.addEventListener("keydown", onKeyDown, true);
     return () => window.removeEventListener("keydown", onKeyDown, true);
@@ -501,7 +497,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
               {recordingHotkey
                 ? t("settings.hotkeyPressNow")
                 : draft.read_hotkey
-                  ? prettyHotkey(draft.read_hotkey)
+                  ? draft.read_hotkey
                   : t("settings.hotkeyUnassigned")}
             </div>
             <button

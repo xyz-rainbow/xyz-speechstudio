@@ -1,0 +1,39 @@
+====================================================================
+  RAINBOW TECHNOLOGY / XYZ-PRODUCTIONS - EXCLUSIVE ACCESS
+  SPEECH STUDIO v0.1.0 [INTERNAL MASTER RELEASE]
+====================================================================
+
+PROPRIETARY & CONFIDENTIAL SOFTWARE NOTICE:
+THIS SOFTWARE IS FOR INTERNAL AND EXCLUSIVE USE ONLY. RESALE,
+REDISTRIBUTION, PUBLIC COPYING, COMMERCIALIZATION, OR PIRACY IN ANY
+FORM OR PLATFORM IS STRICTLY AND ENERGETICALLY PROHIBITED.
+
+1. LICENSE GRANT
+   This Speech Studio package, including the executable, the workers,
+   and the environments prepared by setup, is the intellectual property
+   of Rainbow Technology & XYZ-Productions. You are granted only a
+   personal, non-transferable, and non-exclusive license for local use.
+
+2. STRICT ANTI-PIRACY & RESALE RESTRICTIONS
+   - You may not sell, sublicense, rent, lease, or transfer this
+     software or any part thereof to any third party.
+   - Uploading the installer to public repositories, peer-to-peer
+     networks, torrent trackers, Telegram channels, forums, or public
+     cloud storage is strictly prohibited.
+   - Any attempt to commercialize or leak this software constitutes a
+     direct violation of copyright and trade secret laws.
+
+3. LOCAL MODELS AND VOICE PROFILES
+   Downloaded models, voice profiles, and generated audio stay in the
+   install data folder. Extracting the packaged engine for separate
+   redistribution is not permitted.
+
+4. DISCLAIMER OF WARRANTIES (AS-IS)
+   This software is provided "AS IS", without warranties of
+   merchantability or fitness for any unspecified purpose. The user
+   assumes full responsibility for its local execution.
+
+--------------------------------------------------------------------
+BY CONTINUING WITH THE INSTALLATION, YOU ACKNOWLEDGE AND AGREE THAT
+YOU FULLY AGREE TO ALL THE ABOVE TERMS AND RESTRICTIONS.
+====================================================================

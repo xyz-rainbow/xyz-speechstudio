@@ -97,13 +97,20 @@
   },
   "subtitles": {
     "title": "Live Captions",
-    "subtitle": "Isolated per-app WASAPI Process Tree Loopback subtitles",
+    "subtitle": "Pick the window that is playing audio. Captions use the STT selected in Models, local or endpoint.",
     "start": "Start",
     "stop": "Stop",
     "overlay": "Overlay",
     "clear": "Clear",
-    "testOverlayHint": "Open the floating macOS Glass capsule now to verify transparent WebView2 dragging and hover controls on Windows.",
-    "sampleCaption": "Live Captions Glass Overlay ready — drag anywhere, hover for controls."
+    "testOverlayHint": "Pick the window that is playing audio. Captions use the STT selected in Models, local or endpoint.",
+    "sampleCaption": "—",
+    "activeStt": "Selected STT",
+    "noEndpoint": "No STT endpoint selected",
+    "noApps": "No windows",
+    "refreshApps": "Refresh windows",
+    "waiting": "Waiting for speech",
+    "history": "Session",
+    "working": "Starting"
   },
   "models": {
     "title": "Models & Endpoints",
@@ -168,6 +175,22 @@
     "processing": "Processing selected text…",
     "noSelection": "Could not read the selection"
   },
+  "toast": {
+    "title": "Speech Studio",
+    "playing": "Playing audio",
+    "saved": "Audio saved",
+    "deletedAudio": "Audio deleted",
+    "captionsOn": "Live captions started",
+    "captionsOff": "Live captions stopped",
+    "profileSaved": "Profile saved",
+    "profileDeleted": "Profile deleted",
+    "transcribed": "Transcription ready",
+    "ejected": "Model unloaded",
+    "modelLoaded": "Model loaded",
+    "modelRemoved": "Model removed",
+    "endpointDeleted": "Endpoint deleted",
+    "failed": "The action failed"
+  },
   "settings": {
     "title": "Settings",
     "subtitle": "Language, visual theme, storage paths, and API endpoints",
@@ -210,7 +233,7 @@
     "testConnection": "Test",
     "copyCurl": "Copy cURL",
     "hotkeySection": "Read Selection Hotkey",
-    "hotkeyHint": "Select text in any app and press the hotkey to read it aloud. Press again to pause; press with new text to restart. Clipboard is never touched.",
+    "hotkeyHint": "Select text in any app and press the hotkey to read it aloud. Press again to pause; press with new text to restart. Clipboard is never touched. The shortcut stores the physical key (Alt+Shift+Digit7, Super+Slash), not the printed character.",
     "hotkeyUnassigned": "Unassigned",
     "hotkeyPressNow": "Press the key combination… (Esc to cancel)",
     "hotkeyRecord": "Record",

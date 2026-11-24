@@ -7,6 +7,7 @@ import {
   createProfile,
   deleteProfile,
   isTauri,
+  notify,
   transcribeAudioFile,
   updateProfile,
 } from "../services/api";
@@ -21,6 +22,7 @@ interface ProfilesViewProps {
   onProfilesChange: (next: VoiceProfile[]) => void;
   onUseProfile: (id: string) => void;
   onAfterGpuAction: () => void;
+  notificationsEnabled: boolean;
 }
 
 export const ProfilesView: React.FC<ProfilesViewProps> = ({
@@ -30,6 +32,7 @@ export const ProfilesView: React.FC<ProfilesViewProps> = ({
   onProfilesChange,
   onUseProfile,
   onAfterGpuAction,
+  notificationsEnabled,
 }) => {
   const { t } = useI18n();
   const [editingId, setEditingId] = useState<string | "new" | null>(null);
@@ -101,8 +104,10 @@ export const ProfilesView: React.FC<ProfilesViewProps> = ({
       }
       setEditingId(null);
       onAfterGpuAction();
+      void notify(notificationsEnabled, t("toast.title"), t("toast.profileSaved"));
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
+      void notify(notificationsEnabled, t("toast.title"), t("toast.failed"));
     } finally {
       setBusy(false);
     }
@@ -118,6 +123,7 @@ export const ProfilesView: React.FC<ProfilesViewProps> = ({
       onAfterGpuAction();
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
+      void notify(notificationsEnabled, t("toast.title"), t("toast.failed"));
     } finally {
       setBusy(false);
     }
@@ -131,8 +137,10 @@ export const ProfilesView: React.FC<ProfilesViewProps> = ({
       const res = await transcribeAudioFile(baseUrl, { audio_path: refAudioPath.trim() });
       setRefText(res.text);
       onAfterGpuAction();
+      void notify(notificationsEnabled, t("toast.title"), t("toast.transcribed"));
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
+      void notify(notificationsEnabled, t("toast.title"), t("toast.failed"));
     } finally {
       setTranscribing(false);
     }
@@ -140,8 +148,15 @@ export const ProfilesView: React.FC<ProfilesViewProps> = ({
 
   const handleDelete = async (p: VoiceProfile) => {
     if (!baseUrl) return;
-    await deleteProfile(baseUrl, p.id);
-    onProfilesChange(profiles.filter((item) => item.id !== p.id));
+    setError(null);
+    try {
+      await deleteProfile(baseUrl, p.id);
+      onProfilesChange(profiles.filter((item) => item.id !== p.id));
+      void notify(notificationsEnabled, t("toast.title"), t("toast.profileDeleted"));
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+      void notify(notificationsEnabled, t("toast.title"), t("toast.failed"));
+    }
   };
 
   return (

@@ -1,0 +1,2 @@
+# Pendiente. El worker xtts_worker.py no está en este árbol.
+# No instalar PyTorch ni coqui-tts hasta que ese worker exista.

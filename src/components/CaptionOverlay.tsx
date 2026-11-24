@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from "react";
+import { listen } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { Eye, Pin, PinOff, Type, X } from "lucide-react";
 import { clsx } from "clsx";
@@ -8,6 +9,24 @@ export const CaptionOverlay: React.FC = () => {
   const [pinned, setPinned] = useState(true);
   const [opacity, setOpacity] = useState(0.84);
   const [fontSize, setFontSize] = useState(16);
+  const [line, setLine] = useState("");
+
+  useEffect(() => {
+    let unlisten: (() => void) | undefined;
+    listen<string>("caption", (ev) => {
+      try {
+        const body = JSON.parse(ev.payload) as { type?: string; text?: string };
+        if (body.type === "partial" || body.type === "final") {
+          setLine(body.text || "");
+        }
+      } catch {
+        /* ignore malformed events */
+      }
+    }).then((fn) => {
+      unlisten = fn;
+    });
+    return () => unlisten?.();
+  }, []);
 
   useEffect(() => {
     document.body.classList.remove("app-main");
@@ -50,7 +69,7 @@ export const CaptionOverlay: React.FC = () => {
           className="w-full text-center font-medium leading-snug line-clamp-3 text-slate-100 pointer-events-none"
           style={{ fontSize: `${fontSize}px` }}
         >
-          Live Captions Glass Overlay ready — drag anywhere, hover for controls.
+          {line || "—"}
         </p>
 
         <div className="absolute top-2 right-2.5 flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity duration-200 rounded-full px-1.5 py-1 bg-black/55 border border-white/10">
