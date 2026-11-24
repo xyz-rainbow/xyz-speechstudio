@@ -508,6 +508,8 @@ fn list_audio_apps_inner() -> Result<Vec<AudioApp>, String> {
                                 let Ok(control2) = control.cast::<IAudioSessionControl2>() else {
                                     continue;
                                 };
+                                // S_OK (0) = system sounds session; S_FALSE (1) = normal app.
+                                // Do not use HRESULT::is_ok(): SUCCEEDED(S_FALSE) is true.
                                 if control2.IsSystemSoundsSession().0 == 0 {
                                     continue;
                                 }

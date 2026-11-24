@@ -1,6 +1,7 @@
 use std::path::{Path, PathBuf};
 
 const APP_ID: &str = "com.xyz.speechstudio";
+#[cfg(any(windows, target_os = "linux"))]
 const APP_NAME: &str = "Speech Studio";
 
 /// Desktop toast branded as Speech Studio.
@@ -27,6 +28,7 @@ fn with_progress(message: &str, progress: Option<i32>) -> String {
     }
 }
 
+#[cfg(any(windows, target_os = "linux"))]
 fn find_icon(app_root: &Path) -> Option<PathBuf> {
     let mut candidates = vec![
         app_root.join("src-tauri").join("icons").join("128x128.png"),

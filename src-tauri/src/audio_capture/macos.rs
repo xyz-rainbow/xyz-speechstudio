@@ -106,7 +106,7 @@ JSON.stringify(out);
             has_audio: false,
         });
     }
-    apps.sort_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase()));
+    apps.sort_by_key(|a| a.name.to_lowercase());
     Ok(apps)
 }
 
@@ -121,7 +121,6 @@ fn find_macos_loopback_input() -> Result<String, String> {
         })?;
     let stderr = String::from_utf8_lossy(&out.stderr);
     let mut in_audio = false;
-    let mut first_audio_idx: Option<String> = None;
     for line in stderr.lines() {
         if line.contains("AVFoundation audio devices") {
             in_audio = true;
@@ -138,16 +137,14 @@ fn find_macos_loopback_input() -> Result<String, String> {
                     if low.contains("blackhole") || low.contains("loopback") || low.contains("soundflower") {
                         return Ok(format!(":{idx}"));
                     }
-                    if first_audio_idx.is_none() {
-                        first_audio_idx = Some(format!(":{idx}"));
-                    }
                 }
             }
         }
     }
-    first_audio_idx.ok_or_else(|| {
-        "No AVFoundation audio input device found. Install BlackHole or enable Microphone permission.".into()
-    })
+    Err(
+        "No virtual audio loopback device found. Install BlackHole (or similar) and set it as the system output; microphone inputs are not used for live captions."
+            .into(),
+    )
 }
 
 pub fn start_live_captions(
@@ -208,19 +205,30 @@ fn capture_loop(app: AppHandle, ws_url: String, language: String, stop: Arc<Atom
             .spawn()
             .map_err(|e| format!("Failed starting ffmpeg audio capture: {e}"))?;
 
-        let (mut socket, _) = connect(ws_url.as_str()).map_err(|e| e.to_string())?;
+        let (mut socket, _) = match connect(ws_url.as_str()) {
+            Ok(pair) => pair,
+            Err(e) => {
+                let _ = child.kill();
+                let _ = child.wait();
+                return Err(e.to_string());
+            }
+        };
         if let tungstenite::stream::MaybeTlsStream::Plain(stream) = socket.get_mut() {
-            stream
-                .set_read_timeout(Some(Duration::from_millis(40)))
-                .map_err(|e| e.to_string())?;
+            if let Err(e) = stream.set_read_timeout(Some(Duration::from_millis(40))) {
+                let _ = child.kill();
+                let _ = child.wait();
+                return Err(e.to_string());
+            }
         }
         let start = format!(
             "{{\"type\":\"start\",\"language\":{}}}",
             serde_json::to_string(&language).unwrap_or_else(|_| "\"auto\"".into())
         );
-        socket
-            .send(Message::Text(start))
-            .map_err(|e| e.to_string())?;
+        if let Err(e) = socket.send(Message::Text(start)) {
+            let _ = child.kill();
+            let _ = child.wait();
+            return Err(e.to_string());
+        }
 
         let socket = Arc::new(Mutex::new(socket));
         let reader_stop = stop.clone();

@@ -26,7 +26,9 @@ serde_json = "1"
 tungstenite = { version = "0.24", default-features = false, features = ["handshake"] }
 base64 = "0.23"
 png = "0.18"
-rfd = "0.17"
+# default-features off: rfd 0.17 defaults to xdg-portal, while tauri-plugin-dialog
+# enables gtk3 — both together panic the build script on Linux.
+rfd = { version = "0.17", default-features = false }
 
 [target.'cfg(unix)'.dependencies]
 libc = "0.2"
