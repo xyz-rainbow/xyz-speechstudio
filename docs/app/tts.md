@@ -4,7 +4,7 @@
 
 La pestaña Synthesize habla con Qwen3-TTS a través de `qwen_worker.py`.
 
-- El texto arranca vacío (`""`) sin placeholder ni texto precargado. El selector desplegable Glass agrupa `Local` (exclusivamente los modelos TTS instalados en `data/models/` o en la ruta configurada) y `Externo` debajo (endpoints TTS configurados con subtítulo de proveedor + modelo, mostrando estado vacío si aún no hay ninguno). En modo `Local`, el desplegable de perfiles muestra solo los del motor elegido; en modo `Externo`, se oculta el selector de perfil local.
+- El texto arranca vacío (`""`) sin placeholder ni texto precargado. El selector desplegable Glass agrupa `Local` (exclusivamente los modelos TTS instalados en `data/models/` o en la ruta configurada) y `Externo` debajo (endpoints TTS configurados con subtítulo de proveedor + modelo, mostrando estado vacío si aún no hay ninguno). Esa lista sigue el catálogo y los ajustes en vivo: un modelo recién descargado o un endpoint recién guardado aparece sin recargar la pestaña. En modo `Local`, el desplegable de perfiles muestra solo los del motor elegido; en modo `Externo`, se oculta el selector de perfil local.
 - Play escribe un WAV temporal en `data/tmp/` y lo reproduce (también disponible desde terminal con `speechstudio play "texto" --out salida.wav`).
 - Save guarda en el historial. Desde ahí se puede volver a guardar eligiendo carpeta, abrir la carpeta y borrar.
 - Un perfil aporta el audio de referencia, el texto de referencia y, si ya se calcularon, `.spk` y `.rvq`.
@@ -20,4 +20,4 @@ La pestaña Synthesize habla con Qwen3-TTS a través de `qwen_worker.py`.
 
 ## Pendiente
 
-- Descargar el checkpoint de XTTS v2 desde la pestaña Models y oír una síntesis real (el entorno `.venvs/xtts` ya está creado y verificado en `/health`). Ver [modelos.md](modelos.md).
+- Validar una síntesis real de XTTS. El worker, `.venvs/xtts` y los pesos ya están; una carga falló una vez por faltar `six`. Ver [modelos.md](modelos.md).

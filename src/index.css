@@ -1,7 +1,7 @@
-@import "@fontsource/inter/400.css";
-@import "@fontsource/inter/500.css";
-@import "@fontsource/inter/600.css";
-@import "@fontsource/inter/700.css";
+@import "@fontsource/space-grotesk/400.css";
+@import "@fontsource/space-grotesk/500.css";
+@import "@fontsource/space-grotesk/600.css";
+@import "@fontsource/space-grotesk/700.css";
 @import "@fontsource/jetbrains-mono/400.css";
 @import "@fontsource/jetbrains-mono/500.css";
 @import "@fontsource/jetbrains-mono/600.css";
@@ -16,7 +16,7 @@ body,
 #root {
   height: 100%;
   margin: 0;
-  font-family: "Inter", system-ui, sans-serif;
+  font-family: "Space Grotesk", system-ui, sans-serif;
   color: var(--text-primary);
 }
 
@@ -48,4 +48,54 @@ body.app-overlay {
 
 ::-webkit-scrollbar-thumb:hover {
   background: rgba(168, 85, 247, 0.45);
+}
+
+@keyframes ss-update-spin {
+  to {
+    transform: rotate(1turn);
+  }
+}
+
+.ss-update-badge {
+  position: relative;
+  isolation: isolate;
+  overflow: hidden;
+  border-radius: 12px;
+  border: 1px solid var(--border-glass);
+  background: transparent;
+  color: var(--text-muted);
+}
+
+.ss-update-badge.is-available {
+  border-color: transparent;
+  padding: 1.5px;
+}
+
+.ss-update-badge.is-available:hover {
+  box-shadow: 0 0 16px rgba(57, 255, 20, 0.45);
+}
+
+.ss-update-spin {
+  position: absolute;
+  inset: -140%;
+  background: conic-gradient(
+    from 0deg,
+    rgba(57, 255, 20, 0.15) 0deg,
+    rgba(57, 255, 20, 0.15) 250deg,
+    #39ff14 320deg,
+    #ffffff 345deg,
+    rgba(57, 255, 20, 0.15) 360deg
+  );
+  animation: ss-update-spin 2.6s linear infinite;
+}
+
+.ss-update-badge.is-available:hover .ss-update-spin {
+  animation-duration: 0.9s;
+}
+
+.ss-update-face {
+  position: relative;
+  z-index: 1;
+  border-radius: 11px;
+  background: var(--bg-surface);
 }

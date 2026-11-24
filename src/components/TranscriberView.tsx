@@ -10,7 +10,7 @@ import {
 } from "lucide-react";
 import { clsx } from "clsx";
 import { useI18n } from "../i18n";
-import { fetchModelsCatalog, notify, transcribeAudioFile } from "../services/api";
+import { notify, transcribeAudioFile } from "../services/api";
 import { pickFile } from "../services/fileDialog";
 import type { AppSettings, CatalogModelEntry, TranscriptSegment } from "../types";
 import { endpointProviderSubtitle } from "../utils/endpointPresets";
@@ -19,6 +19,7 @@ import { GlassCard } from "./GlassCard";
 
 interface TranscriberViewProps {
   baseUrl: string;
+  catalog: CatalogModelEntry[];
   settings: AppSettings;
   onSaveSettings: (next: AppSettings) => Promise<void>;
   onAfterGpuAction: () => void;
@@ -40,6 +41,7 @@ const STT_LANGS = [
 
 export const TranscriberView: React.FC<TranscriberViewProps> = ({
   baseUrl,
+  catalog,
   settings,
   onSaveSettings,
   onAfterGpuAction,
@@ -55,24 +57,11 @@ export const TranscriberView: React.FC<TranscriberViewProps> = ({
   const [error, setError] = useState<string | null>(null);
 
   const [menuOpen, setMenuOpen] = useState(false);
-  const [localModels, setLocalModels] = useState<CatalogModelEntry[]>([]);
   const menuRef = useRef<HTMLDivElement | null>(null);
-
-  useEffect(() => {
-    if (!baseUrl) return;
-    let alive = true;
-    fetchModelsCatalog(baseUrl)
-      .then((res) => {
-        if (!alive) return;
-        setLocalModels(
-          res.models.filter((m) => m.kind === "stt" && m.installed && m.runtime_supported)
-        );
-      })
-      .catch(() => {});
-    return () => {
-      alive = false;
-    };
-  }, [baseUrl]);
+  const localModels = React.useMemo(
+    () => catalog.filter((m) => m.kind === "stt" && m.installed && m.runtime_supported),
+    [catalog]
+  );
 
   useEffect(() => {
     if (!menuOpen) return;

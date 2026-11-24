@@ -49,7 +49,7 @@
     "confirmCaptions": "Subtítulos en Vivo está usando la GPU. ¿Detener subtítulos y cargar TTS?",
     "stopCaptionsAndRun": "Detener Subtítulos y Ejecutar",
     "cancel": "Cancelar",
-    "noProfiles": "Crea o extrae primero un perfil de voz.",
+    "noProfiles": "No existe ningún perfil",
     "endpointActive": "Endpoint Externo"
   },
   "profiles": {
@@ -177,7 +177,7 @@
     "quantization": "Cuantización",
     "install": "Instalar",
     "installedBadge": "Instalado",
-    "noLocalInstalled": "Sin modelos locales descargados",
+    "noLocalInstalled": "Sin Modelos",
     "searchPlaceholder": "Buscar en Hugging Face (ej. kokoro, whisper, chatterbox)...",
     "search": "Buscar",
     "prevPage": "Anterior",
@@ -254,6 +254,7 @@
     "apiPortHint": "Reinicia la app para aplicar cambios de host o puerto fijo.",
     "apiBearer": "Bearer API Key opcional",
     "apiBearerPlaceholder": "Vacío = acceso abierto en localhost",
+    "apiLanTokenRequired": "Escuchar en 0.0.0.0 exige un token Bearer no vacío. Ajustes no guarda esa combinación.",
     "generateKey": "Generar",
     "apiTtsUrl": "Endpoint TTS",
     "apiSttUrl": "Endpoint STT",
@@ -290,5 +291,24 @@
     "minimizeBtn": "Minimizar la App",
     "quitBtn": "Cerrar y Apagar",
     "remember": "Recordar mi elección"
+  },
+  "update": {
+    "badge": "Update",
+    "title": "Actualizaciones",
+    "installed": "Instalada",
+    "latest": "Última",
+    "released": "Fecha",
+    "notes": "Notas",
+    "noNotes": "Esta versión no trae notas.",
+    "check": "Buscar actualizaciones",
+    "checking": "Comprobando…",
+    "github": "Ver en GitHub",
+    "install": "Actualizar",
+    "installing": "Descargando instalador…",
+    "upToDate": "Ya tienes la última versión.",
+    "available": "Hay una versión nueva.",
+    "noAsset": "Esta release todavía no incluye un instalador para este sistema. Ábrela en GitHub.",
+    "willQuit": "Speech Studio se cerrará para que el instalador pueda sustituirla.",
+    "error": "No se pudo consultar GitHub."
   }
 }

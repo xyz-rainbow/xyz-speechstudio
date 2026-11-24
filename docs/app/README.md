@@ -7,14 +7,14 @@ Fecha de este corte: 24 de noviembre de 2026. Ruta de trabajo: `N:\` (`Z:\[🛠�
 | Documento | Qué cubre | Estado |
 | --- | --- | --- |
 | [arquitectura.md](arquitectura.md) | Procesos, entornos y quién habla con quién | Hecho. La captura en vivo no se ha oído |
-| [tts.md](tts.md) | Synthesize, perfiles, Qwen, XTTS, historial | Qwen oído. XTTS escrito, sin síntesis |
+| [tts.md](tts.md) | Synthesize, perfiles, Qwen, XTTS, historial | Qwen oído. XTTS: worker, venv y pesos; síntesis real en validación |
 | [stt.md](stt.md) | Transcribir un archivo | Hecho con faster-whisper |
 | [live-captions.md](live-captions.md) | Cómo viaja el audio capturado hasta el texto | Escrito. Sin sesión de audio real |
 | [modelos.md](modelos.md) | Catálogo, descarga y qué se puede cargar | Descarga hecha. Carga parcial |
 | [interfaz.md](interfaz.md) | Pestañas, temas, overlay | Shell hecho. Subtítulos a la espera de una captura |
-| [hotkey.md](hotkey.md) | Leer el texto seleccionado | Hecho en el `.exe`. Sin commit |
+| [hotkey.md](hotkey.md) | Leer el texto seleccionado | Hecho. El atajo está en los commits |
 | [ajustes.md](ajustes.md) | `data/settings.json` | Hecho |
 | [endpoints.md](endpoints.md) | API local y proveedores externos | Hecho |
-| [instalador.md](instalador.md) | Empaquetado y entornos `uv` | Sin empezar |
+| [instalador.md](instalador.md) | Empaquetado y entornos `uv` | Inno Setup compilado. Instalación silenciosa en `C:\Program Files (x86)\XYZ-Productions\Speech Studio`; `setup-env.ps1` salió 0 y creó los `.venvs`. `/DIR` silencioso ignoró la ruta pedida |
 
 Cada documento tiene tres bloques: **Ahora**, **Acordado** y **Pendiente**. Si un bloque no aplica, se omite.

@@ -1,83 +1,25 @@
-use std::path::Path;
-use std::process::Command;
+use std::path::{Path, PathBuf};
 
-/// Shows a desktop toast. Windows uses BurntToast. Linux (`notify-send`) and
-/// macOS (`osascript`) are implemented. CI links the Linux shell and typechecks
-/// macOS. Neither desktop session has been tried.
+const APP_ID: &str = "com.xyz.speechstudio";
+const APP_NAME: &str = "Speech Studio";
+
+/// Desktop toast branded as Speech Studio.
+///
+/// Windows uses the app id plus a Start Menu shortcut of the same name.
+/// Linux uses `notify-send -a`. macOS sends the notification from this process.
 pub fn dispatch_toast(app_root: &Path, title: &str, message: &str, progress: Option<i32>) {
     #[cfg(windows)]
     dispatch_windows(app_root, title, message, progress);
     #[cfg(target_os = "macos")]
-    {
-        let _ = app_root;
-        dispatch_macos(title, message, progress);
-    }
+    dispatch_macos(app_root, title, message, progress);
     #[cfg(target_os = "linux")]
-    {
-        let _ = app_root;
-        dispatch_linux(title, message, progress);
-    }
+    dispatch_linux(app_root, title, message, progress);
     #[cfg(not(any(windows, target_os = "macos", target_os = "linux")))]
     {
         let _ = (app_root, title, message, progress);
     }
 }
 
-#[cfg(windows)]
-fn dispatch_windows(app_root: &Path, title: &str, message: &str, progress: Option<i32>) {
-    use std::os::windows::process::CommandExt;
-    const CREATE_NO_WINDOW: u32 = 0x0800_0000;
-
-    let script = app_root.join("scripts").join("notify.ps1");
-    if !script.exists() {
-        return;
-    }
-    let mut args = vec![
-        "-NoProfile".to_string(),
-        "-ExecutionPolicy".into(),
-        "Bypass".into(),
-        "-File".into(),
-        script.to_string_lossy().into_owned(),
-        "-Title".into(),
-        title.to_string(),
-        "-Message".into(),
-        message.to_string(),
-    ];
-    if let Some(pct) = progress {
-        args.push("-Progress".into());
-        args.push(pct.clamp(0, 100).to_string());
-    }
-    let arg_refs: Vec<&str> = args.iter().map(String::as_str).collect();
-    let spawned = Command::new("pwsh")
-        .creation_flags(CREATE_NO_WINDOW)
-        .args(&arg_refs)
-        .spawn();
-    if spawned.is_err() {
-        let _ = Command::new("powershell")
-            .creation_flags(CREATE_NO_WINDOW)
-            .args(&arg_refs)
-            .spawn();
-    }
-}
-
-#[cfg(target_os = "macos")]
-fn dispatch_macos(title: &str, message: &str, progress: Option<i32>) {
-    let text = with_progress(message, progress);
-    let script = format!(
-        "display notification {} with title {}",
-        apple_string(&text),
-        apple_string(title)
-    );
-    let _ = Command::new("osascript").args(["-e", &script]).spawn();
-}
-
-#[cfg(target_os = "linux")]
-fn dispatch_linux(title: &str, message: &str, progress: Option<i32>) {
-    let text = with_progress(message, progress);
-    let _ = Command::new("notify-send").args([title, &text]).spawn();
-}
-
-#[cfg(any(target_os = "macos", target_os = "linux"))]
 fn with_progress(message: &str, progress: Option<i32>) -> String {
     match progress {
         Some(pct) => format!("{message} ({}%)", pct.clamp(0, 100)),
@@ -85,7 +27,184 @@ fn with_progress(message: &str, progress: Option<i32>) -> String {
     }
 }
 
+fn find_icon(app_root: &Path) -> Option<PathBuf> {
+    let mut candidates = vec![
+        app_root.join("src-tauri").join("icons").join("128x128.png"),
+        app_root.join("icons").join("128x128.png"),
+        app_root.join("src-tauri").join("icons").join("icon.png"),
+    ];
+    if let Ok(exe) = std::env::current_exe() {
+        if let Some(dir) = exe.parent() {
+            candidates.push(dir.join("icons").join("128x128.png"));
+            candidates.push(dir.join("128x128.png"));
+        }
+    }
+    candidates.into_iter().find(|path| path.is_file())
+}
+
+#[cfg(windows)]
+fn find_ico(app_root: &Path) -> Option<PathBuf> {
+    let mut candidates = vec![
+        app_root.join("src-tauri").join("icons").join("icon.ico"),
+        app_root.join("icons").join("icon.ico"),
+    ];
+    if let Ok(exe) = std::env::current_exe() {
+        if let Some(dir) = exe.parent() {
+            candidates.push(dir.join("icons").join("icon.ico"));
+            candidates.push(dir.join("icon.ico"));
+        }
+    }
+    candidates.into_iter().find(|path| path.is_file())
+}
+
+#[cfg(windows)]
+fn dispatch_windows(app_root: &Path, title: &str, message: &str, progress: Option<i32>) {
+    use winrt_notification::{IconCrop, Toast};
+
+    ensure_app_shortcut(app_root);
+    let body = with_progress(message, progress);
+    let built = Toast::new(APP_ID).title(title).text1(&body);
+    let shown = match find_icon(app_root) {
+        Some(icon) => built.icon(&icon, IconCrop::Square, APP_NAME).show(),
+        None => built.show(),
+    };
+    let _ = shown;
+}
+
+#[cfg(windows)]
+fn ensure_app_shortcut(app_root: &Path) {
+    use std::sync::atomic::{AtomicBool, Ordering};
+
+    static READY: AtomicBool = AtomicBool::new(false);
+    if READY.load(Ordering::Acquire) {
+        return;
+    }
+    if register_start_menu_shortcut(app_root).is_ok() {
+        READY.store(true, Ordering::Release);
+    }
+}
+
+#[cfg(windows)]
+fn register_start_menu_shortcut(app_root: &Path) -> std::io::Result<()> {
+    use std::env;
+    use windows::core::{Interface, GUID, PCWSTR};
+    use windows::Win32::Foundation::PROPERTYKEY;
+    use windows::Win32::System::Com::{
+        CoCreateInstance, CoInitializeEx, CoUninitialize, IPersistFile, CLSCTX_INPROC_SERVER,
+        COINIT_APARTMENTTHREADED,
+    };
+    use windows::Win32::UI::Shell::PropertiesSystem::IPropertyStore;
+    use windows::Win32::UI::Shell::{IShellLinkW, ShellLink};
+
+    const PKEY_APP_USER_MODEL_ID: PROPERTYKEY = PROPERTYKEY {
+        fmtid: GUID::from_u128(0x9f4c2855_9f79_4b39_a8d0_e1d42de1d5f3),
+        pid: 5,
+    };
+
+    let exe = env::current_exe()?;
+    let workdir = exe
+        .parent()
+        .map(Path::to_path_buf)
+        .ok_or_else(|| std::io::Error::other("executable has no parent directory"))?;
+    let appdata = env::var_os("APPDATA").ok_or_else(|| {
+        std::io::Error::new(std::io::ErrorKind::NotFound, "APPDATA is not set")
+    })?;
+    let shortcut = PathBuf::from(appdata)
+        .join("Microsoft")
+        .join("Windows")
+        .join("Start Menu")
+        .join("Programs")
+        .join("Speech Studio.lnk");
+    if let Some(dir) = shortcut.parent() {
+        std::fs::create_dir_all(dir)?;
+    }
+    let icon = find_ico(app_root).unwrap_or_else(|| exe.clone());
+
+    let exe_w = wide_os(exe.as_os_str());
+    let work_w = wide_os(workdir.as_os_str());
+    let icon_w = wide_os(icon.as_os_str());
+    let desc_w = wide(APP_NAME);
+    let mut app_w = wide(APP_ID);
+    let link_w = wide_os(shortcut.as_os_str());
+
+    unsafe {
+        let init = CoInitializeEx(None, COINIT_APARTMENTTHREADED);
+        let owned = init.is_ok();
+        let result = (|| -> windows::core::Result<()> {
+            let shell: IShellLinkW = CoCreateInstance(&ShellLink, None, CLSCTX_INPROC_SERVER)?;
+            shell.SetPath(PCWSTR(exe_w.as_ptr()))?;
+            shell.SetWorkingDirectory(PCWSTR(work_w.as_ptr()))?;
+            shell.SetIconLocation(PCWSTR(icon_w.as_ptr()), 0)?;
+            shell.SetDescription(PCWSTR(desc_w.as_ptr()))?;
+            let store: IPropertyStore = shell.cast()?;
+            let variant = string_propvariant(app_w.as_mut_ptr());
+            store.SetValue(&PKEY_APP_USER_MODEL_ID, &variant)?;
+            store.Commit()?;
+            let file: IPersistFile = shell.cast()?;
+            file.Save(PCWSTR(link_w.as_ptr()), true)?;
+            Ok(())
+        })();
+        if owned {
+            CoUninitialize();
+        }
+        result.map_err(|err| std::io::Error::other(err.to_string()))
+    }
+}
+
+#[cfg(windows)]
+fn wide(value: &str) -> Vec<u16> {
+    value.encode_utf16().chain(std::iter::once(0)).collect()
+}
+
+#[cfg(windows)]
+fn wide_os(value: &std::ffi::OsStr) -> Vec<u16> {
+    use std::os::windows::ffi::OsStrExt;
+    value.encode_wide().chain(std::iter::once(0)).collect()
+}
+
+#[cfg(windows)]
+fn string_propvariant(ptr: *mut u16) -> windows::Win32::System::Com::StructuredStorage::PROPVARIANT {
+    use std::mem::ManuallyDrop;
+    use windows::core::PWSTR;
+    use windows::Win32::System::Com::StructuredStorage::{
+        PROPVARIANT, PROPVARIANT_0, PROPVARIANT_0_0, PROPVARIANT_0_0_0,
+    };
+    use windows::Win32::System::Variant::VT_LPWSTR;
+    PROPVARIANT {
+        Anonymous: PROPVARIANT_0 {
+            Anonymous: ManuallyDrop::new(PROPVARIANT_0_0 {
+                vt: VT_LPWSTR,
+                wReserved1: 0,
+                wReserved2: 0,
+                wReserved3: 0,
+                Anonymous: PROPVARIANT_0_0_0 { pwszVal: PWSTR(ptr) },
+            }),
+        },
+    }
+}
+
+#[cfg(target_os = "linux")]
+fn dispatch_linux(app_root: &Path, title: &str, message: &str, progress: Option<i32>) {
+    use std::process::Command;
+    let text = with_progress(message, progress);
+    let mut cmd = Command::new("notify-send");
+    cmd.args(["-a", APP_NAME]);
+    if let Some(icon) = find_icon(app_root) {
+        cmd.arg("-i").arg(icon);
+    }
+    cmd.arg(title).arg(text);
+    let _ = cmd.spawn();
+}
+
 #[cfg(target_os = "macos")]
-fn apple_string(value: &str) -> String {
-    format!("\"{}\"", value.replace('\\', "\\\\").replace('"', "\\\""))
+fn dispatch_macos(_app_root: &Path, title: &str, message: &str, progress: Option<i32>) {
+    use mac_notification_sys::{send_notification, set_application};
+    use std::sync::Once;
+
+    static INIT: Once = Once::new();
+    INIT.call_once(|| {
+        let _ = set_application(APP_ID);
+    });
+    let text = with_progress(message, progress);
+    let _ = send_notification(title, None, &text, None);
 }

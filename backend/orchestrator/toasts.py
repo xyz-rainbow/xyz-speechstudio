@@ -1,12 +1,20 @@
-"""Desktop toasts in the language stored in settings. Linux and macOS paths are ready and not built yet."""
+"""Desktop toasts in the language stored in settings.
+
+The desktop shell drains the queue and shows them as Speech Studio.
+A headless process (no SPEECHSTUDIO_DESKTOP) falls back to notify-send
+or osascript. Windows headless does not spawn PowerShell, because that
+brands the toast as PowerShell.
+"""
 
 from __future__ import annotations
 
+import os
 import subprocess
 import sys
+import threading
 from typing import Optional
 
-from .config import APP_ROOT, load_settings
+from .config import load_settings
 
 _PHRASES = {
     "en": {
@@ -27,6 +35,9 @@ _PHRASES = {
     },
 }
 
+_lock = threading.Lock()
+_queue: list[dict] = []
+
 
 def say(key: str, **kwargs: object) -> str:
     lang = load_settings().language
@@ -35,55 +46,46 @@ def say(key: str, **kwargs: object) -> str:
     return template.format(**kwargs)
 
 
-def _quote_applescript(value: str) -> str:
-    return '"' + value.replace("\\", "\\\\").replace('"', '\\"') + '"'
+def drain() -> list[dict]:
+    with _lock:
+        items = list(_queue)
+        _queue.clear()
+        return items
 
 
 def deliver(title: str, message: str, progress: Optional[int] = None) -> None:
     settings = load_settings()
     if not settings.notifications_enabled:
         return
-    if sys.platform == "win32":
-        script = APP_ROOT / "scripts" / "notify.ps1"
-        if not script.exists():
-            return
-        shell = "pwsh"
-        cmd = [
-            shell,
-            "-NoProfile",
-            "-ExecutionPolicy",
-            "Bypass",
-            "-File",
-            str(script),
-            "-Title",
-            title,
-            "-Message",
-            message,
-        ]
-        if progress is not None:
-            cmd.extend(["-Progress", str(max(0, min(100, progress)))])
-        flags = getattr(subprocess, "CREATE_NO_WINDOW", 0)
-        try:
-            subprocess.Popen(cmd, creationflags=flags)
-        except OSError:
-            cmd[0] = "powershell"
-            try:
-                subprocess.Popen(cmd, creationflags=flags)
-            except OSError:
-                return
+    item = {
+        "title": title,
+        "message": message,
+        "progress": None if progress is None else max(0, min(100, int(progress))),
+    }
+    with _lock:
+        _queue.append(item)
+        if len(_queue) > 20:
+            del _queue[:-20]
+    if os.environ.get("SPEECHSTUDIO_DESKTOP") == "1":
         return
-    text = message if progress is None else f"{message} ({max(0, min(100, progress))}%)"
-    if sys.platform == "darwin":
-        script = (
-            f"display notification {_quote_applescript(text)} "
-            f"with title {_quote_applescript(title)}"
-        )
-        try:
-            subprocess.Popen(["osascript", "-e", script])
-        except OSError:
-            return
-        return
+    _deliver_headless(title, message, item["progress"])
+
+
+def _quote_applescript(value: str) -> str:
+    return '"' + value.replace("\\", "\\\\").replace('"', '\\"') + '"'
+
+
+def _deliver_headless(title: str, message: str, progress: Optional[int]) -> None:
+    text = message if progress is None else f"{message} ({progress}%)"
     try:
-        subprocess.Popen(["notify-send", title, text])
+        if sys.platform == "darwin":
+            script = (
+                f"display notification {_quote_applescript(text)} "
+                f"with title {_quote_applescript(title)}"
+            )
+            subprocess.Popen(["osascript", "-e", script])
+            return
+        if sys.platform.startswith("linux"):
+            subprocess.Popen(["notify-send", "-a", "Speech Studio", title, text])
     except OSError:
         return

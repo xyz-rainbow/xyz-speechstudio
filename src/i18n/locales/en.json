@@ -49,7 +49,7 @@
     "confirmCaptions": "Live Captions is active on GPU. Stop Live Captions and load TTS?",
     "stopCaptionsAndRun": "Stop Live Captions & Run",
     "cancel": "Cancel",
-    "noProfiles": "Create or build a voice profile first.",
+    "noProfiles": "No voice profile",
     "endpointActive": "External Endpoint"
   },
   "profiles": {
@@ -177,7 +177,7 @@
     "quantization": "Quantization",
     "install": "Install",
     "installedBadge": "Installed",
-    "noLocalInstalled": "No local models installed",
+    "noLocalInstalled": "No Models",
     "searchPlaceholder": "Search Hugging Face models (e.g. kokoro, whisper, chatterbox)...",
     "search": "Search",
     "prevPage": "Previous",
@@ -254,6 +254,7 @@
     "apiPortHint": "Restart app to apply host or fixed port changes.",
     "apiBearer": "Optional Bearer API Key",
     "apiBearerPlaceholder": "Leave empty for open localhost access",
+    "apiLanTokenRequired": "Listening on 0.0.0.0 requires a non-empty Bearer token. Settings will not save this combination.",
     "generateKey": "Generate",
     "apiTtsUrl": "TTS Endpoint",
     "apiSttUrl": "STT Endpoint",
@@ -290,5 +291,24 @@
     "minimizeBtn": "Minimize App",
     "quitBtn": "Close & Shut Down",
     "remember": "Remember my choice"
+  },
+  "update": {
+    "badge": "Update",
+    "title": "Updates",
+    "installed": "Installed",
+    "latest": "Latest",
+    "released": "Released",
+    "notes": "Release notes",
+    "noNotes": "This release has no notes.",
+    "check": "Check for updates",
+    "checking": "Checking…",
+    "github": "View on GitHub",
+    "install": "Update",
+    "installing": "Downloading installer…",
+    "upToDate": "You are on the latest version.",
+    "available": "A new version is available.",
+    "noAsset": "This release has no installer for this system yet. Open it on GitHub.",
+    "willQuit": "Speech Studio will close so the installer can replace it.",
+    "error": "Could not reach GitHub."
   }
 }

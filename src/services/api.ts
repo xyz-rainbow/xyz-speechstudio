@@ -172,6 +172,54 @@ export async function revealInExplorer(path: string): Promise<void> {
   await invoke("reveal_in_explorer", { path });
 }
 
+export interface UpdateAssetInfo {
+  name: string;
+  size: number;
+}
+
+export interface UpdateCheck {
+  current: string;
+  latest: string;
+  tag: string;
+  published_at: string | null;
+  notes: string;
+  html_url: string;
+  update_available: boolean;
+  platform: string;
+  asset: UpdateAssetInfo | null;
+}
+
+export async function checkForUpdate(
+  baseUrl: string,
+  current: string,
+  force = false,
+): Promise<UpdateCheck> {
+  const query = new URLSearchParams({ current, force: force ? "true" : "false" });
+  const res = await fetch(`${baseUrl}/api/updates/latest?${query}`);
+  return parseErrorOrJson<UpdateCheck>(res);
+}
+
+export async function openUpdateRelease(baseUrl: string, current: string): Promise<void> {
+  const res = await fetch(`${baseUrl}/api/updates/open`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ current }),
+  });
+  await parseErrorOrJson(res);
+}
+
+export async function installUpdate(
+  baseUrl: string,
+  current: string,
+): Promise<{ launched: boolean; quits_app: boolean; platform: string; asset_name: string }> {
+  const res = await fetch(`${baseUrl}/api/updates/install`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ current }),
+  });
+  return parseErrorOrJson(res);
+}
+
 export interface TrayLabelsPayload {
   open: string;
   show_hide: string;
@@ -428,6 +476,18 @@ export async function deleteHistoryRecord(baseUrl: string, recId: string): Promi
 export async function fetchModelsCatalog(baseUrl: string): Promise<ModelsCatalogResponse> {
   const res = await fetch(`${baseUrl}/api/models/catalog`);
   return parseErrorOrJson<ModelsCatalogResponse>(res);
+}
+
+export interface PendingToast {
+  title: string;
+  message: string;
+  progress: number | null;
+}
+
+export async function fetchPendingToasts(baseUrl: string): Promise<PendingToast[]> {
+  const res = await fetch(`${baseUrl}/api/toasts/pending`);
+  const data = await parseErrorOrJson<{ toasts: PendingToast[] }>(res);
+  return data.toasts ?? [];
 }
 
 export async function startModelDownload(

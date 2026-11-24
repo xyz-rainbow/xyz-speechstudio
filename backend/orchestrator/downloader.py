@@ -272,6 +272,66 @@ BUILTIN_MODELS: list[dict[str, Any]] = [
             },
         ],
     },
+    {
+        "id": "f5-tts-v1-base",
+        "name": "F5-TTS v1 Base",
+        "kind": "tts",
+        "engine": "f5-tts",
+        "family_id": "f5-tts",
+        "family_name": "F5-TTS",
+        "variant_label": "v1 Base (EN-centric)",
+        "repo_id": "SWivid/F5-TTS",
+        "dir_names": ["f5-tts-v1-base"],
+        "description": (
+            "Flow-matching voice clone (SWivid). English-centric base. "
+            "FP16/safetensors only — Q8/GGUF is not recommended (ODE error accumulates). "
+            "Catalog download; worker not wired yet."
+        ),
+        "runtime_supported": False,
+        "quants": [
+            {
+                "id": "fp16",
+                "label": "FP16 Safetensors",
+                "disk_mb": 1300,
+                "vram_mib": 2500,
+                "files": [
+                    "F5TTS_v1_Base/model_1250000.safetensors",
+                    "F5TTS_v1_Base/vocab.txt",
+                ],
+                "recommended": True,
+            },
+        ],
+    },
+    {
+        "id": "f5-tts-spanish",
+        "name": "F5-TTS Spanish",
+        "kind": "tts",
+        "engine": "f5-tts",
+        "family_id": "f5-tts",
+        "family_name": "F5-TTS",
+        "variant_label": "Spanish fine-tune",
+        "repo_id": "jpgallegoar/F5-Spanish",
+        "dir_names": ["f5-tts-spanish"],
+        "description": (
+            "Spanish fine-tune of F5-TTS (jpgallegoar; multi-accent ES data). "
+            "Not a single checkpoint for all languages — use v1 Base for EN, this for ES. "
+            "Catalog download; worker not wired yet."
+        ),
+        "runtime_supported": False,
+        "quants": [
+            {
+                "id": "fp16",
+                "label": "FP16 Safetensors",
+                "disk_mb": 1300,
+                "vram_mib": 2500,
+                "files": [
+                    "model_1200000.safetensors",
+                    "vocab.txt",
+                ],
+                "recommended": True,
+            },
+        ],
+    },
     # --- STT Models ---
     {
         "id": "faster-whisper-tiny",
