@@ -5,7 +5,11 @@
 
 #![cfg_attr(not(target_os = "linux"), allow(dead_code))]
 
+use std::collections::HashMap;
+
 use serde_json::Value;
+
+use super::AudioApp;
 
 #[derive(Debug, PartialEq, Eq)]
 pub struct SinkInput {
@@ -26,11 +30,40 @@ pub fn parse_sink_inputs(text: &str) -> Vec<SinkInput> {
     parse_plain(text)
 }
 
-pub fn find_sink_input(inputs: &[SinkInput], pid: u32) -> Option<u32> {
+pub fn find_sink_input(inputs: &[SinkInput], pid: u32, stream_index: Option<u32>) -> Option<u32> {
     inputs
         .iter()
-        .find(|input| input.pid == pid)
+        .find(|input| {
+            input.pid == pid
+                && stream_index
+                    .map(|index| index == input.index)
+                    .unwrap_or(true)
+        })
         .map(|input| input.index)
+}
+
+/// One row per sink-input. A pid with several streams gets ` #index` on the name.
+pub fn audio_apps_from_inputs(inputs: &[SinkInput]) -> Vec<AudioApp> {
+    let mut pid_count: HashMap<u32, usize> = HashMap::new();
+    for input in inputs {
+        *pid_count.entry(input.pid).or_default() += 1;
+    }
+    inputs
+        .iter()
+        .map(|input| {
+            let duplicated = pid_count.get(&input.pid).copied().unwrap_or(0) > 1;
+            let name = if duplicated {
+                format!("{} #{}", input.name, input.index)
+            } else {
+                input.name.clone()
+            };
+            AudioApp {
+                pid: input.pid,
+                name,
+                stream_index: Some(input.index),
+            }
+        })
+        .collect()
 }
 
 fn collect_json(value: &Value, out: &mut Vec<SinkInput>) {
@@ -169,7 +202,40 @@ mod tests {
                 name: "Firefox".into(),
             }]
         );
-        assert_eq!(find_sink_input(&parsed, 4242), Some(67));
+        assert_eq!(find_sink_input(&parsed, 4242, None), Some(67));
+    }
+
+    #[test]
+    fn same_pid_keeps_each_sink_input() {
+        let inputs = vec![
+            SinkInput {
+                index: 10,
+                pid: 5,
+                name: "Firefox".into(),
+            },
+            SinkInput {
+                index: 11,
+                pid: 5,
+                name: "Firefox".into(),
+            },
+            SinkInput {
+                index: 12,
+                pid: 9,
+                name: "mpv".into(),
+            },
+        ];
+        let apps = audio_apps_from_inputs(&inputs);
+        assert_eq!(apps.len(), 3);
+        assert_eq!(apps[0].name, "Firefox #10");
+        assert_eq!(apps[0].stream_index, Some(10));
+        assert_eq!(apps[1].name, "Firefox #11");
+        assert_eq!(apps[1].stream_index, Some(11));
+        assert_eq!(apps[2].name, "mpv");
+        assert_eq!(apps[2].stream_index, Some(12));
+        assert_eq!(find_sink_input(&inputs, 5, Some(11)), Some(11));
+        assert_eq!(find_sink_input(&inputs, 5, Some(99)), None);
+        assert_eq!(find_sink_input(&inputs, 5, None), Some(10));
+        assert_eq!(find_sink_input(&inputs, 9, Some(11)), None);
     }
 
     #[test]

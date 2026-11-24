@@ -49,7 +49,7 @@ La pestaña Subtitles elige la app, manda el audio al STT elegido y el overlay e
 
 ## Pendiente
 
-1. **Live Captions.** Confirmar con Edge o Discord que el PCM llega y el texto sale en el overlay. Parakeet y Moonshine siguen sin runtime.
+1. **Live Captions.** Confirmar con Edge o Discord que el PCM llega y el texto sale en el overlay. En Linux cada sink-input es una fila y el paro señala `parec` en cuanto publica su pid; una sesión PipeWire o Pulse no se ha oído. Parakeet y Moonshine siguen sin runtime.
 2. **XTTS v2.** `.venvs/xtts` y `xtts_worker.py`. En Synthesize la opción sigue desactivada. En Perfiles se puede elegir y no sintetiza.
 3. **Parakeet y Moonshine.** Hace falta cargarlos en el worker STT (sherpa-onnx). Hoy el worker solo acepta faster-whisper.
 4. **Idiomas.** Hay inglés y español. Faltan italiano, francés, alemán, ruso, chino simplificado, portugués, japonés, coreano, árabe con RTL e hindi.

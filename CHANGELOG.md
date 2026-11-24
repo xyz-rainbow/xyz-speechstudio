@@ -17,6 +17,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Linux (Ubuntu 24.04) development path: Tauri `cargo check`/`clippy` in CI, Unix Python venv paths (`.venvs/<name>/bin/python`), process-group orchestrator lifecycle, and README/CONTRIBUTING setup notes.
 - `BackendInfo` flags `live_captions_supported` and `read_selection_supported` so the UI can disable Windows-only features on other platforms.
 
+### Fixed
+
+- Linux live captions keep one row per sink-input. A process with several streams is chosen by that stream's index, and stop signals `parec` as soon as its process id is published. A PipeWire or PulseAudio session was not heard.
+
 ### Changed
 
 - `windows` / `windows-core` are Windows-only Cargo dependencies; `selection`, `audio_capture`, and sidecar Job Objects are gated with stubs on Linux/macOS.

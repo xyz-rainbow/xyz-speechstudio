@@ -8,7 +8,7 @@ use std::time::Duration;
 use tauri::{AppHandle, Emitter};
 use tungstenite::{connect, Message};
 
-use super::pactl::{find_sink_input, parse_sink_inputs};
+use super::pactl::{audio_apps_from_inputs, find_sink_input, parse_sink_inputs};
 use super::AudioApp;
 
 const FRAME_BYTES: usize = 3200;
@@ -52,25 +52,13 @@ fn pactl_list() -> Result<String, String> {
 }
 
 pub fn list_audio_apps() -> Result<Vec<AudioApp>, String> {
-    let inputs = parse_sink_inputs(&pactl_list()?);
-    let mut apps = Vec::new();
-    let mut seen = Vec::new();
-    for input in inputs {
-        if seen.contains(&input.pid) {
-            continue;
-        }
-        seen.push(input.pid);
-        apps.push(AudioApp {
-            pid: input.pid,
-            name: input.name,
-        });
-    }
-    Ok(apps)
+    Ok(audio_apps_from_inputs(&parse_sink_inputs(&pactl_list()?)))
 }
 
 pub fn start_live_captions(
     app: AppHandle,
     pid: u32,
+    stream_index: Option<u32>,
     ws_url: String,
     language: String,
 ) -> Result<(), String> {
@@ -83,7 +71,15 @@ pub fn start_live_captions(
     let thread_stop = stop.clone();
     let thread_pid = parec_pid.clone();
     let thread = thread::spawn(move || {
-        capture_loop(app, pid, ws_url, language, thread_stop, thread_pid);
+        capture_loop(
+            app,
+            pid,
+            stream_index,
+            ws_url,
+            language,
+            thread_stop,
+            thread_pid,
+        );
     });
     *RUN.lock().unwrap() = Some(Run {
         stop,
@@ -93,20 +89,38 @@ pub fn start_live_captions(
     Ok(())
 }
 
+fn signal_parec(pid: i32) {
+    if pid > 0 {
+        unsafe {
+            libc::kill(pid, libc::SIGTERM);
+        }
+    }
+}
+
 pub fn stop_live_captions() -> Result<(), String> {
     let mut run = RUN.lock().unwrap();
     if let Some(mut current) = run.take() {
         current.stop.store(true, Ordering::SeqCst);
-        let pid = current.parec_pid.load(Ordering::SeqCst);
-        if pid > 0 {
-            unsafe {
-                libc::kill(pid, libc::SIGTERM);
+        let slot = current.parec_pid.clone();
+        signal_parec(slot.load(Ordering::SeqCst));
+        let done = Arc::new(AtomicBool::new(false));
+        let done_flag = done.clone();
+        let killer = thread::spawn(move || {
+            while !done_flag.load(Ordering::SeqCst) {
+                let pid = slot.load(Ordering::SeqCst);
+                if pid > 0 {
+                    signal_parec(pid);
+                    break;
+                }
+                thread::sleep(Duration::from_millis(15));
             }
-        }
+        });
         if let Some(thread) = current.thread.take() {
             drop(run);
             let _ = thread.join();
         }
+        done.store(true, Ordering::SeqCst);
+        let _ = killer.join();
     }
     Ok(())
 }
@@ -114,16 +128,27 @@ pub fn stop_live_captions() -> Result<(), String> {
 fn capture_loop(
     app: AppHandle,
     pid: u32,
+    stream_index: Option<u32>,
     ws_url: String,
     language: String,
     stop: Arc<AtomicBool>,
     parec_pid: Arc<AtomicI32>,
 ) {
     let result = (|| -> Result<(), String> {
+        if stop.load(Ordering::SeqCst) {
+            return Ok(());
+        }
         let inputs = parse_sink_inputs(&pactl_list()?);
-        let index = find_sink_input(&inputs, pid).ok_or_else(|| {
-            "That application has no PulseAudio or PipeWire playback stream.".to_string()
+        let index = find_sink_input(&inputs, pid, stream_index).ok_or_else(|| {
+            if stream_index.is_some() {
+                "That playback stream is no longer active.".to_string()
+            } else {
+                "That application has no PulseAudio or PipeWire playback stream.".to_string()
+            }
         })?;
+        if stop.load(Ordering::SeqCst) {
+            return Ok(());
+        }
         let index_arg = index.to_string();
         let mut child = Command::new("parec")
             .args([
@@ -147,6 +172,12 @@ fn capture_loop(
             })?;
         let recorded_pid = i32::try_from(child.id()).unwrap_or(0);
         parec_pid.store(recorded_pid, Ordering::SeqCst);
+        if stop.load(Ordering::SeqCst) {
+            let _ = child.kill();
+            let _ = child.wait();
+            parec_pid.store(0, Ordering::SeqCst);
+            return Ok(());
+        }
 
         let (mut socket, _) = connect(ws_url.as_str()).map_err(|err| err.to_string())?;
         if let tungstenite::stream::MaybeTlsStream::Plain(stream) = socket.get_mut() {
