@@ -57,7 +57,11 @@ fn core_venv_python(app_root: &Path) -> Option<PathBuf> {
     }
     #[cfg(not(windows))]
     {
-        let path = app_root.join(".venvs").join("core").join("bin").join("python");
+        let path = app_root
+            .join(".venvs")
+            .join("core")
+            .join("bin")
+            .join("python");
         if path.exists() {
             return Some(path);
         }
@@ -94,11 +98,17 @@ pub fn resolve_app_root() -> PathBuf {
 }
 
 fn platform_caps() -> (bool, bool) {
+    // (live_captions_supported, read_selection_supported)
+    // The selection PR sets Linux to (false, true). After both merge, Linux is (true, true).
     #[cfg(windows)]
     {
         (true, true)
     }
-    #[cfg(not(windows))]
+    #[cfg(target_os = "linux")]
+    {
+        (true, false)
+    }
+    #[cfg(not(any(windows, target_os = "linux")))]
     {
         (false, false)
     }
@@ -266,7 +276,8 @@ mod windows_lifecycle {
     use windows::Win32::Foundation::{CloseHandle, HANDLE};
     use windows::Win32::System::JobObjects::{
         AssignProcessToJobObject, CreateJobObjectW, JobObjectExtendedLimitInformation,
-        SetInformationJobObject, JOBOBJECT_EXTENDED_LIMIT_INFORMATION, JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE,
+        SetInformationJobObject, JOBOBJECT_EXTENDED_LIMIT_INFORMATION,
+        JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE,
     };
 
     pub struct JobHandle(pub HANDLE);

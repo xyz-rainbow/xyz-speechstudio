@@ -1,6 +1,6 @@
 # Live Captions
 
-Los subtítulos usan el STT que esté elegido en Modelos: un faster-whisper local o un endpoint externo. La captura WASAPI está en el código. Todavía no se ha probado una sesión con audio real.
+Los subtítulos usan el STT que esté elegido en Modelos: un faster-whisper local o un endpoint externo. En Windows la captura WASAPI está en el código. En Linux el listado sale de `pactl list sink-inputs` y el audio de `parec --monitor-stream` a 16 kHz mono s16le, con el mismo socket de 100 ms. Ninguna de las dos sesiones se ha oído con audio real.
 
 ## Ahora
 
@@ -49,7 +49,12 @@ El STT de los subtítulos es el de Modelos en el momento de pulsar Iniciar. Camb
 
 Un frame de 100 ms son 3200 bytes. El worker local no escribe un WAV. El endpoint sí, porque esas APIs reciben un archivo.
 
+## Acordado
+
+En Linux el pid del listado se vuelve a resolver al sink-input actual justo antes de capturar. Si faltan `pactl` o `parec`, el error lo dice. macOS sigue sin captura. `live_captions_supported` es verdadero en Linux para que la pestaña muestre ese error en vez del aviso de plataforma.
+
 ## Pendiente
 
-- Una sesión real (Edge, Discord u otra app) que confirme que el PCM no llega en silencio y que el texto aparece en el overlay.
+- Una sesión real en Windows (Edge, Discord u otra app) que confirme que el PCM no llega en silencio y que el texto aparece en el overlay.
+- Una sesión real en Linux con PipeWire o PulseAudio. Desde esta máquina no se ha lanzado `parec`.
 - Parakeet y Moonshine no transcriben en vivo hasta que tengan runtime.
