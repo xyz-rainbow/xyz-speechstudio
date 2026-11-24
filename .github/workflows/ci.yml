@@ -1,9 +1,9 @@
 # CI for Speech Studio.
-# Default runners are self-hosted on the homelab k3s cluster (label: k3s)
-# so we do not burn GitHub-hosted minutes. macOS checks are deferred.
-# Code remains cross-platform (Windows / Linux / macOS cfg paths).
+# Default runners are self-hosted on the homelab (label: k3s) so we do not
+# burn GitHub-hosted minutes. Linux jobs run on k3s nodes; macOS runs on a
+# self-hosted Mac in the same homelab CI (labels: self-hosted,macOS,k3s).
 #
-# GitHub-hosted fallback (ubuntu/windows) only via workflow_dispatch.
+# GitHub-hosted fallback only via workflow_dispatch.
 
 name: CI
 
@@ -113,6 +113,31 @@ jobs:
         working-directory: src-tauri
         run: cargo build --locked
 
+  rust-macos:
+    name: Rust check (macOS)
+    runs-on: ${{ inputs.use_github_hosted && 'macos-latest' || fromJSON('["self-hosted","macOS","k3s"]') }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+
+      - name: Cargo check
+        working-directory: src-tauri
+        run: cargo check --locked
+
+      - name: Cargo clippy
+        working-directory: src-tauri
+        run: cargo clippy --locked --all-targets -- -D warnings
+
   # Optional: only when explicitly requested. Windows GitHub-hosted is expensive.
   rust-windows:
     name: Rust check (Windows)
@@ -134,4 +159,3 @@ jobs:
         working-directory: src-tauri
         run: cargo check --locked
 
-  # macOS: deferred. Keep writing #[cfg(target_os = "macos")] paths; no CI burn for now.
