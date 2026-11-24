@@ -688,7 +688,15 @@ def _run_tts(
                 },
             )
             if resp.status_code >= 400:
-                raise HTTPException(status_code=500, detail=f"Synthesis failed: {resp.text}")
+                detail = resp.text
+                try:
+                    payload = resp.json()
+                    if isinstance(payload, dict) and payload.get("detail"):
+                        detail = str(payload["detail"])
+                except Exception:
+                    pass
+                status = resp.status_code if 400 <= resp.status_code < 500 else 500
+                raise HTTPException(status_code=status, detail=f"Synthesis failed: {detail}")
             return resp.json(), prof.name
     if prof.engine != "qwen":
         raise HTTPException(status_code=501, detail=f"Engine '{prof.engine}' is not connected.")

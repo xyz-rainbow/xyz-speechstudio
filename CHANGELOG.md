@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- XTTS writes WAV at `output_sample_rate` (24000 Hz for the catalog checkpoint), splits text that would pass the 400-token limit, and returns the worker's 4xx status. The worker does not set `COQUI_TOS_AGREED`.
 - XTTS v2 worker (`backend/workers/xtts_worker.py`) and `POST /api/workers/xtts/load`. A profile with engine `xtts` synthesizes from its reference wav. The Synthesize model list enables XTTS and shows profiles of the selected engine. `requirements-xtts.txt` pins `coqui-tts==0.28.0`; `setup-env.ps1` also installs PyTorch with `--torch-backend=auto`. The environment was not created and a synthesis was not heard. Checkpoint weights stay out of the repo (Coqui Public Model License).
 - Linux tray: the primary click shows the main window and still opens the menu. The existing Open Speech Studio item is unchanged. Close-to-tray and quit-stops-backend were already cross-platform. Ubuntu was not tried.
 - Linux live captions list playback streams with `pactl` and capture one of them with `parec --monitor-stream` at 16 kHz mono s16le, using the same 100 ms WebSocket protocol as Windows. A PipeWire or PulseAudio session was not heard.

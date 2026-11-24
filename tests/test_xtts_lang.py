@@ -12,7 +12,7 @@ WORKER_DIR = ROOT / "backend" / "workers"
 if str(WORKER_DIR) not in sys.path:
     sys.path.insert(0, str(WORKER_DIR))
 
-from xtts_lang import xtts_language  # noqa: E402
+from xtts_lang import xtts_language, xtts_output_sample_rate  # noqa: E402
 
 
 def test_names_and_codes() -> None:
@@ -26,6 +26,19 @@ def test_names_and_codes() -> None:
 def test_unknown_lists_supported_names() -> None:
     with pytest.raises(ValueError, match="Supported languages"):
         xtts_language("Klingon")
+
+
+def test_output_sample_rate_is_the_decoder_rate() -> None:
+    class Audio:
+        sample_rate = 22050
+        output_sample_rate = 24000
+
+    class Config:
+        audio = Audio()
+
+    assert xtts_output_sample_rate(Config()) == 24000
+    assert xtts_output_sample_rate(type("C", (), {"audio": {"sample_rate": 22050, "output_sample_rate": 24000}})()) == 24000
+    assert xtts_output_sample_rate(object()) == 24000
 
 
 def test_empty_language_is_rejected() -> None:

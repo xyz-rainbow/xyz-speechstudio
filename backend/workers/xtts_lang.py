@@ -28,6 +28,21 @@ XTTS_LANGUAGES = {
 _BY_NAME = {name.casefold(): code for code, name in XTTS_LANGUAGES.items()}
 
 
+def xtts_output_sample_rate(config: object) -> int:
+    """Return the decoder rate. The checkpoint stores 22050 as the input rate."""
+    sources = (getattr(config, "audio", None), getattr(config, "model_args", None))
+    for source in sources:
+        if source is None:
+            continue
+        if isinstance(source, dict):
+            value = source.get("output_sample_rate")
+        else:
+            value = getattr(source, "output_sample_rate", None)
+        if value:
+            return int(value)
+    return 24000
+
+
 def xtts_language(value: str) -> str:
     raw = (value or "").strip()
     if not raw:

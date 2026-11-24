@@ -16,7 +16,7 @@ La pestaña Synthesize habla con Qwen3-TTS a través de `qwen_worker.py`.
 
 ## Acordado
 
-- Los pesos de XTTS no van en el repo. La descarga del catálogo es el paso de licencia (Coqui Public Model License, uso no comercial). El worker pone `COQUI_TOS_AGREED=1` para no quedarse en el prompt cuando el checkpoint ya está en disco.
+- Los pesos de XTTS no van en el repo. La descarga del catálogo es el paso de licencia (Coqui Public Model License, uso no comercial). El worker carga el checkpoint local y no define `COQUI_TOS_AGREED`.
 
 ## Pendiente
 

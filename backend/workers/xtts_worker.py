@@ -24,15 +24,15 @@ args, _ = parser.parse_known_args()
 if args.device == "cpu":
     os.environ["CUDA_VISIBLE_DEVICES"] = ""
 
-# The catalog download is the license step. This keeps the worker from
-# blocking on the Coqui prompt when the checkpoint is already on disk.
-os.environ.setdefault("COQUI_TOS_AGREED", "1")
+# Local load_checkpoint does not call Coqui's model downloader, so this
+# process does not set COQUI_TOS_AGREED. That variable would skip the CPML
+# prompt for a download this worker never starts.
 
 import uvicorn
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
 
-from xtts_lang import xtts_language
+from xtts_lang import xtts_language, xtts_output_sample_rate
 
 REQUIRED_FILES = ("config.json", "model.pth", "vocab.json", "speakers_xtts.pth")
 
@@ -54,13 +54,6 @@ class SynthRequest(BaseModel):
     lang: str = "Spanish"
     speaker_wav: str
     out_path: str
-
-
-def _sample_rate(config: object) -> int:
-    audio = getattr(config, "audio", None)
-    if isinstance(audio, dict):
-        return int(audio.get("sample_rate", 24000))
-    return int(getattr(audio, "sample_rate", 24000) or 24000)
 
 
 def save_pcm16_wav(path: Path, audio, sr: int) -> None:
@@ -183,12 +176,13 @@ def synthesize(req: SynthRequest):
             config,
             speaker_wav=str(speaker),
             language=language,
+            enable_text_splitting=True,
         )
     except Exception as exc:
         raise HTTPException(status_code=500, detail=f"XTTS synthesis failed: {exc}") from exc
 
     wav = outputs["wav"] if isinstance(outputs, dict) else outputs
-    sr = _sample_rate(config)
+    sr = xtts_output_sample_rate(config)
     elapsed = time.perf_counter() - t0
     out_p = Path(req.out_path)
     save_pcm16_wav(out_p, wav, sr)
