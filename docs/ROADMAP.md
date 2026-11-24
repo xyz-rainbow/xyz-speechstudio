@@ -39,9 +39,16 @@ Graba la tecla física (`Alt+Shift+Digit7`, `Super+Slash`), sin traducirla al ca
 
 ## A medias
 
+### Capabilities + CrispASR (ola TTS 2026-11)
+
+- Contrato `capabilities` en catálogo + UI (chips idioma, Synthesize perfiles vs voces builtin).
+- Rutas canónicas `runtime/envs/` y `runtime/bin/crispasr`.
+- Puente CLI CrispASR para Piper / F5 GGUF cuando el binario está instalado.
+- Pendiente: más backends CrispASR (Kokoro GGUF, STT Parakeet/Moonshine), validar XTTS, empaquetar crispasr en el instalador.
+
 ### Catálogo de modelos
 
-La pestaña Models descarga desde el catálogo y desde una URL de Hugging Face, con cuantización, progreso y borrado. El catálogo ya nombra XTTS v2, Parakeet, Moonshine y Fish Audio. Qwen y faster-whisper se cargan hoy. XTTS tiene worker, `.venvs/xtts` y pesos locales; una síntesis real puede seguir en validación. Parakeet, Moonshine y Fish Audio tienen `runtime_supported: false`.
+La pestaña Models descarga desde el catálogo y Hugging Face, con cuantización, progreso y borrado. Qwen y faster-whisper se cargan hoy; Piper/F5 GGUF si hay CrispASR. XTTS tiene worker; Parakeet, Moonshine y Fish siguen con `runtime_supported: false` hasta runtime.
 
 ### Overlay
 

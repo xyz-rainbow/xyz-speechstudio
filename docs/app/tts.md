@@ -2,22 +2,20 @@
 
 ## Ahora
 
-La pestaña Synthesize habla con Qwen3-TTS a través de `qwen_worker.py`.
+Synthesize elige motor según el modelo activo y su contrato `capabilities` (`install_mode`, `voice_mode`, `languages`).
 
-- El texto arranca vacío (`""`) sin placeholder ni texto precargado. El selector desplegable Glass agrupa `Local` (exclusivamente los modelos TTS instalados en `data/models/` o en la ruta configurada) y `Externo` debajo (endpoints TTS configurados con subtítulo de proveedor + modelo, mostrando estado vacío si aún no hay ninguno). Esa lista sigue el catálogo y los ajustes en vivo: un modelo recién descargado o un endpoint recién guardado aparece sin recargar la pestaña. En modo `Local`, el desplegable de perfiles muestra solo los del motor elegido; en modo `Externo`, se oculta el selector de perfil local.
-- Play escribe un WAV temporal en `data/tmp/` y lo reproduce (también disponible desde terminal con `speechstudio play "texto" --out salida.wav`).
-- Save guarda en el historial. Desde ahí se puede volver a guardar eligiendo carpeta, abrir la carpeta y borrar.
-- Un perfil aporta el audio de referencia, el texto de referencia y, si ya se calcularon, `.spk` y `.rvq`.
-- La pestaña Profiles crea, edita y borra perfiles. Puede transcribir el audio de referencia con el STT de archivos. No se crea ningún perfil pre-cargado al instalar.
-- El motor del perfil acepta `qwen` y `xtts`. Qwen sintetiza con `.spk` y `.rvq`. XTTS sintetiza con el wav de referencia del perfil, a través de `xtts_worker.py`.
-- `POST /v1/audio/speech` repite la misma síntesis. Queda apagado hasta activar la API local en Ajustes. Ver [endpoints.md](endpoints.md).
-- GPU o CPU sale de `tts_device`. En CPU el worker arranca con `CUDA_VISIBLE_DEVICES=""`.
-- Si no cabe en VRAM, el supervisor expulsa a otros workers de GPU. Si Live Captions estuviera activo, pide confirmación antes de expulsar el STT.
+- **Clone profiles** (`qwen`, `xtts`): perfiles de voz + idiomas del motor. Qwen vía `qwen_worker.py` (`.spk`/`.rvq`); XTTS vía `xtts_worker.py` (wav de referencia).
+- **Built-in voices** (`piper`, `kokoro`, …): sin selector de perfil; CTA “Instalar en Modelos” si falta pack/runtime. Idiomas = `capabilities ∩ ready` (`installed_languages` / checkpoint). Papelera opcional para quitar un pack de idioma.
+- **CrispASR** (preferido): si existe `runtime/bin/crispasr(.exe)` o `CRISPASR_BIN`, Piper y F5 GGUF F16 sintetizan por CLI (`--backend piper|f5-tts`). Ver [runtime/bin/README.md](../../runtime/bin/README.md) y `scripts/fetch-crispasr.ps1`.
+- El desplegable Glass agrupa `Local` (instalados) y `Externo` (endpoints). Play → WAV temporal; Save → historial.
+- `POST /v1/audio/speech` repite la misma síntesis (API local en Ajustes). Ver [endpoints.md](endpoints.md).
+- GPU/CPU: `tts_device`. El supervisor puede expulsar workers; Live Captions pide confirmación.
 
 ## Acordado
 
-- Los pesos de XTTS no van en el repo. La descarga del catálogo es el paso de licencia (Coqui Public Model License, uso no comercial). El worker carga el checkpoint local y no define `COQUI_TOS_AGREED`.
+- Runtime preferido: [CrispASR](https://github.com/CrispStrobe/CrispASR) para backends C++. Python en `runtime/envs/` solo donde CrispASR no cubre (XTTS, Fish tooling, Kitten2-mini si hace falta).
+- Los pesos de XTTS no van en el repo (Coqui Public Model License).
 
 ## Pendiente
 
-- Validar una síntesis real de XTTS. El worker, `.venvs/xtts` y los pesos ya están; una carga falló una vez por faltar `six`. Ver [modelos.md](modelos.md).
+- Validar síntesis real XTTS; migrar más STT/TTS a CrispASR; Kokoro cuando haya GGUF de voz en disco. Ver [modelos.md](modelos.md).
