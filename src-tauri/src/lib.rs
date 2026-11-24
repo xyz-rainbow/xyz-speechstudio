@@ -97,21 +97,57 @@ fn update_tray(app: tauri::AppHandle, labels: tray::TrayLabels) -> Result<(), St
 #[tauri::command]
 fn reveal_in_explorer(path: String) -> Result<(), String> {
     let p = std::path::Path::new(&path);
-    let mut cmd = Command::new("explorer");
-    if p.is_file() {
-        cmd.arg(format!("/select,{}", path));
-    } else {
-        cmd.arg(path);
+    #[cfg(windows)]
+    {
+        let mut cmd = Command::new("explorer");
+        if p.is_file() {
+            cmd.arg(format!("/select,{}", path));
+        } else {
+            cmd.arg(path);
+        }
+        cmd.spawn().map_err(|e| e.to_string())?;
+        Ok(())
     }
-    cmd.spawn().map_err(|e| e.to_string())?;
-    Ok(())
+    #[cfg(target_os = "macos")]
+    {
+        let mut cmd = Command::new("open");
+        if p.is_file() {
+            cmd.args(["-R", &path]);
+        } else {
+            cmd.arg(&path);
+        }
+        cmd.spawn().map_err(|e| e.to_string())?;
+        Ok(())
+    }
+    #[cfg(target_os = "linux")]
+    {
+        let reveal = if p.is_file() {
+            p.parent()
+                .map(|parent| parent.to_path_buf())
+                .unwrap_or_else(|| p.to_path_buf())
+        } else {
+            p.to_path_buf()
+        };
+        Command::new("xdg-open")
+            .arg(reveal)
+            .spawn()
+            .map_err(|e| e.to_string())?;
+        Ok(())
+    }
+    #[cfg(not(any(windows, target_os = "macos", target_os = "linux")))]
+    {
+        let _ = p;
+        Err("Reveal in file manager is not supported on this platform".to_string())
+    }
 }
 
+#[cfg(windows)]
 #[derive(serde::Deserialize)]
 struct HotkeySettings {
     read_hotkey: Option<String>,
 }
 
+#[cfg(windows)]
 fn configured_read_hotkey(app_root: &std::path::Path) -> Option<String> {
     let text = std::fs::read_to_string(app_root.join("data").join("settings.json")).ok()?;
     let parsed: HotkeySettings = serde_json::from_str(&text).ok()?;
@@ -146,10 +182,13 @@ pub fn run() {
         .manage(backend)
         .setup(|app| {
             tray::create_tray(app.handle())?;
-            let root = app.state::<BackendState>().app_root.clone();
-            if let Some(acc) = configured_read_hotkey(&root) {
-                if let Err(e) = app.global_shortcut().register(acc.as_str()) {
-                    eprintln!("[Speech Studio] Could not register read hotkey '{acc}': {e}");
+            #[cfg(windows)]
+            {
+                let root = app.state::<BackendState>().app_root.clone();
+                if let Some(acc) = configured_read_hotkey(&root) {
+                    if let Err(e) = app.global_shortcut().register(acc.as_str()) {
+                        eprintln!("[Speech Studio] Could not register read hotkey '{acc}': {e}");
+                    }
                 }
             }
             Ok(())

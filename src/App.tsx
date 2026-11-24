@@ -83,6 +83,8 @@ function MainStudio() {
     port: 0,
     pid: 0,
     base_url: "",
+    live_captions_supported: false,
+    read_selection_supported: false,
   });
   const [workers, setWorkers] = useState<WorkersSnapshot | null>(null);
 
@@ -297,6 +299,7 @@ function MainStudio() {
               baseUrl={backend.base_url}
               settings={settings}
               onAfterGpuAction={refreshSystem}
+              liveCaptionsSupported={backend.live_captions_supported}
             />
           )}
 
@@ -320,6 +323,7 @@ function MainStudio() {
               apiBaseUrl={backend.base_url || "http://127.0.0.1:0"}
               apiRunning={backend.running}
               apiPort={backend.port}
+              readSelectionSupported={backend.read_selection_supported}
               onSave={handleSaveSettings}
             />
           )}

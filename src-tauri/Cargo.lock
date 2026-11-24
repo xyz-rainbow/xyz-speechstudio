@@ -3697,6 +3697,7 @@ dependencies = [
 name = "speech-studio"
 version = "0.1.0"
 dependencies = [
+ "libc",
  "nvml-wrapper",
  "serde",
  "serde_json",

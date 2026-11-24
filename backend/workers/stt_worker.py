@@ -18,7 +18,7 @@ args, _ = parser.parse_known_args()
 # Ensure nvidia/*/bin DLLs inside this venv are discoverable by CTranslate2 on Windows.
 # Use Path.iterdir() instead of glob.glob() because bracket chars ([🛠️]) break glob wildcards.
 nvidia_root = Path(sys.prefix) / "Lib" / "site-packages" / "nvidia"
-if nvidia_root.is_dir():
+if sys.platform == "win32" and nvidia_root.is_dir():
     for pkg_dir in nvidia_root.iterdir():
         bin_dir = pkg_dir / "bin"
         if bin_dir.is_dir():

@@ -6,7 +6,7 @@ App de escritorio para Windows, local, de síntesis de voz, clonación de voz y 
 
 [![CI](https://github.com/xyz-rainbow/xyz-speechstudio/actions/workflows/ci.yml/badge.svg)](https://github.com/xyz-rainbow/xyz-speechstudio/actions/workflows/ci.yml) [![License: Proprietary](https://img.shields.io/badge/license-Proprietary-red?style=flat-square)](LICENSE) [![Windows](https://img.shields.io/badge/platform-Windows-0078d4?style=flat-square&logo=windows&logoColor=white)](https://www.microsoft.com/windows) [![Tauri](https://img.shields.io/badge/Tauri-2-24c8db?style=flat-square&logo=tauri&logoColor=white)](https://tauri.app/) [![Python](https://img.shields.io/badge/Python-3.11%2B-3776ab?style=flat-square&logo=python&logoColor=white)](https://www.python.org/)
 
-Speech Studio es un escritorio [Tauri 2](https://tauri.app/) (React + TypeScript + Rust) con un orquestador FastAPI en Python. Ejecuta **Qwen3-TTS** en local para sintetizar y clonar voces, y **faster-whisper** para transcribir archivos. El árbol actual es solo para Windows (versión `0.1.0`).
+Speech Studio es un escritorio [Tauri 2](https://tauri.app/) (React + TypeScript + Rust) con un orquestador FastAPI en Python. Ejecuta **Qwen3-TTS** en local para sintetizar y clonar voces, y **faster-whisper** para transcribir archivos. Windows es la plataforma principal (versión `0.1.0`); **Ubuntu 24.04** puede compilar y ejecutar el shell con el backend Python para desarrollo de TTS/STT. Los subtítulos en vivo, el atajo de lectura con UI Automation y los toasts de Windows siguen siendo solo Windows.
 
 ## Funciones
 
@@ -31,6 +31,25 @@ Speech Studio es un escritorio [Tauri 2](https://tauri.app/) (React + TypeScript
 - Opcional: el módulo de PowerShell [BurntToast](https://github.com/Windos/BurntToast) para los toasts.
 
 Todavía no hay instalador empaquetado ni un `requirements.txt` o script que cree los venv.
+
+### Linux (Ubuntu 24.04) — desarrollo
+
+Instala los [requisitos de Tauri en Linux](https://v2.tauri.app/start/prerequisites/), por ejemplo:
+
+```bash
+sudo apt update
+sudo apt install -y libwebkit2gtk-4.1-dev build-essential curl wget file \
+  libxdo-dev libssl-dev libayatana-appindicator3-dev librsvg2-dev
+```
+
+Usa `.venvs/<name>/bin/python` (no `Scripts/python.exe`). Ejemplo para el orquestador:
+
+```bash
+python3 -m venv .venvs/core
+.venvs/core/bin/python -m pip install fastapi uvicorn pydantic httpx huggingface_hub
+```
+
+Repite con `.venvs/qwen` y `.venvs/stt`. Después `npm install` y `npm run tauri dev`. El sidecar de Rust usa un grupo de procesos en Unix en lugar de los Job Objects de Windows. En Linux, si las notificaciones están activas, se usa `notify-send`.
 
 ## Instalación
 

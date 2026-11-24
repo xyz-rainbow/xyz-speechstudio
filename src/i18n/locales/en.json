@@ -110,7 +110,8 @@
     "refreshApps": "Refresh windows",
     "waiting": "Waiting for speech",
     "history": "Session",
-    "working": "Starting"
+    "working": "Starting",
+    "unsupportedPlatform": "Live captions require Windows process-loopback capture. They are not available on this platform yet."
   },
   "models": {
     "title": "Models & Endpoints",
@@ -233,6 +234,7 @@
     "testConnection": "Test",
     "copyCurl": "Copy cURL",
     "hotkeySection": "Read Selection Hotkey",
+    "hotkeyUnsupported": "Read-selection hotkey uses Windows UI Automation and is only available on Windows.",
     "hotkeyHint": "Select text in any app and press the hotkey to read it aloud. Press again to pause; press with new text to restart. Clipboard is never touched. The shortcut stores the physical key (Alt+Shift+Digit7, Super+Slash), not the printed character.",
     "hotkeyUnassigned": "Unassigned",
     "hotkeyPressNow": "Press the key combination… (Esc to cancel)",

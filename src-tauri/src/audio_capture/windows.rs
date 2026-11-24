@@ -7,7 +7,6 @@ use std::sync::{Arc, Condvar, Mutex};
 use std::thread::{self, JoinHandle};
 use std::time::Duration;
 
-use serde::Serialize;
 use tauri::{AppHandle, Emitter};
 use tungstenite::{connect, Message};
 use windows::Win32::Foundation::{CloseHandle, HANDLE, HWND, LPARAM};
@@ -53,11 +52,7 @@ const STOP_PARENTS: &[&str] = &[
     "winlogon.exe",
 ];
 
-#[derive(Serialize)]
-pub struct AudioApp {
-    pub pid: u32,
-    pub name: String,
-}
+use super::AudioApp;
 
 struct Run {
     stop: Arc<AtomicBool>,
@@ -261,7 +256,6 @@ unsafe extern "system" fn enum_top_window(hwnd: HWND, lparam: LPARAM) -> BOOL {
     BOOL(1)
 }
 
-#[tauri::command]
 pub fn list_audio_apps() -> Result<Vec<AudioApp>, String> {
     unsafe {
         let _ = CoInitializeEx(None, COINIT_MULTITHREADED);
@@ -698,7 +692,6 @@ fn capture_loop(
     }
 }
 
-#[tauri::command]
 pub fn start_live_captions(
     app: AppHandle,
     pid: u32,
@@ -719,7 +712,6 @@ pub fn start_live_captions(
     Ok(())
 }
 
-#[tauri::command]
 pub fn stop_live_captions() -> Result<(), String> {
     let mut run = RUN.lock().unwrap();
     if let Some(mut current) = run.take() {

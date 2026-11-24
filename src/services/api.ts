@@ -61,6 +61,8 @@ export async function getBackendInfo(): Promise<BackendInfo> {
       port: 8765,
       pid: 0,
       base_url: "http://127.0.0.1:8765",
+      live_captions_supported: false,
+      read_selection_supported: false,
     };
   }
   return invoke<BackendInfo>("get_backend_info");

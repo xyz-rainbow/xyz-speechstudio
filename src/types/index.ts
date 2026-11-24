@@ -71,6 +71,8 @@ export interface BackendInfo {
   port: number;
   pid: number;
   base_url: string;
+  live_captions_supported: boolean;
+  read_selection_supported: boolean;
 }
 
 export interface WorkerInfo {
