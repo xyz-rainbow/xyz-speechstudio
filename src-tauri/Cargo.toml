@@ -38,7 +38,7 @@ mac-notification-sys = "0.6"
 
 [target.'cfg(windows)'.dependencies]
 winrt-notification = "0.5.1"
-windows-core = "0.62"
+windows-core = "0.100"
 
 [target.'cfg(windows)'.dependencies.windows]
 version = "0.62"
