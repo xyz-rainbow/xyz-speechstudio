@@ -111,7 +111,7 @@
     "waiting": "Waiting for speech",
     "history": "Session",
     "working": "Starting",
-    "unsupportedPlatform": "Live captions require Windows process-loopback capture. They are not available on this platform yet."
+    "unsupportedPlatform": "Live captions are not available on this system yet."
   },
   "models": {
     "title": "Models & Endpoints",
@@ -174,7 +174,8 @@
   },
   "hotkey": {
     "processing": "Processing selected text…",
-    "noSelection": "Could not read the selection"
+    "noSelection": "Could not read the selection",
+    "selectionTools": "Install wl-clipboard (wl-paste) or xclip to read the primary selection. The clipboard is not used."
   },
   "toast": {
     "title": "Speech Studio",
@@ -234,8 +235,8 @@
     "testConnection": "Test",
     "copyCurl": "Copy cURL",
     "hotkeySection": "Read Selection Hotkey",
-    "hotkeyUnsupported": "Read-selection hotkey uses Windows UI Automation and is only available on Windows.",
-    "hotkeyHint": "Select text in any app and press the hotkey to read it aloud. Press again to pause; press with new text to restart. Clipboard is never touched. The shortcut stores the physical key (Alt+Shift+Digit7, Super+Slash), not the printed character.",
+    "hotkeyUnsupported": "Read-selection is not available on this system.",
+    "hotkeyHint": "Select text in any app and press the hotkey to read it aloud. Press again to pause; press with new text to restart. Windows reads the selection with UI Automation and does not use the clipboard. Linux reads only the primary selection (wl-paste --primary or xclip -selection primary) and does not use the clipboard. The shortcut stores the physical key (Alt+Shift+Digit7, Super+Slash), not the printed character.",
     "hotkeyUnassigned": "Unassigned",
     "hotkeyPressNow": "Press the key combination… (Esc to cancel)",
     "hotkeyRecord": "Record",

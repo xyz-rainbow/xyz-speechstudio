@@ -111,7 +111,7 @@
     "waiting": "Esperando voz",
     "history": "Sesión",
     "working": "Arrancando",
-    "unsupportedPlatform": "Los subtítulos en vivo requieren captura por bucle de proceso en Windows. En esta plataforma aún no están disponibles."
+    "unsupportedPlatform": "Los subtítulos en vivo todavía no están disponibles en este sistema."
   },
   "models": {
     "title": "Modelos y Endpoints",
@@ -174,7 +174,8 @@
   },
   "hotkey": {
     "processing": "Procesando texto seleccionado…",
-    "noSelection": "No se pudo leer la selección"
+    "noSelection": "No se pudo leer la selección",
+    "selectionTools": "Instala wl-clipboard (wl-paste) o xclip para leer la selección primaria. El portapapeles no se usa."
   },
   "toast": {
     "title": "Speech Studio",
@@ -234,8 +235,8 @@
     "testConnection": "Probar",
     "copyCurl": "Copiar cURL",
     "hotkeySection": "Hotkey: leer selección",
-    "hotkeyUnsupported": "El hotkey de lectura usa UI Automation de Windows y solo está disponible en Windows.",
-    "hotkeyHint": "Selecciona texto en cualquier app y pulsa el hotkey para leerlo en voz alta. Púlsalo de nuevo para pausar; con texto nuevo reinicia. Nunca toca el portapapeles. El atajo guarda la tecla física (Alt+Shift+Digit7, Super+Slash), no el carácter impreso.",
+    "hotkeyUnsupported": "La lectura de la selección no está disponible en este sistema.",
+    "hotkeyHint": "Selecciona texto en cualquier app y pulsa el hotkey para leerlo en voz alta. Púlsalo de nuevo para pausar; con texto nuevo reinicia. En Windows la lectura usa UI Automation y no toca el portapapeles. En Linux solo lee la selección primaria (wl-paste --primary o xclip -selection primary) y no usa el portapapeles. El atajo guarda la tecla física (Alt+Shift+Digit7, Super+Slash), no el carácter impreso.",
     "hotkeyUnassigned": "Sin asignar",
     "hotkeyPressNow": "Pulsa la combinación… (Esc para cancelar)",
     "hotkeyRecord": "Grabar",
