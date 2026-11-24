@@ -4,6 +4,9 @@ use serde::Serialize;
 pub struct AudioApp {
     pub pid: u32,
     pub name: String,
+    /// Sink-input index on Linux. Absent on Windows.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub stream_index: Option<u32>,
 }
 
 mod pactl;
@@ -30,16 +33,22 @@ pub fn list_audio_apps() -> Result<Vec<AudioApp>, String> {
 pub fn start_live_captions(
     app: tauri::AppHandle,
     pid: u32,
+    stream_index: Option<u32>,
     ws_url: String,
     language: String,
 ) -> Result<(), String> {
     #[cfg(windows)]
-    return windows::start_live_captions(app, pid, ws_url, language);
+    {
+        let _ = stream_index;
+        windows::start_live_captions(app, pid, ws_url, language)
+    }
     #[cfg(target_os = "linux")]
-    return linux::start_live_captions(app, pid, ws_url, language);
+    {
+        linux::start_live_captions(app, pid, stream_index, ws_url, language)
+    }
     #[cfg(not(any(windows, target_os = "linux")))]
     {
-        let _ = (app, pid, ws_url, language);
+        let _ = (app, pid, stream_index, ws_url, language);
         Err(UNSUPPORTED.into())
     }
 }

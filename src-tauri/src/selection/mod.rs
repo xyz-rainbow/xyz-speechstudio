@@ -15,6 +15,7 @@ pub struct SelectionPayload {
 }
 
 impl SelectionPayload {
+    #[cfg_attr(not(any(windows, target_os = "linux")), allow(dead_code))]
     pub(crate) fn text(text: String) -> Self {
         Self {
             text,

@@ -322,7 +322,11 @@ pub fn list_audio_apps() -> Result<Vec<AudioApp>, String> {
         }
         let mut apps: Vec<AudioApp> = found
             .into_iter()
-            .map(|(pid, (name, _))| AudioApp { pid, name })
+            .map(|(pid, (name, _))| AudioApp {
+                pid,
+                name,
+                stream_index: None,
+            })
             .collect();
         apps.sort_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase()));
         Ok(apps)

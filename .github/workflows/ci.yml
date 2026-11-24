@@ -1,6 +1,8 @@
 # Lint, test and build checks on every push/PR to main.
-# Rust checks run on Windows (full API surface) and Ubuntu 24.04 (Linux portability).
-# Packaged installers are not built here (the Python sidecars are not bundled yet).
+# Rust is typechecked on Windows, Ubuntu 24.04, and macOS.
+# Ubuntu also links the Tauri shell with `cargo build` (debug, not a package).
+# Packaged installers are not built here. The Python sidecars are not bundled,
+# and there is no AppImage, .deb, or macOS bundle.
 
 name: CI
 
@@ -80,7 +82,7 @@ jobs:
         run: cargo check --locked
 
   rust-linux:
-    name: Rust check (Linux)
+    name: Rust check and build (Linux)
     runs-on: ubuntu-24.04
     steps:
       - name: Checkout
@@ -99,6 +101,35 @@ jobs:
             libssl-dev \
             libayatana-appindicator3-dev \
             librsvg2-dev
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+
+      - name: Cargo check
+        working-directory: src-tauri
+        run: cargo check --locked
+
+      - name: Cargo clippy
+        working-directory: src-tauri
+        run: cargo clippy --locked --all-targets -- -D warnings
+
+      - name: Cargo build
+        working-directory: src-tauri
+        run: cargo build --locked
+
+  rust-macos:
+    name: Rust check (macOS)
+    runs-on: macos-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
 
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@stable

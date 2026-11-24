@@ -11,12 +11,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - XTTS writes WAV at `output_sample_rate` (24000 Hz for the catalog checkpoint), splits text that would pass the 400-token limit, and returns the worker's 4xx status. The worker does not set `COQUI_TOS_AGREED`.
 - XTTS v2 worker (`backend/workers/xtts_worker.py`) and `POST /api/workers/xtts/load`. A profile with engine `xtts` synthesizes from its reference wav. The Synthesize model list enables XTTS and shows profiles of the selected engine. `requirements-xtts.txt` pins `coqui-tts==0.28.0`; `setup-env.ps1` also installs PyTorch with `--torch-backend=auto`. The environment was not created and a synthesis was not heard. Checkpoint weights stay out of the repo (Coqui Public Model License).
+- CI links the Linux Tauri shell on Ubuntu 24.04 (`cargo build --locked`, debug) and typechecks macOS (`cargo check` and clippy). There is still no AppImage, `.deb`, or macOS bundle, and those desktops were not launched.
 - Linux tray: the primary click shows the main window and still opens the menu. The existing Open Speech Studio item is unchanged. Close-to-tray and quit-stops-backend were already cross-platform. Ubuntu was not tried.
 - Linux live captions list playback streams with `pactl` and capture one of them with `parec --monitor-stream` at 16 kHz mono s16le, using the same 100 ms WebSocket protocol as Windows. A PipeWire or PulseAudio session was not heard.
 - Linux read-selection uses only the primary selection (`wl-paste --primary`, then `xclip -selection primary`). There is no clipboard fallback. Missing tools show a translated message. A real Wayland or X11 selection was not read from this machine.
 - On Linux, `live_captions_supported` and `read_selection_supported` are both true.
 - Linux (Ubuntu 24.04) development path: Tauri `cargo check`/`clippy` in CI, Unix Python venv paths (`.venvs/<name>/bin/python`), process-group orchestrator lifecycle, and README/CONTRIBUTING setup notes.
 - `BackendInfo` flags `live_captions_supported` and `read_selection_supported` so the UI can disable Windows-only features on other platforms.
+
+### Fixed
+
+- Linux live captions keep one row per sink-input. A process with several streams is chosen by that stream's index, and stop signals `parec` as soon as its process id is published. A PipeWire or PulseAudio session was not heard.
 
 ### Changed
 

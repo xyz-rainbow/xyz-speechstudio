@@ -73,14 +73,31 @@ export async function showOverlayWindow(): Promise<void> {
   await invoke("show_overlay");
 }
 
-export async function listAudioApps(): Promise<{ pid: number; name: string }[]> {
+export interface AudioAppRow {
+  pid: number;
+  name: string;
+  stream_index?: number;
+}
+
+export async function listAudioApps(): Promise<AudioAppRow[]> {
   if (!isTauri()) return [];
   return invoke("list_audio_apps");
 }
 
-export async function startLiveCaptions(pid: number, wsUrl: string, language: string): Promise<void> {
+export async function startLiveCaptions(
+  pid: number,
+  wsUrl: string,
+  language: string,
+  streamIndex?: number,
+): Promise<void> {
   if (!isTauri()) return;
-  await invoke("start_live_captions", { pid, wsUrl, language });
+  const args: { pid: number; wsUrl: string; language: string; streamIndex?: number } = {
+    pid,
+    wsUrl,
+    language,
+  };
+  if (streamIndex != null) args.streamIndex = streamIndex;
+  await invoke("start_live_captions", args);
 }
 
 export async function stopLiveCaptions(): Promise<void> {
