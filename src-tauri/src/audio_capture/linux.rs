@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use std::io::{ErrorKind, Read};
 use std::process::{Command, Stdio};
 use std::sync::atomic::{AtomicBool, AtomicI32, Ordering};
@@ -9,7 +10,7 @@ use tauri::{AppHandle, Emitter};
 use tungstenite::{connect, Message};
 
 use super::pactl::{audio_apps_from_inputs, find_sink_input, parse_sink_inputs};
-use super::AudioApp;
+use super::{encode_png_bytes_data_url, AudioApp};
 
 const FRAME_BYTES: usize = 3200;
 
@@ -51,8 +52,59 @@ fn pactl_list() -> Result<String, String> {
     }
 }
 
+fn x11_window_map() -> HashMap<u32, (String, String)> {
+    let mut map = HashMap::new();
+    let Ok(out) = Command::new("wmctrl").args(["-lp"]).output() else {
+        return map;
+    };
+    if !out.status.success() {
+        return map;
+    }
+    let text = String::from_utf8_lossy(&out.stdout);
+    for line in text.lines() {
+        let mut parts = line.split_whitespace();
+        let Some(wid) = parts.next() else { continue };
+        let Some(_desktop) = parts.next() else { continue };
+        let Some(pid_str) = parts.next() else { continue };
+        let Ok(pid) = pid_str.parse::<u32>() else { continue };
+        let Some(_host) = parts.next() else { continue };
+        let title: String = parts.collect::<Vec<_>>().join(" ");
+        if pid > 0 && !title.trim().is_empty() {
+            map.entry(pid)
+                .or_insert_with(|| (wid.to_string(), title.trim().to_string()));
+        }
+    }
+    map
+}
+
+fn capture_x11_thumbnail(wid: &str) -> Option<String> {
+    if std::env::var_os("DISPLAY").is_none() {
+        return None;
+    }
+    let out = Command::new("import")
+        .args(["-window", wid, "-resize", "320x180", "png:-"])
+        .output()
+        .ok()?;
+    if !out.status.success() {
+        return None;
+    }
+    encode_png_bytes_data_url(&out.stdout)
+}
+
 pub fn list_audio_apps() -> Result<Vec<AudioApp>, String> {
-    Ok(audio_apps_from_inputs(&parse_sink_inputs(&pactl_list()?)))
+    let mut apps = audio_apps_from_inputs(&parse_sink_inputs(&pactl_list()?));
+    let x11 = x11_window_map();
+    for app in &mut apps {
+        if let Some((wid, title)) = x11.get(&app.pid) {
+            if let Some(base) = &app.app_name {
+                if !title.eq_ignore_ascii_case(base) {
+                    app.name = format!("{base} — {title}");
+                }
+            }
+            app.thumbnail = capture_x11_thumbnail(wid);
+        }
+    }
+    Ok(apps)
 }
 
 pub fn start_live_captions(

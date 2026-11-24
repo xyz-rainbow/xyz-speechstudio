@@ -60,7 +60,11 @@ pub fn audio_apps_from_inputs(inputs: &[SinkInput]) -> Vec<AudioApp> {
             AudioApp {
                 pid: input.pid,
                 name,
+                app_name: Some(input.name.clone()),
                 stream_index: Some(input.index),
+                thumbnail: None,
+                icon: None,
+                has_audio: true,
             }
         })
         .collect()

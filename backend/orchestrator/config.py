@@ -42,6 +42,7 @@ class AppSettings(BaseModel):
     api_bind_host: Literal["127.0.0.1", "0.0.0.0"] = "127.0.0.1"
     api_bearer_token: str = ""
     read_hotkey: str = ""
+    close_behavior: Literal["ask", "minimize", "quit"] = "ask"
     external_endpoints: list[ExternalEndpointConfig] = Field(default_factory=list)
 
 

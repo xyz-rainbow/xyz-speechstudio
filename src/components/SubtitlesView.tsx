@@ -1,10 +1,13 @@
 import { useEffect, useState } from "react";
 import { listen } from "@tauri-apps/api/event";
-import { Captions, RefreshCw } from "lucide-react";
+import { AppWindow, Captions, ChevronDown, Monitor, RefreshCw } from "lucide-react";
+import { clsx } from "clsx";
 import { BorderBeamButton } from "./BorderBeamButton";
 import { GlassCard } from "./GlassCard";
+import { WindowPickerModal } from "./WindowPickerModal";
 import { useI18n } from "../i18n";
 import {
+  fetchModelsCatalog,
   listAudioApps,
   loadSttWorker,
   notify,
@@ -43,6 +46,8 @@ export const SubtitlesView: React.FC<SubtitlesViewProps> = ({
   const { t } = useI18n();
   const [apps, setApps] = useState<AudioAppRow[]>([]);
   const [selected, setSelected] = useState("");
+  const [pickerOpen, setPickerOpen] = useState(false);
+  const [loadingApps, setLoadingApps] = useState(false);
   const [running, setRunning] = useState(false);
   const [busy, setBusy] = useState(false);
   const [live, setLive] = useState("");
@@ -53,7 +58,7 @@ export const SubtitlesView: React.FC<SubtitlesViewProps> = ({
     settings.stt_source === "endpoint"
       ? settings.external_endpoints.find((ep) => ep.id === settings.active_stt_endpoint_id)?.name ||
         t("subtitles.noEndpoint")
-      : settings.active_stt_model;
+      : settings.active_stt_model || t("models.noLocalInstalled");
 
   useEffect(() => {
     let unlisten: (() => void) | undefined;
@@ -67,6 +72,9 @@ export const SubtitlesView: React.FC<SubtitlesViewProps> = ({
       if (body.type === "error") {
         setError(body.text);
         setRunning(false);
+        if (baseUrl) {
+          void setCaptionsLock(baseUrl, false).catch(() => {});
+        }
         return;
       }
       if (body.type === "partial") {
@@ -86,10 +94,11 @@ export const SubtitlesView: React.FC<SubtitlesViewProps> = ({
       unlisten = fn;
     });
     return () => unlisten?.();
-  }, [settings.captions_max_history]);
+  }, [baseUrl, settings.captions_max_history]);
 
   const refreshApps = async () => {
     setError("");
+    setLoadingApps(true);
     try {
       const rows = await listAudioApps();
       setApps(rows);
@@ -99,6 +108,8 @@ export const SubtitlesView: React.FC<SubtitlesViewProps> = ({
       });
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setLoadingApps(false);
     }
   };
 
@@ -108,25 +119,36 @@ export const SubtitlesView: React.FC<SubtitlesViewProps> = ({
     }
   }, [liveCaptionsSupported]);
 
+  const selectedRow = apps.find((item) => rowKey(item) === selected) || null;
+
   const start = async () => {
-    const row = apps.find((item) => rowKey(item) === selected);
-    if (!baseUrl || !row) return;
+    if (!baseUrl || !selectedRow) return;
     setBusy(true);
     setError("");
     try {
       if (settings.stt_source === "local") {
-        await loadSttWorker(baseUrl, settings.active_stt_model, settings.stt_device);
+        const cat = await fetchModelsCatalog(baseUrl);
+        const runnable = cat.models.filter(
+          (m) => m.kind === "stt" && m.installed && m.runtime_supported
+        );
+        if (runnable.length === 0) {
+          throw new Error(t("subtitles.noSttInstalled"));
+        }
+        const chosen =
+          runnable.find((m) => m.id === settings.active_stt_model)?.id || runnable[0].id;
+        await loadSttWorker(baseUrl, chosen, settings.stt_device);
         onAfterGpuAction();
       }
       const wsUrl = baseUrl.replace(/^http/i, "ws") + "/api/captions/stream";
       await showOverlayWindow();
-      await startLiveCaptions(row.pid, wsUrl, "auto", row.stream_index);
+      await startLiveCaptions(selectedRow.pid, wsUrl, "auto", selectedRow.stream_index);
       await setCaptionsLock(baseUrl, true);
       setRunning(true);
       void notify(settings.notifications_enabled, t("toast.title"), t("toast.captionsOn"));
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
       setRunning(false);
+      await setCaptionsLock(baseUrl, false).catch(() => {});
       void notify(settings.notifications_enabled, t("toast.title"), t("toast.failed"));
     } finally {
       setBusy(false);
@@ -177,35 +199,65 @@ export const SubtitlesView: React.FC<SubtitlesViewProps> = ({
         </p>
       )}
 
-      <div className="flex flex-wrap items-center gap-2">
-        <select
-          value={selected}
-          onChange={(e) => setSelected(e.target.value)}
+      {/* Discord-style Selected Source Trigger + Preview Strip */}
+      <div className="flex flex-wrap items-center gap-2.5">
+        <button
+          type="button"
+          onClick={() => {
+            void refreshApps();
+            setPickerOpen(true);
+          }}
           disabled={!liveCaptionsSupported}
-          className="rounded-xl border px-2.5 py-1.5 text-xs outline-none min-w-[220px] disabled:opacity-50"
+          className="flex-1 min-w-[240px] flex items-center gap-2.5 rounded-2xl border px-3 py-2 text-left hover:border-cyan-400/60 transition-colors disabled:opacity-50"
           style={{
             backgroundColor: "var(--bg-input)",
             borderColor: "var(--border-glass)",
             color: "var(--text-primary)",
           }}
         >
-          {apps.length === 0 && <option value="">{t("subtitles.noApps")}</option>}
-          {apps.map((app) => (
-            <option key={rowKey(app)} value={rowKey(app)}>
-              {app.name} · {app.pid}
-            </option>
-          ))}
-        </select>
+          <div className="w-12 h-7 rounded-lg bg-black/80 border border-white/10 overflow-hidden flex items-center justify-center shrink-0">
+            {selectedRow?.thumbnail ? (
+              <img
+                src={selectedRow.thumbnail}
+                alt=""
+                className="w-full h-full object-cover"
+              />
+            ) : selectedRow?.icon ? (
+              <img src={selectedRow.icon} alt="" className="w-4 h-4" />
+            ) : (
+              <Monitor className="w-3.5 h-3.5 opacity-60" />
+            )}
+          </div>
+
+          <div className="min-w-0 flex-1 flex items-center gap-2">
+            {selectedRow?.icon && (
+              <img src={selectedRow.icon} alt="" className="w-4 h-4 rounded-sm shrink-0" />
+            )}
+            {!selectedRow?.icon && selectedRow && (
+              <AppWindow className="w-3.5 h-3.5 text-cyan-400 shrink-0" />
+            )}
+            <span className="text-xs font-medium truncate">
+              {selectedRow ? selectedRow.name : t("subtitles.chooseWindow")}
+            </span>
+          </div>
+
+          <span className="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-mono border border-cyan-400/35 text-cyan-300 shrink-0">
+            {t("subtitles.chooseWindow")}
+            <ChevronDown className="w-3 h-3" />
+          </span>
+        </button>
+
         <button
           type="button"
           onClick={() => void refreshApps()}
-          disabled={!liveCaptionsSupported}
-          className="p-2 rounded-xl border disabled:opacity-50"
+          disabled={!liveCaptionsSupported || loadingApps}
+          className="p-2.5 rounded-xl border disabled:opacity-50 hover:border-cyan-400/50"
           style={{ borderColor: "var(--border-glass)", color: "var(--text-secondary)" }}
           title={t("subtitles.refreshApps")}
         >
-          <RefreshCw className="w-3.5 h-3.5" />
+          <RefreshCw className={clsx("w-3.5 h-3.5", loadingApps && "animate-spin")} />
         </button>
+
         {running ? (
           <BorderBeamButton onClick={() => void stop()} disabled={busy || !liveCaptionsSupported}>
             {t("subtitles.stop")}
@@ -213,11 +265,12 @@ export const SubtitlesView: React.FC<SubtitlesViewProps> = ({
         ) : (
           <BorderBeamButton
             onClick={() => void start()}
-            disabled={busy || !selected || !liveCaptionsSupported}
+            disabled={busy || !selectedRow || !liveCaptionsSupported}
           >
             {busy ? t("subtitles.working") : t("subtitles.start")}
           </BorderBeamButton>
         )}
+
         <button
           type="button"
           onClick={() => {
@@ -256,6 +309,17 @@ export const SubtitlesView: React.FC<SubtitlesViewProps> = ({
       )}
 
       {error && <p className="text-xs text-rose-300">{error}</p>}
+
+      <WindowPickerModal
+        open={pickerOpen}
+        apps={apps}
+        selectedKey={selected}
+        loading={loadingApps}
+        rowKeyFn={rowKey}
+        onRefresh={() => void refreshApps()}
+        onSelect={setSelected}
+        onClose={() => setPickerOpen(false)}
+      />
     </GlassCard>
   );
 };

@@ -18,7 +18,7 @@ Idiomas de la interfaz: inglés (por defecto) y español. Los archivos son `src/
 
 La barra superior enseña la VRAM en vivo y el toggle GPU/CPU de TTS y de STT. El puerto del orquestador se ve en Ajustes. Además, toda la app se puede inspeccionar y controlar desde terminal con el comando global `speechstudio` (`--status`, `--models`, `--profiles`, `--config`, `play`, `transcribe`, `endpoints`).
 
-Cerrar la ventana la esconde. Salir de verdad está en la bandeja. En Windows el clic izquierdo muestra la ventana. En Linux y macOS ese clic abre el menú y, en macOS, el icono se trata como plantilla. Esas dos compilaciones siguen pendientes.
+Cerrar la ventana abre por defecto el diálogo de confirmación (`Minimizar la App` en verde lima / `Cerrar y Apagar` en rojo, con casilla opcional para recordar la elección y selector en Ajustes). El botón Salir de la bandeja ejecuta `shutdown_and_exit`, parando captions, el backend Python e icono al instante. Además, Ajustes incluye un toggle en una sola línea `Iniciar la app con el sistema (ON | OFF)` (`autostart.rs`, compatible con el Administrador de tareas de Windows usando `--minimized`, `.desktop` en Linux y `LaunchAgents` en macOS). En Windows el clic izquierdo muestra la ventana; en Linux y macOS ese clic abre el menú. Esas dos compilaciones siguen pendientes en desktop real.
 
 ## Pendiente
 

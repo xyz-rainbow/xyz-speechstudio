@@ -1,5 +1,4 @@
 import React, { useEffect, useRef, useState } from "react";
-import { open as openDialog } from "@tauri-apps/plugin-dialog";
 import {
   Check,
   ChevronDown,
@@ -11,7 +10,8 @@ import {
 } from "lucide-react";
 import { clsx } from "clsx";
 import { useI18n } from "../i18n";
-import { fetchModelsCatalog, isTauri, notify, transcribeAudioFile } from "../services/api";
+import { fetchModelsCatalog, notify, transcribeAudioFile } from "../services/api";
+import { pickFile } from "../services/fileDialog";
 import type { AppSettings, CatalogModelEntry, TranscriptSegment } from "../types";
 import { endpointProviderSubtitle } from "../utils/endpointPresets";
 import { BorderBeamButton } from "./BorderBeamButton";
@@ -128,13 +128,17 @@ export const TranscriberView: React.FC<TranscriberViewProps> = ({
   };
 
   const pickAudio = async () => {
-    if (!isTauri()) return;
-    const selected = await openDialog({
-      multiple: false,
-      filters: [{ name: "Audio", extensions: ["wav", "mp3", "m4a", "flac", "opus", "ogg"] }],
-    });
-    if (typeof selected === "string" && selected.length > 0) {
-      setAudioPath(selected);
+    setError(null);
+    try {
+      const selected = await pickFile({
+        title: t("transcriber.selectAudio"),
+        filters: [{ name: "Audio", extensions: ["wav", "mp3", "m4a", "flac", "opus", "ogg"] }],
+      });
+      if (selected) {
+        setAudioPath(selected);
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
     }
   };
 

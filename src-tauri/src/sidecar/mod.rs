@@ -107,7 +107,11 @@ fn platform_caps() -> (bool, bool) {
     {
         (true, true)
     }
-    #[cfg(not(any(windows, target_os = "linux")))]
+    #[cfg(target_os = "macos")]
+    {
+        (true, false)
+    }
+    #[cfg(not(any(windows, target_os = "linux", target_os = "macos")))]
     {
         (false, false)
     }

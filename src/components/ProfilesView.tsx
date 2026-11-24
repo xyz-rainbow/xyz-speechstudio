@@ -1,16 +1,15 @@
 import React, { useState } from "react";
-import { open as openDialog } from "@tauri-apps/plugin-dialog";
 import { CheckCircle2, Edit3, FileAudio, Loader2, Plus, Sparkles, Trash2 } from "lucide-react";
 import { useI18n } from "../i18n";
 import {
   buildProfileVoice,
   createProfile,
   deleteProfile,
-  isTauri,
   notify,
   transcribeAudioFile,
   updateProfile,
 } from "../services/api";
+import { pickFile } from "../services/fileDialog";
 import type { EngineKind, VoiceProfile } from "../types";
 import { BorderBeamButton } from "./BorderBeamButton";
 import { GlassCard } from "./GlassCard";
@@ -66,13 +65,16 @@ export const ProfilesView: React.FC<ProfilesViewProps> = ({
   };
 
   const pickAudio = async () => {
-    if (!isTauri()) return;
-    const selected = await openDialog({
-      multiple: false,
-      filters: [{ name: "Audio", extensions: ["wav", "mp3", "m4a", "flac", "ogg"] }],
-    });
-    if (typeof selected === "string" && selected.length > 0) {
-      setRefAudioPath(selected);
+    setError(null);
+    try {
+      const selected = await pickFile({
+        filters: [{ name: "Audio", extensions: ["wav", "mp3", "m4a", "flac", "ogg"] }],
+      });
+      if (selected) {
+        setRefAudioPath(selected);
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
     }
   };
 

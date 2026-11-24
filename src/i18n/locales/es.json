@@ -106,12 +106,17 @@
     "sampleCaption": "—",
     "activeStt": "STT elegido",
     "noEndpoint": "Ningún endpoint STT elegido",
-    "noApps": "Ninguna ventana",
-    "refreshApps": "Actualizar ventanas",
+    "noApps": "No hay ventanas disponibles",
+    "refreshApps": "Actualizar",
     "waiting": "Esperando voz",
     "history": "Sesión",
     "working": "Arrancando",
-    "unsupportedPlatform": "Los subtítulos en vivo todavía no están disponibles en este sistema."
+    "unsupportedPlatform": "Los subtítulos en vivo todavía no están disponibles en este sistema.",
+    "pickerTitle": "Elegir ventana o fuente de audio",
+    "chooseWindow": "Elegir ventana",
+    "searchWindows": "Buscar ventanas o apps...",
+    "noPreview": "Sin vista previa",
+    "noSttInstalled": "Aún no hay ningún modelo STT local instalado. Abre Modelos (+) para instalar Faster-Whisper."
   },
   "models": {
     "title": "Modelos y Endpoints",
@@ -270,7 +275,20 @@
     "emptyEndpoints": "Aún no hay conexiones externas configuradas en esta sección.",
     "unnamedEndpoint": "Endpoint sin título",
     "setActive": "Activar",
+    "autostartLabel": "Iniciar la app con el sistema",
+    "autostartHint": "Se inicia minimizada en la bandeja del sistema (configurable en el Administrador de tareas)",
+    "closeBehaviorLabel": "Al cerrar la ventana",
+    "closeBehaviorAsk": "Preguntar siempre",
+    "closeBehaviorMinimize": "Minimizar a la bandeja",
+    "closeBehaviorQuit": "Cerrar y apagar",
     "saved": "Ajustes guardados",
     "save": "Guardar"
+  },
+  "closeModal": {
+    "title": "Cerrar Speech Studio",
+    "body": "¿Quieres mantener Speech Studio abierto en la bandeja del sistema o cerrar y apagar los motores por completo?",
+    "minimizeBtn": "Minimizar la App",
+    "quitBtn": "Cerrar y Apagar",
+    "remember": "Recordar mi elección"
   }
 }
