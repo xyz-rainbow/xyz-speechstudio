@@ -110,7 +110,8 @@
     "refreshApps": "Actualizar ventanas",
     "waiting": "Esperando voz",
     "history": "Sesión",
-    "working": "Arrancando"
+    "working": "Arrancando",
+    "unsupportedPlatform": "Los subtítulos en vivo requieren captura por bucle de proceso en Windows. En esta plataforma aún no están disponibles."
   },
   "models": {
     "title": "Modelos y Endpoints",
@@ -233,6 +234,7 @@
     "testConnection": "Probar",
     "copyCurl": "Copiar cURL",
     "hotkeySection": "Hotkey: leer selección",
+    "hotkeyUnsupported": "El hotkey de lectura usa UI Automation de Windows y solo está disponible en Windows.",
     "hotkeyHint": "Selecciona texto en cualquier app y pulsa el hotkey para leerlo en voz alta. Púlsalo de nuevo para pausar; con texto nuevo reinicia. Nunca toca el portapapeles. El atajo guarda la tecla física (Alt+Shift+Digit7, Super+Slash), no el carácter impreso.",
     "hotkeyUnassigned": "Sin asignar",
     "hotkeyPressNow": "Pulsa la combinación… (Esc para cancelar)",

@@ -53,11 +53,7 @@ const STOP_PARENTS: &[&str] = &[
     "winlogon.exe",
 ];
 
-#[derive(Serialize)]
-pub struct AudioApp {
-    pub pid: u32,
-    pub name: String,
-}
+use super::AudioApp;
 
 struct Run {
     stop: Arc<AtomicBool>,

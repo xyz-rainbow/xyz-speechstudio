@@ -6,7 +6,7 @@ Local Windows desktop app for text-to-speech, voice cloning, and transcription.
 
 [![CI](https://github.com/xyz-rainbow/xyz-speechstudio/actions/workflows/ci.yml/badge.svg)](https://github.com/xyz-rainbow/xyz-speechstudio/actions/workflows/ci.yml) [![License: Proprietary](https://img.shields.io/badge/license-Proprietary-red?style=flat-square)](LICENSE) [![Windows](https://img.shields.io/badge/platform-Windows-0078d4?style=flat-square&logo=windows&logoColor=white)](https://www.microsoft.com/windows) [![Tauri](https://img.shields.io/badge/Tauri-2-24c8db?style=flat-square&logo=tauri&logoColor=white)](https://tauri.app/) [![Python](https://img.shields.io/badge/Python-3.11%2B-3776ab?style=flat-square&logo=python&logoColor=white)](https://www.python.org/)
 
-Speech Studio is a [Tauri 2](https://tauri.app/) desktop shell (React + TypeScript + Rust) with a Python FastAPI orchestrator. It runs **Qwen3-TTS** locally for synthesis and voice profiles, and **faster-whisper** for file transcription. The current tree is Windows-only (version `0.1.0`).
+Speech Studio is a [Tauri 2](https://tauri.app/) desktop shell (React + TypeScript + Rust) with a Python FastAPI orchestrator. It runs **Qwen3-TTS** locally for synthesis and voice profiles, and **faster-whisper** for file transcription. Windows is the primary platform (version `0.1.0`); **Ubuntu 24.04** can build and run the shell plus Python backend for TTS/STT development. Live captions, read-selection UI Automation, and Windows toasts remain Windows-only.
 
 ## Features
 
@@ -31,6 +31,25 @@ Speech Studio is a [Tauri 2](https://tauri.app/) desktop shell (React + TypeScri
 - Optional: the PowerShell [BurntToast](https://github.com/Windos/BurntToast) module for toasts.
 
 There is no packaged installer and no `requirements.txt` / venv bootstrap script in the repository yet.
+
+### Linux (Ubuntu 24.04) — development
+
+Install [Tauri prerequisites](https://v2.tauri.app/start/prerequisites/) for Linux, for example:
+
+```bash
+sudo apt update
+sudo apt install -y libwebkit2gtk-4.1-dev build-essential curl wget file \
+  libxdo-dev libssl-dev libayatana-appindicator3-dev librsvg2-dev
+```
+
+Use `.venvs/<name>/bin/python` (not `Scripts/python.exe`). Example for the orchestrator:
+
+```bash
+python3 -m venv .venvs/core
+.venvs/core/bin/python -m pip install fastapi uvicorn pydantic httpx huggingface_hub
+```
+
+Repeat for `.venvs/qwen` and `.venvs/stt`. Then `npm install` and `npm run tauri dev`. The Rust sidecar uses a process group on Unix instead of Windows Job Objects. On Linux, `notify-send` is used when notifications are enabled.
 
 ## Installation
 

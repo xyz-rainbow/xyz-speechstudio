@@ -12,7 +12,7 @@ No abras un issue público para una vulnerabilidad; usa el formulario de avisos 
 
 ## Entorno de desarrollo
 
-Hoy la app es solo para Windows. Sigue las secciones **Requisitos**, **Instalación** y **Desarrollo** de [README.es.md](README.es.md) para clonar el repo, crear los tres entornos `.venvs\\` y ejecutar `npm run tauri dev`.
+Windows es la plataforma principal. Ubuntu 24.04 sirve para compilar el shell Tauri y ejecutar el backend Python (ver **Linux (Ubuntu 24.04)** en [README.es.md](README.es.md)). Sigue **Requisitos**, **Instalación** y **Desarrollo** para clonar el repo, crear los tres entornos `.venvs/` y ejecutar `npm run tauri dev`.
 
 Comprobaciones útiles antes de subir cambios:
 
@@ -22,7 +22,7 @@ python -m compileall backend
 pytest -q
 ```
 
-El CI ejecuta el build del frontend, la compilación de Python + pytest, y `cargo check` de `src-tauri` en Windows.
+El CI ejecuta el build del frontend y la compilación de Python + pytest en Ubuntu, `cargo check` de `src-tauri` en Windows, y `cargo check` + `cargo clippy` en Ubuntu 24.04 con las dependencias apt de Tauri.
 
 ## Pull requests
 

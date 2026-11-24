@@ -5,6 +5,17 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+- Linux (Ubuntu 24.04) development path: Tauri `cargo check`/`clippy` in CI, Unix Python venv paths (`.venvs/<name>/bin/python`), process-group orchestrator lifecycle, and README/CONTRIBUTING setup notes.
+- `BackendInfo` flags `live_captions_supported` and `read_selection_supported` so the UI can disable Windows-only features on other platforms.
+
+### Changed
+
+- `windows` / `windows-core` are Windows-only Cargo dependencies; `selection`, `audio_capture`, and sidecar Job Objects are gated with stubs on Linux/macOS.
+
 ## [0.1.0] - 2026-11-24
 
 Initial public repository for Speech Studio, a Windows Tauri 2 desktop app for local TTS, voice cloning, and transcription.

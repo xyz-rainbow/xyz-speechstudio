@@ -97,14 +97,48 @@ fn update_tray(app: tauri::AppHandle, labels: tray::TrayLabels) -> Result<(), St
 #[tauri::command]
 fn reveal_in_explorer(path: String) -> Result<(), String> {
     let p = std::path::Path::new(&path);
-    let mut cmd = Command::new("explorer");
-    if p.is_file() {
-        cmd.arg(format!("/select,{}", path));
-    } else {
-        cmd.arg(path);
+    #[cfg(windows)]
+    {
+        let mut cmd = Command::new("explorer");
+        if p.is_file() {
+            cmd.arg(format!("/select,{}", path));
+        } else {
+            cmd.arg(path);
+        }
+        cmd.spawn().map_err(|e| e.to_string())?;
+        Ok(())
     }
-    cmd.spawn().map_err(|e| e.to_string())?;
-    Ok(())
+    #[cfg(target_os = "macos")]
+    {
+        let mut cmd = Command::new("open");
+        if p.is_file() {
+            cmd.args(["-R", &path]);
+        } else {
+            cmd.arg(&path);
+        }
+        cmd.spawn().map_err(|e| e.to_string())?;
+        Ok(())
+    }
+    #[cfg(target_os = "linux")]
+    {
+        let reveal = if p.is_file() {
+            p.parent()
+                .map(|parent| parent.to_path_buf())
+                .unwrap_or_else(|| p.to_path_buf())
+        } else {
+            p.to_path_buf()
+        };
+        Command::new("xdg-open")
+            .arg(reveal)
+            .spawn()
+            .map_err(|e| e.to_string())?;
+        Ok(())
+    }
+    #[cfg(not(any(windows, target_os = "macos", target_os = "linux")))]
+    {
+        let _ = p;
+        Err("Reveal in file manager is not supported on this platform".to_string())
+    }
 }
 
 #[derive(serde::Deserialize)]

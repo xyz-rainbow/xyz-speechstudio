@@ -12,7 +12,7 @@ Please do not open a public issue for a security vulnerability; use the reposito
 
 ## Development setup
 
-The app is Windows-only today. Follow the **Requirements**, **Installation**, and **Development** sections in [README.md](README.md) to clone the repo, create the three `.venvs\\` environments, and run `npm run tauri dev`.
+Windows is the primary target platform. Ubuntu 24.04 is supported for building the Tauri shell and running the Python backend (see **Linux (Ubuntu 24.04)** in [README.md](README.md)). Follow **Requirements**, **Installation**, and **Development** to clone the repo, create the three `.venvs/` environments, and run `npm run tauri dev`.
 
 Useful checks before you push:
 
@@ -22,7 +22,7 @@ python -m compileall backend
 pytest -q
 ```
 
-CI runs the frontend build, Python compile + pytest, and `cargo check` of `src-tauri` on Windows.
+CI runs the frontend build and Python compile + pytest on Ubuntu, `cargo check` of `src-tauri` on Windows, and `cargo check` + `cargo clippy` on Ubuntu 24.04 with the Tauri apt dependencies.
 
 ## Pull requests
 

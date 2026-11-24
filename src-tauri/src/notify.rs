@@ -7,9 +7,15 @@ pub fn dispatch_toast(app_root: &Path, title: &str, message: &str, progress: Opt
     #[cfg(windows)]
     dispatch_windows(app_root, title, message, progress);
     #[cfg(target_os = "macos")]
-    dispatch_macos(title, message, progress);
+    {
+        let _ = app_root;
+        dispatch_macos(title, message, progress);
+    }
     #[cfg(target_os = "linux")]
-    dispatch_linux(title, message, progress);
+    {
+        let _ = app_root;
+        dispatch_linux(title, message, progress);
+    }
     #[cfg(not(any(windows, target_os = "macos", target_os = "linux")))]
     {
         let _ = (app_root, title, message, progress);

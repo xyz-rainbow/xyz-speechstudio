@@ -25,12 +25,14 @@ interface SubtitlesViewProps {
   baseUrl: string;
   settings: AppSettings;
   onAfterGpuAction: () => void;
+  liveCaptionsSupported: boolean;
 }
 
 export const SubtitlesView: React.FC<SubtitlesViewProps> = ({
   baseUrl,
   settings,
   onAfterGpuAction,
+  liveCaptionsSupported,
 }) => {
   const { t } = useI18n();
   const [apps, setApps] = useState<{ pid: number; name: string }[]>([]);
@@ -92,8 +94,10 @@ export const SubtitlesView: React.FC<SubtitlesViewProps> = ({
   };
 
   useEffect(() => {
-    void refreshApps();
-  }, []);
+    if (liveCaptionsSupported) {
+      void refreshApps();
+    }
+  }, [liveCaptionsSupported]);
 
   const start = async () => {
     if (!baseUrl || !pid) return;
@@ -157,11 +161,18 @@ export const SubtitlesView: React.FC<SubtitlesViewProps> = ({
         <span className="text-xs font-mono">{activeLabel}</span>
       </div>
 
+      {!liveCaptionsSupported && (
+        <p className="text-xs" style={{ color: "var(--text-secondary)" }}>
+          {t("subtitles.unsupportedPlatform")}
+        </p>
+      )}
+
       <div className="flex flex-wrap items-center gap-2">
         <select
           value={pid || ""}
           onChange={(e) => setPid(Number(e.target.value))}
-          className="rounded-xl border px-2.5 py-1.5 text-xs outline-none min-w-[220px]"
+          disabled={!liveCaptionsSupported}
+          className="rounded-xl border px-2.5 py-1.5 text-xs outline-none min-w-[220px] disabled:opacity-50"
           style={{
             backgroundColor: "var(--bg-input)",
             borderColor: "var(--border-glass)",
@@ -178,18 +189,22 @@ export const SubtitlesView: React.FC<SubtitlesViewProps> = ({
         <button
           type="button"
           onClick={() => void refreshApps()}
-          className="p-2 rounded-xl border"
+          disabled={!liveCaptionsSupported}
+          className="p-2 rounded-xl border disabled:opacity-50"
           style={{ borderColor: "var(--border-glass)", color: "var(--text-secondary)" }}
           title={t("subtitles.refreshApps")}
         >
           <RefreshCw className="w-3.5 h-3.5" />
         </button>
         {running ? (
-          <BorderBeamButton onClick={() => void stop()} disabled={busy}>
+          <BorderBeamButton onClick={() => void stop()} disabled={busy || !liveCaptionsSupported}>
             {t("subtitles.stop")}
           </BorderBeamButton>
         ) : (
-          <BorderBeamButton onClick={() => void start()} disabled={busy || !pid}>
+          <BorderBeamButton
+            onClick={() => void start()}
+            disabled={busy || !pid || !liveCaptionsSupported}
+          >
             {busy ? t("subtitles.working") : t("subtitles.start")}
           </BorderBeamButton>
         )}

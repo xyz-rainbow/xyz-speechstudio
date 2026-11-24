@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import subprocess
+import sys
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -60,7 +61,10 @@ class WorkerSupervisor:
     live_captions_active: bool = False
 
     def venv_python(self, family: str) -> Path:
-        return APP_ROOT / ".venvs" / family / "Scripts" / "python.exe"
+        base = APP_ROOT / ".venvs" / family
+        if sys.platform == "win32":
+            return base / "Scripts" / "python.exe"
+        return base / "bin" / "python"
 
     def worker_script(self, family: str) -> Path:
         return APP_ROOT / "backend" / "workers" / f"{family}_worker.py"

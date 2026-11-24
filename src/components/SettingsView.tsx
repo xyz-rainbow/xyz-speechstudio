@@ -45,6 +45,7 @@ interface SettingsViewProps {
   apiBaseUrl: string;
   apiRunning: boolean;
   apiPort: number;
+  readSelectionSupported: boolean;
   onSave: (next: AppSettings) => Promise<void>;
 }
 
@@ -76,6 +77,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
   apiBaseUrl,
   apiRunning,
   apiPort,
+  readSelectionSupported,
   onSave,
 }) => {
   const { t } = useI18n();
@@ -480,7 +482,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
             <span>{t("settings.hotkeySection")}</span>
           </div>
           <span className="text-[11px]" style={{ color: "var(--text-muted)" }}>
-            {t("settings.hotkeyHint")}
+            {readSelectionSupported ? t("settings.hotkeyHint") : t("settings.hotkeyUnsupported")}
           </span>
           <div className="flex items-center justify-between gap-2">
             <div
@@ -492,6 +494,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                 backgroundColor: "var(--bg-input)",
                 borderColor: recordingHotkey ? undefined : "var(--border-glass)",
                 color: draft.read_hotkey ? "var(--text-primary)" : "var(--text-muted)",
+                opacity: readSelectionSupported ? 1 : 0.5,
               }}
             >
               {recordingHotkey
@@ -502,18 +505,19 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
             </div>
             <button
               type="button"
+              disabled={!readSelectionSupported}
               onClick={() => {
                 setHotkeyError(null);
                 setRecordingHotkey((v) => !v);
               }}
-              className="rounded-xl border px-3 py-1.5 text-xs font-medium hover:border-cyan-400/50"
+              className="rounded-xl border px-3 py-1.5 text-xs font-medium hover:border-cyan-400/50 disabled:opacity-40"
               style={{ borderColor: "var(--border-glass)", backgroundColor: "var(--bg-elevated)" }}
             >
               {recordingHotkey ? t("models.cancel") : t("settings.hotkeyRecord")}
             </button>
             <button
               type="button"
-              disabled={!draft.read_hotkey}
+              disabled={!draft.read_hotkey || !readSelectionSupported}
               onClick={clearHotkey}
               className="inline-flex items-center gap-1 rounded-xl border px-3 py-1.5 text-xs font-medium disabled:opacity-40 hover:border-rose-400/50"
               style={{ borderColor: "var(--border-glass)", backgroundColor: "var(--bg-elevated)" }}
