@@ -164,6 +164,20 @@ def _verify_local_api_access(request: Request, settings: AppSettings) -> None:
             raise HTTPException(status_code=401, detail="Invalid or missing Bearer token.")
 
 
+def _require_bearer_for_non_loopback(request: Request, settings: AppSettings) -> None:
+    """When bound on 0.0.0.0, LAN clients must present the configured Bearer token.
+
+    Loopback UI (Tauri → 127.0.0.1) stays unauthenticated so the tray/badge keep working.
+    """
+    client = (request.client.host if request.client else "") or ""
+    if client in {"127.0.0.1", "::1", "localhost"}:
+        return
+    token = settings.api_bearer_token.strip()
+    auth = request.headers.get("authorization", "")
+    if not token or auth != f"Bearer {token}":
+        raise HTTPException(status_code=401, detail="Invalid or missing Bearer token.")
+
+
 def _find_endpoint(settings: AppSettings, ep_id: str) -> external_providers.ExternalEndpointConfig:
     for ep in settings.external_endpoints:
         if ep.id == ep_id:
@@ -450,7 +464,8 @@ def updates_latest(current: str = "0.0.0", force: bool = False):
 
 
 @app.post("/api/updates/open")
-def updates_open(payload: UpdateCurrentRequest):
+def updates_open(payload: UpdateCurrentRequest, request: Request):
+    _require_bearer_for_non_loopback(request, load_settings())
     try:
         url = updates.open_release_page(payload.current)
     except updates.UpdateError as exc:
@@ -459,7 +474,8 @@ def updates_open(payload: UpdateCurrentRequest):
 
 
 @app.post("/api/updates/install")
-def updates_install(payload: UpdateCurrentRequest):
+def updates_install(payload: UpdateCurrentRequest, request: Request):
+    _require_bearer_for_non_loopback(request, load_settings())
     try:
         return updates.install_latest(payload.current)
     except updates.UpdateError as exc:
