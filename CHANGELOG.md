@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Set package, crate and project license metadata to the proprietary LICENSE and README license badges to Proprietary.
+
 - Adopted the Rainbow Technology proprietary license (all rights reserved). Contributions are assigned to Rainbow Technology as described in LICENSE.
 - Fixed README badges: native GitHub CI badge, static license/platform badges, and removed the release badge (no installable release yet).
 
