@@ -12,14 +12,15 @@ Hace falta al menos un modificador. Escape a solas cancela la grabación. Escape
 
 Pulsar el atajo otra vez con el mismo texto pausa o sigue. Con otro texto, corta y empieza. Si no hay selección, un toast lo dice.
 
-La bandeja tiene mostrar/ocultar, subtítulos y salir. Las etiquetas cambian con el idioma. Una segunda instancia solo trae la ventana al frente.
+La bandeja tiene abrir, mostrar/ocultar, subtítulos y salir. Las etiquetas cambian con el idioma. En Windows el clic izquierdo muestra la ventana. En Linux ese clic abre el menú y también muestra la ventana; la entrada «Open Speech Studio» hace lo mismo. En macOS el clic primario abre el menú. Cerrar la ventana la oculta. Salir para el backend. Una segunda instancia solo trae la ventana al frente.
 
-Este comportamiento está en el `.exe` compilado el 24 de noviembre de 2026.
+La lectura de la selección y el hotkey de este documento están en el `.exe` compilado el 24 de noviembre de 2026. El clic de la bandeja en Linux está en el código y no se ha probado en Ubuntu.
 
 ## Acordado
 
-Windows sigue con UI Automation. Linux no lee el portapapeles. macOS sigue sin esta lectura.
+Cerrar la ventana no sale de la app: la oculta. Salir, desde la bandeja, para el backend. Windows sigue con UI Automation. Linux no lee el portapapeles. macOS sigue sin esta lectura.
 
 ## Pendiente
 
-Probar la selección primaria en Wayland y en X11. Desde esta máquina no se ha leído una selección real.
+- Probar la bandeja en GNOME (extensión AppIndicator) y en KDE.
+- Probar la selección primaria en Wayland y en X11. Desde esta máquina no se ha leído una selección real.
