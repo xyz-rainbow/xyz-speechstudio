@@ -94,11 +94,17 @@ pub fn resolve_app_root() -> PathBuf {
 }
 
 fn platform_caps() -> (bool, bool) {
+    // (live_captions_supported, read_selection_supported)
+    // The captions PR sets Linux to (true, false). After both merge, Linux is (true, true).
     #[cfg(windows)]
     {
         (true, true)
     }
-    #[cfg(not(windows))]
+    #[cfg(target_os = "linux")]
+    {
+        (false, true)
+    }
+    #[cfg(not(any(windows, target_os = "linux")))]
     {
         (false, false)
     }
