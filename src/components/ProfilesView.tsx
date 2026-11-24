@@ -211,7 +211,7 @@ export const ProfilesView: React.FC<ProfilesViewProps> = ({
               }}
             >
               <option value="qwen">Qwen3-TTS</option>
-              <option value="xtts">XTTS v2 (Phase 4)</option>
+              <option value="xtts">XTTS v2</option>
             </select>
           </div>
 

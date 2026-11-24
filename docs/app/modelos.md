@@ -12,7 +12,7 @@ Qué puede cargar el runtime hoy:
 | --- | --- | --- |
 | Qwen3-TTS 1.7B Base y CustomVoice | `qwen` | Sí |
 | faster-whisper tiny, base, small, medium, large-v3-turbo | `faster-whisper` | Sí |
-| XTTS v2 | `xtts` | No. `runtime_supported: false` |
+| XTTS v2 | `xtts` | Sí, si el checkpoint y `.venvs/xtts` existen. El entorno no se ha creado |
 | Parakeet TDT 0.6B v3 | `onnx-asr` | No |
 | Moonshine Base | `onnx-asr` | No |
 
@@ -22,4 +22,4 @@ Antes de cargar, el supervisor mira la VRAM libre. Si el modelo no cabe en la VR
 
 ## Pendiente
 
-Conectar la carga de XTTS, Parakeet y Moonshine cuando existan sus workers. Hasta entonces las tarjetas pueden descargarse y no pueden entrar en GPU.
+Crear `.venvs/xtts` y descargar el checkpoint de XTTS. Parakeet y Moonshine siguen sin worker: sus tarjetas pueden descargarse y no entran en GPU.

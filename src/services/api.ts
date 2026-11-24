@@ -206,6 +206,24 @@ export async function loadQwenWorker(
   return parseErrorOrJson<WorkersSnapshot>(res);
 }
 
+export async function loadXttsWorker(
+  baseUrl: string,
+  device?: DeviceMode,
+  forceStopCaptions = false,
+  modelId?: string
+): Promise<WorkersSnapshot> {
+  const res = await fetch(`${baseUrl}/api/workers/xtts/load`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      model_id: modelId ?? null,
+      device: device ?? null,
+      force_stop_captions: forceStopCaptions,
+    }),
+  });
+  return parseErrorOrJson<WorkersSnapshot>(res);
+}
+
 export async function loadSttWorker(
   baseUrl: string,
   modelId?: string,

@@ -7,7 +7,7 @@ Fecha de este corte: 24 de noviembre de 2026. Ruta de trabajo: `N:\` (`Z:\[🛠�
 | Documento | Qué cubre | Estado |
 | --- | --- | --- |
 | [arquitectura.md](arquitectura.md) | Procesos, entornos y quién habla con quién | Hecho. La captura en vivo no se ha oído |
-| [tts.md](tts.md) | Synthesize, perfiles, Qwen, historial | Hecho para Qwen. XTTS reservado |
+| [tts.md](tts.md) | Synthesize, perfiles, Qwen, XTTS, historial | Qwen oído. XTTS escrito, sin síntesis |
 | [stt.md](stt.md) | Transcribir un archivo | Hecho con faster-whisper |
 | [live-captions.md](live-captions.md) | Cómo viaja el audio capturado hasta el texto | Escrito. Sin sesión de audio real |
 | [modelos.md](modelos.md) | Catálogo, descarga y qué se puede cargar | Descarga hecha. Carga parcial |

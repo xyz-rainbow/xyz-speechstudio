@@ -50,7 +50,7 @@ La pestaña Subtitles elige la app, manda el audio al STT elegido y el overlay e
 ## Pendiente
 
 1. **Live Captions.** Confirmar con Edge o Discord que el PCM llega y el texto sale en el overlay. En Linux cada sink-input es una fila y el paro señala `parec` en cuanto publica su pid; una sesión PipeWire o Pulse no se ha oído. Parakeet y Moonshine siguen sin runtime.
-2. **XTTS v2.** `.venvs/xtts` y `xtts_worker.py`. En Synthesize la opción sigue desactivada. En Perfiles se puede elegir y no sintetiza.
+2. **XTTS v2.** `xtts_worker.py` ya sintetiza con el wav de referencia y el selector ya deja elegirlo. Falta crear `.venvs/xtts` y oír una síntesis. Los pesos usan la Coqui Public Model License y no van en el repo.
 3. **Parakeet y Moonshine.** Hace falta cargarlos en el worker STT (sherpa-onnx). Hoy el worker solo acepta faster-whisper.
 4. **Idiomas.** Hay inglés y español. Faltan italiano, francés, alemán, ruso, chino simplificado, portugués, japonés, coreano, árabe con RTL e hindi.
 5. **Instalador.** La plantilla Inno Setup ya está en `installer/windows/` con el arte de xyz-installer y destino en Archivos de programa. Falta ejecutar el setup en limpio. `xtts` sigue sin entorno. Ver [docs/app/instalador.md](app/instalador.md).
@@ -58,4 +58,4 @@ La pestaña Subtitles elige la app, manda el audio al STT elegido y el overlay e
 
 ## Por dónde seguir
 
-Lo siguiente es oír una captura real. XTTS sigue siendo el motor de después, porque el perfil y el selector ya lo reservan.
+Lo siguiente es oír una captura real, y crear `.venvs/xtts` para oír XTTS. El worker ya está escrito y no se ha sintetizado.

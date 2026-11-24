@@ -51,6 +51,18 @@ def test_stt_catalog_ids_exist_in_builtin_models() -> None:
         assert BUILTIN_BY_ID[model_id]["engine"] == "faster-whisper"
 
 
+def test_xtts_catalog_is_runtime_supported() -> None:
+    entry = BUILTIN_BY_ID["xtts-v2"]
+    assert entry["engine"] == "xtts"
+    assert entry["runtime_supported"] is True
+    assert entry["quants"][0]["files"] == [
+        "config.json",
+        "model.pth",
+        "vocab.json",
+        "speakers_xtts.pth",
+    ]
+
+
 def test_package_and_tauri_versions_match() -> None:
     package = json.loads((ROOT / "package.json").read_text(encoding="utf-8"))
     tauri = json.loads((ROOT / "src-tauri" / "tauri.conf.json").read_text(encoding="utf-8"))
