@@ -1,8 +1,6 @@
-# CI for Speech Studio.
-# Default runners are self-hosted on the homelab (label: k3s) so we do not
-# burn GitHub-hosted minutes. Linux jobs run on k3s nodes; macOS runs on a
-# self-hosted Mac in the same homelab CI (labels: self-hosted,macOS,k3s).
-#
+# CI for Speech Studio on homelab ARC (k3s).
+# Linux jobs: runs-on arc-xyz-speechstudio (AutoscalingRunnerSet in arc-runners).
+# macOS job: self-hosted Mac in the same homelab CI (labels self-hosted,macOS,k3s).
 # GitHub-hosted fallback only via workflow_dispatch.
 
 name: CI
@@ -15,7 +13,7 @@ on:
   workflow_dispatch:
     inputs:
       use_github_hosted:
-        description: "Run on GitHub-hosted runners instead of k3s"
+        description: "Run on GitHub-hosted runners instead of k3s/homelab"
         type: boolean
         default: false
 
@@ -29,7 +27,7 @@ permissions:
 jobs:
   frontend:
     name: Frontend lint and build
-    runs-on: ${{ inputs.use_github_hosted && 'ubuntu-24.04' || fromJSON('["self-hosted","linux","k3s"]') }}
+    runs-on: ${{ inputs.use_github_hosted && 'ubuntu-24.04' || 'arc-xyz-speechstudio' }}
     steps:
       - name: Checkout
         uses: actions/checkout@v7
@@ -48,7 +46,7 @@ jobs:
 
   python:
     name: Python lint and test
-    runs-on: ${{ inputs.use_github_hosted && 'ubuntu-24.04' || fromJSON('["self-hosted","linux","k3s"]') }}
+    runs-on: ${{ inputs.use_github_hosted && 'ubuntu-24.04' || 'arc-xyz-speechstudio' }}
     steps:
       - name: Checkout
         uses: actions/checkout@v7
@@ -71,25 +69,26 @@ jobs:
 
   rust-linux:
     name: Rust check and build (Linux)
-    runs-on: ${{ inputs.use_github_hosted && 'ubuntu-24.04' || fromJSON('["self-hosted","linux","k3s"]') }}
+    runs-on: ${{ inputs.use_github_hosted && 'ubuntu-24.04' || 'arc-xyz-speechstudio' }}
     steps:
       - name: Checkout
         uses: actions/checkout@v7
 
       - name: Install Tauri system dependencies
-        if: ${{ inputs.use_github_hosted }}
         run: |
-          sudo apt-get update
-          sudo apt-get install -y \
-            libwebkit2gtk-4.1-dev \
-            build-essential \
-            curl \
-            wget \
-            file \
-            libxdo-dev \
-            libssl-dev \
-            libayatana-appindicator3-dev \
-            librsvg2-dev
+          if command -v apt-get >/dev/null 2>&1; then
+            sudo apt-get update
+            sudo apt-get install -y \
+              libwebkit2gtk-4.1-dev \
+              build-essential \
+              curl \
+              wget \
+              file \
+              libxdo-dev \
+              libssl-dev \
+              libayatana-appindicator3-dev \
+              librsvg2-dev || true
+          fi
 
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@stable
@@ -138,7 +137,6 @@ jobs:
         working-directory: src-tauri
         run: cargo clippy --locked --all-targets -- -D warnings
 
-  # Optional: only when explicitly requested. Windows GitHub-hosted is expensive.
   rust-windows:
     name: Rust check (Windows)
     if: ${{ github.event_name == 'workflow_dispatch' && inputs.use_github_hosted }}
@@ -158,4 +156,3 @@ jobs:
       - name: Cargo check
         working-directory: src-tauri
         run: cargo check --locked
-
