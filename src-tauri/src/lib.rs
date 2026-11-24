@@ -141,13 +141,13 @@ fn reveal_in_explorer(path: String) -> Result<(), String> {
     }
 }
 
-#[cfg(windows)]
+#[cfg(any(windows, target_os = "linux"))]
 #[derive(serde::Deserialize)]
 struct HotkeySettings {
     read_hotkey: Option<String>,
 }
 
-#[cfg(windows)]
+#[cfg(any(windows, target_os = "linux"))]
 fn configured_read_hotkey(app_root: &std::path::Path) -> Option<String> {
     let text = std::fs::read_to_string(app_root.join("data").join("settings.json")).ok()?;
     let parsed: HotkeySettings = serde_json::from_str(&text).ok()?;
@@ -172,8 +172,8 @@ pub fn run() {
                     if event.state() == ShortcutState::Pressed {
                         let handle = app.clone();
                         std::thread::spawn(move || {
-                            let text = selection::read_selected_text();
-                            let _ = handle.emit("read-selection", text);
+                            let payload = selection::read_selection();
+                            let _ = handle.emit("read-selection", payload);
                         });
                     }
                 })
@@ -182,7 +182,7 @@ pub fn run() {
         .manage(backend)
         .setup(|app| {
             tray::create_tray(app.handle())?;
-            #[cfg(windows)]
+            #[cfg(any(windows, target_os = "linux"))]
             {
                 let root = app.state::<BackendState>().app_root.clone();
                 if let Some(acc) = configured_read_hotkey(&root) {
