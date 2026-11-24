@@ -13,7 +13,6 @@ from pydantic import BaseModel
 from .config import DEFAULT_PROFILES_DIR, ensure_data_dirs
 
 PROFILES_JSON = DEFAULT_PROFILES_DIR / "profiles.json"
-MARIO_SEED_DIR = Path(r"Z:\[🤖] [Models]\tts\qwen3-1.7b\mario-new-tts")
 
 
 class VoiceProfile(BaseModel):
@@ -54,53 +53,11 @@ def _write_all(profiles: list[VoiceProfile]) -> None:
     )
 
 
-def ensure_mario_imported() -> None:
-    """Import pre-built Mario voice profile from Phase 0 if not yet registered."""
-    profiles = _read_all()
-    if any(p.id == "mario" for p in profiles):
-        return
-
-    src_spk = MARIO_SEED_DIR / "mario.spk"
-    src_rvq = MARIO_SEED_DIR / "mario.rvq"
-    src_wav = MARIO_SEED_DIR / "audio-tts-mario.wav"
-    src_txt = MARIO_SEED_DIR / "mario-new-tts.txt"
-    if not (src_spk.exists() and src_rvq.exists() and src_wav.exists() and src_txt.exists()):
-        return
-
-    dest_dir = DEFAULT_PROFILES_DIR / "mario"
-    dest_dir.mkdir(parents=True, exist_ok=True)
-    shutil.copy2(src_spk, dest_dir / "mario.spk")
-    shutil.copy2(src_rvq, dest_dir / "mario.rvq")
-    shutil.copy2(src_wav, dest_dir / "ref.wav")
-    ref_text = src_txt.read_text(encoding="utf-8").strip()
-
-    now = time.time()
-    profiles.insert(
-        0,
-        VoiceProfile(
-            id="mario",
-            name="Mario",
-            language="Spanish",
-            engine="qwen",
-            ref_audio_path=str(dest_dir / "ref.wav"),
-            ref_text=ref_text,
-            spk_path=str(dest_dir / "mario.spk"),
-            rvq_path=str(dest_dir / "mario.rvq"),
-            ready=True,
-            created_at=now,
-            updated_at=now,
-        ),
-    )
-    _write_all(profiles)
-
-
 def list_profiles() -> list[VoiceProfile]:
-    ensure_mario_imported()
     return _read_all()
 
 
 def get_profile(identifier: str) -> Optional[VoiceProfile]:
-    ensure_mario_imported()
     profiles = _read_all()
     low = identifier.strip().lower()
     for p in profiles:

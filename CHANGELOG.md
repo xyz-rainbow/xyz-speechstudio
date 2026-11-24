@@ -9,8 +9,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- Unified Glass model dropdowns in Synthesize and Transcriber with `Local` and `External` (`Externo`) sections, provider + model subtitles on external endpoints, automatic `tts_source` / `stt_source` switching, and automatic detection of `Qwen3-TTS 1.7B CustomVoice` in the external models folder.
+- Redesigned local model manager: `Models` shows only installed local models and active downloads with a unified `(+)` modal featuring three paginated tabs — **Featured** (one grouped card per family with inline variant & quantization selectors), **Explore Hub** (live Hugging Face search with file inspection), and **Import** (Hugging Face / ModelScope / direct URLs plus local folder or file import). Added Fish Audio to the catalog metadata.
+- Global `speechstudio` terminal CLI (`backend/cli/main.py`, `scripts/speechstudio.cmd`): connects to a running Speech Studio backend via `data/runtime.json` or starts a temporary headless orchestrator that cleans up on exit; supports `play`, `status`/`inspect`, `models` (`list`, `search`, `inspect`, `download`, `install-url`, `import`, `load`, `eject`, `remove`), `profiles`, `transcribe`, `config`, and `endpoints` with top-level shorthands (`--models`, `--status`, `--profiles`, `--config`, `--endpoints`) and `--json` output.
+- Unified Glass model dropdowns in Synthesize and Transcriber with `Local` and `External` (`Externo`) sections, provider + model subtitles on external endpoints, automatic `tts_source` / `stt_source` switching, and honest empty-state labels when no local model or external endpoint is configured.
 - Created and verified `.venvs/xtts` (`coqui-tts==0.28.0`, `torch==2.15.0+cu132`, `torchaudio==2.11.1+cu132`, `torchcodec==0.17.0+cu132`) with `xtts_worker.py` `/health` check.
+
+### Changed
+
+- Removed hardcoded external model directory scanning (`FALLBACK_QWEN_DIR`), automatic Mario seed profile creation (`ensure_mario_imported`), and the default Mario placeholder text in `Synthesize` so the app begins with zero preloaded models, profiles, or endpoints like a clean fresh install.
 - XTTS writes WAV at `output_sample_rate` (24000 Hz for the catalog checkpoint), splits text that would pass the 400-token limit, and returns the worker's 4xx status. The worker does not set `COQUI_TOS_AGREED`.
 - XTTS v2 worker (`backend/workers/xtts_worker.py`) and `POST /api/workers/xtts/load`. A profile with engine `xtts` synthesizes from its reference wav. The Synthesize model list enables XTTS and shows profiles of the selected engine. `requirements-xtts.txt` pins `coqui-tts==0.28.0`; `setup-env.ps1` also installs PyTorch with `--torch-backend=auto`. The environment was not created and a synthesis was not heard. Checkpoint weights stay out of the repo (Coqui Public Model License).
 - CI links the Linux Tauri shell on Ubuntu 24.04 (`cargo build --locked`, debug) and typechecks macOS (`cargo check` and clippy). There is still no AppImage, `.deb`, or macOS bundle, and those desktops were not launched.

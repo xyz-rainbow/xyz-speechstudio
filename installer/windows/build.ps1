@@ -30,6 +30,9 @@ Get-ChildItem -LiteralPath (Join-Path $payload "backend") -Recurse -Directory -F
     Remove-Item -Recurse -Force
 New-Item -ItemType Directory -Force -Path (Join-Path $payload "scripts") | Out-Null
 Copy-Item -LiteralPath (Join-Path $repo "scripts\notify.ps1") -Destination (Join-Path $payload "scripts\notify.ps1")
+if (Test-Path -LiteralPath (Join-Path $repo "scripts\speechstudio.cmd")) {
+    Copy-Item -LiteralPath (Join-Path $repo "scripts\speechstudio.cmd") -Destination (Join-Path $payload "scripts\speechstudio.cmd")
+}
 $stagedInstaller = Join-Path $payload "installer"
 New-Item -ItemType Directory -Force -Path $stagedInstaller | Out-Null
 Copy-Item -LiteralPath (Join-Path $repo "installer\setup-env.ps1") -Destination $stagedInstaller

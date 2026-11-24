@@ -89,29 +89,23 @@ export const TranscriberView: React.FC<TranscriberViewProps> = ({
   const activeEp = sttEndpoints.find((e) => e.id === settings.active_stt_endpoint_id);
   const isEndpointMode = settings.stt_source === "endpoint";
 
-  const localOptions: { id: string; name: string; subtitle: string }[] = React.useMemo(() => {
-    const items = localModels.map((m) => ({
-      id: m.id,
-      name: m.name,
-      subtitle: `${m.installed_quant || m.engine} · ~${m.vram_mib} MB`,
-    }));
-    if (
-      settings.active_stt_model &&
-      !items.some((i) => i.id === settings.active_stt_model)
-    ) {
-      items.unshift({
-        id: settings.active_stt_model,
-        name: settings.active_stt_model,
-        subtitle: settings.stt_device.toUpperCase(),
-      });
-    }
-    return items;
-  }, [localModels, settings.active_stt_model, settings.stt_device]);
+  const localOptions: { id: string; name: string; subtitle: string }[] = React.useMemo(
+    () =>
+      localModels.map((m) => ({
+        id: m.id,
+        name: m.name,
+        subtitle: `${m.installed_quant || m.engine} · ~${m.vram_mib} MB`,
+      })),
+    [localModels]
+  );
 
-  const activeLocal = localOptions.find((m) => m.id === settings.active_stt_model);
+  const activeLocal =
+    localOptions.find((m) => m.id === settings.active_stt_model) || localOptions[0];
   const sourceLabel = isEndpointMode
     ? `${t("models.externalGroup")} · ${activeEp ? activeEp.name : t("transcriber.unconfigured")}`
-    : `${t("models.local")} · ${activeLocal?.name || settings.active_stt_model} (${settings.stt_device.toUpperCase()})`;
+    : activeLocal
+      ? `${t("models.local")} · ${activeLocal.name} (${settings.stt_device.toUpperCase()})`
+      : `${t("models.local")} · ${t("models.noLocalInstalled")}`;
 
   const selectLocalModel = async (id: string) => {
     setMenuOpen(false);
@@ -219,28 +213,37 @@ export const TranscriberView: React.FC<TranscriberViewProps> = ({
                   {t("models.local")}
                 </span>
 
-                {localOptions.map((m) => {
-                  const active = !isEndpointMode && m.id === settings.active_stt_model;
-                  return (
-                    <button
-                      key={m.id}
-                      type="button"
-                      onClick={() => selectLocalModel(m.id)}
-                      className={clsx(
-                        "w-full text-left rounded-xl px-2.5 py-1.5 text-xs flex items-center justify-between gap-2 hover:bg-white/10",
-                        active && "bg-cyan-500/15 text-cyan-200"
-                      )}
-                    >
-                      <div className="min-w-0">
-                        <div className="font-medium truncate">{m.name}</div>
-                        <div className="text-[10px] font-mono opacity-65 truncate">
-                          {m.subtitle}
+                {localOptions.length > 0 ? (
+                  localOptions.map((m) => {
+                    const active = !isEndpointMode && m.id === activeLocal?.id;
+                    return (
+                      <button
+                        key={m.id}
+                        type="button"
+                        onClick={() => selectLocalModel(m.id)}
+                        className={clsx(
+                          "w-full text-left rounded-xl px-2.5 py-1.5 text-xs flex items-center justify-between gap-2 hover:bg-white/10",
+                          active && "bg-cyan-500/15 text-cyan-200"
+                        )}
+                      >
+                        <div className="min-w-0">
+                          <div className="font-medium truncate">{m.name}</div>
+                          <div className="text-[10px] font-mono opacity-65 truncate">
+                            {m.subtitle}
+                          </div>
                         </div>
-                      </div>
-                      {active && <Check className="w-3.5 h-3.5 shrink-0 text-cyan-400" />}
-                    </button>
-                  );
-                })}
+                        {active && <Check className="w-3.5 h-3.5 shrink-0 text-cyan-400" />}
+                      </button>
+                    );
+                  })
+                ) : (
+                  <div
+                    className="px-2.5 py-1.5 text-[11px]"
+                    style={{ color: "var(--text-secondary)" }}
+                  >
+                    {t("models.noLocalInstalled")}
+                  </div>
+                )}
 
                 <div className="my-1 h-px bg-white/10" />
 

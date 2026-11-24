@@ -2,7 +2,6 @@ import React, { useCallback, useEffect, useState } from "react";
 import {
   Check,
   Cpu,
-  Download,
   Eye,
   EyeOff,
   Globe,
@@ -11,7 +10,6 @@ import {
   Play,
   Plus,
   Power,
-  Search,
   Settings as SettingsIcon,
   Trash2,
   X,
@@ -24,14 +22,11 @@ import {
   ejectWorker,
   ejectWorkerGroup,
   fetchModelsCatalog,
-  inspectHfRepo,
-  installHfModel,
   loadQwenWorker,
   loadSttWorker,
   loadXttsWorker,
   notify,
   removeInstalledModel,
-  startModelDownload,
   testExternalEndpoint,
 } from "../services/api";
 import type {
@@ -41,7 +36,6 @@ import type {
   EndpointProtocol,
   EndpointTestResponse,
   ExternalEndpointConfig,
-  HfInspectResponse,
   SourceMode,
   VramStatus,
   WorkersSnapshot,
@@ -52,6 +46,7 @@ import {
   reconcileActiveEndpointId,
 } from "../utils/endpointPresets";
 import { GlassCard } from "./GlassCard";
+import { ModelHubModal } from "./ModelHubModal";
 
 interface ModelsViewProps {
   baseUrl: string;
@@ -140,21 +135,11 @@ export const ModelsView: React.FC<ModelsViewProps> = ({
   const [error, setError] = useState<string | null>(null);
   const [testResults, setTestResults] = useState<Record<string, EndpointTestResponse>>({});
 
-  // Download quantization modal
-  const [downloadTarget, setDownloadTarget] = useState<CatalogModelEntry | null>(null);
-  const [selectedQuantId, setSelectedQuantId] = useState<string>("");
-
   // Remove model confirmation modal
   const [removeTarget, setRemoveTarget] = useState<CatalogModelEntry | null>(null);
 
-  // Hugging Face custom modal
-  const [hfOpen, setHfOpen] = useState(false);
-  const [hfUrl, setHfUrl] = useState("");
-  const [hfInspecting, setHfInspecting] = useState(false);
-  const [hfPreview, setHfPreview] = useState<HfInspectResponse | null>(null);
-  const [hfName, setHfName] = useState("");
-  const [hfKind, setHfKind] = useState<"tts" | "stt">("stt");
-  const [hfFiles, setHfFiles] = useState<string[]>([]);
+  // Unified Model Hub / Import modal
+  const [hubModalKind, setHubModalKind] = useState<"tts" | "stt" | null>(null);
 
   // Endpoint create / edit modal
   const [epModalMode, setEpModalMode] = useState<"create" | "edit">("create");
@@ -199,15 +184,6 @@ export const ModelsView: React.FC<ModelsViewProps> = ({
     downloads.find(
       (d) => d.model_id === modelId && (d.status === "queued" || d.status === "downloading")
     );
-
-  const openHfModalForKind = (kind: "tts" | "stt") => {
-    setHfKind(kind);
-    setHfUrl("");
-    setHfPreview(null);
-    setHfName("");
-    setHfFiles([]);
-    setHfOpen(true);
-  };
 
   const openCreateEndpointModal = (kind: "tts" | "stt") => {
     const fresh = createEndpointFromPreset(kind);
@@ -381,25 +357,6 @@ export const ModelsView: React.FC<ModelsViewProps> = ({
     }
   };
 
-  const openDownloadModal = (card: CatalogModelEntry) => {
-    const rec = card.quants.find((q) => q.recommended) || card.quants[0];
-    setSelectedQuantId(rec?.id || "");
-    setDownloadTarget(card);
-  };
-
-  const confirmDownload = async () => {
-    if (!baseUrl || !downloadTarget) return;
-    setError(null);
-    try {
-      await startModelDownload(baseUrl, downloadTarget.id, selectedQuantId || undefined);
-      setDownloadTarget(null);
-      await refreshCatalog();
-    } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
-      void notify(settings.notifications_enabled, t("toast.title"), t("toast.failed"));
-    }
-  };
-
   const handleCancelDownload = async (jobId: string) => {
     if (!baseUrl) return;
     try {
@@ -429,48 +386,6 @@ export const ModelsView: React.FC<ModelsViewProps> = ({
     }
   };
 
-  const handleInspectHf = async () => {
-    if (!baseUrl || !hfUrl.trim()) return;
-    setHfInspecting(true);
-    setError(null);
-    try {
-      const info = await inspectHfRepo(baseUrl, hfUrl.trim());
-      setHfPreview(info);
-      setHfName(info.suggested_name);
-      const defaults = info.files
-        .filter((f) => f.recommended || f.filename.endsWith(".json") || f.filename.endsWith(".txt"))
-        .map((f) => f.filename);
-      setHfFiles(defaults.length ? defaults : info.files.slice(0, 4).map((f) => f.filename));
-    } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
-      setHfPreview(null);
-    } finally {
-      setHfInspecting(false);
-    }
-  };
-
-  const handleInstallHf = async () => {
-    if (!baseUrl || !hfPreview || hfFiles.length === 0) return;
-    setBusyKey("hf-install");
-    setError(null);
-    try {
-      await installHfModel(baseUrl, {
-        repo_id: hfPreview.repo_id,
-        name: hfName.trim() || hfPreview.suggested_name,
-        kind: hfKind,
-        files: hfFiles,
-      });
-      setHfOpen(false);
-      setHfUrl("");
-      setHfPreview(null);
-      await refreshCatalog();
-    } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
-    } finally {
-      setBusyKey(null);
-    }
-  };
-
   const ttsModels = catalog.filter((m) => m.kind === "tts");
   const sttModels = catalog.filter((m) => m.kind === "stt");
   const ttsEndpoints = settings.external_endpoints.filter((e) => e.kind === "tts");
@@ -491,8 +406,11 @@ export const ModelsView: React.FC<ModelsViewProps> = ({
     onSelectEndpoint: (id: string) => void;
   }) => {
     const isEndpoint = opts.source === "endpoint";
+    const visibleLocalCards = opts.localCards.filter(
+      (card) => card.installed || !!activeJobFor(card.id)
+    );
     const triggerAdd = () =>
-      isEndpoint ? openCreateEndpointModal(opts.kind) : openHfModalForKind(opts.kind);
+      isEndpoint ? openCreateEndpointModal(opts.kind) : setHubModalKind(opts.kind);
 
     return (
       <GlassCard className="p-4 flex flex-col gap-3">
@@ -511,7 +429,7 @@ export const ModelsView: React.FC<ModelsViewProps> = ({
             <button
               type="button"
               onClick={triggerAdd}
-              title={isEndpoint ? t("models.addEndpoint") : t("models.addHfModel")}
+              title={isEndpoint ? t("models.addEndpoint") : t("models.tabHub")}
               className="inline-flex items-center justify-center w-7 h-7 rounded-full border hover:border-cyan-400/60 text-cyan-300 transition-colors"
               style={{ borderColor: "var(--border-glass)", backgroundColor: "var(--bg-elevated)" }}
             >
@@ -538,7 +456,7 @@ export const ModelsView: React.FC<ModelsViewProps> = ({
 
         <div className="flex gap-3 overflow-x-auto pb-2">
           {!isEndpoint
-            ? opts.localCards.map((card) => {
+            ? visibleLocalCards.map((card) => {
                 const ttsWorker =
                   card.engine === "xtts" ? xttsWorker : card.engine === "qwen" ? qwenWorker : undefined;
                 const isLoaded =
@@ -615,7 +533,7 @@ export const ModelsView: React.FC<ModelsViewProps> = ({
                           {t("models.cancel")}
                         </button>
                       </div>
-                    ) : card.installed ? (
+                    ) : (
                       <div className="flex flex-col gap-1.5 mt-auto pt-1">
                         {!card.runtime_supported && (
                           <span className="text-[10px] font-mono text-amber-300/80">
@@ -677,21 +595,6 @@ export const ModelsView: React.FC<ModelsViewProps> = ({
                             </button>
                           )}
                         </div>
-                      </div>
-                    ) : (
-                      <div className="flex items-center gap-1.5 mt-auto pt-1">
-                        <button
-                          type="button"
-                          onClick={() => openDownloadModal(card)}
-                          className="flex-1 inline-flex items-center justify-center gap-1.5 rounded-xl border px-2.5 py-1.5 text-xs font-medium hover:border-cyan-400/60 text-cyan-300"
-                          style={{
-                            borderColor: "var(--border-glass)",
-                            backgroundColor: "var(--bg-elevated)",
-                          }}
-                        >
-                          <Download className="w-3.5 h-3.5" />
-                          {t("models.download")}
-                        </button>
                       </div>
                     )}
                   </div>
@@ -772,6 +675,19 @@ export const ModelsView: React.FC<ModelsViewProps> = ({
                 );
               })}
 
+          {!isEndpoint && visibleLocalCards.length === 0 && (
+            <div
+              className="flex-1 min-w-[240px] rounded-2xl border border-dashed px-4 py-3 flex items-center text-xs leading-relaxed"
+              style={{
+                borderColor: "var(--border-glass)",
+                backgroundColor: "var(--bg-input)",
+                color: "var(--text-muted)",
+              }}
+            >
+              {t("models.emptySectionHint")}
+            </div>
+          )}
+
           {/* Trailing (+) Add Card */}
           <button
             type="button"
@@ -786,16 +702,13 @@ export const ModelsView: React.FC<ModelsViewProps> = ({
               <Plus className="w-4 h-4" />
             </div>
             <span className="text-xs font-medium text-center leading-tight">
-              {isEndpoint ? t("models.addEndpoint") : t("models.addHfModel")}
+              {isEndpoint ? t("models.addEndpoint") : t("models.tabHub")}
             </span>
           </button>
         </div>
       </GlassCard>
     );
   };
-
-  const selectedQuant =
-    downloadTarget?.quants.find((q) => q.id === selectedQuantId) || downloadTarget?.quants[0];
 
   return (
     <div className="flex flex-col gap-3 pb-4">
@@ -1081,248 +994,17 @@ export const ModelsView: React.FC<ModelsViewProps> = ({
         </div>
       )}
 
-      {/* Quantization Download Modal */}
-      {downloadTarget && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/65 backdrop-blur-sm p-4">
-          <GlassCard className="w-full max-w-md p-4 flex flex-col gap-3">
-            <div className="flex items-start justify-between gap-2">
-              <div>
-                <h3 className="text-sm font-semibold">{t("models.quantTitle")}</h3>
-                <p className="text-xs" style={{ color: "var(--text-secondary)" }}>
-                  {downloadTarget.name} · {downloadTarget.repo_id}
-                </p>
-              </div>
-              <button
-                type="button"
-                onClick={() => setDownloadTarget(null)}
-                className="opacity-70 hover:opacity-100"
-              >
-                <X className="w-4 h-4" />
-              </button>
-            </div>
-
-            {vram?.available && (
-              <div
-                className="rounded-xl border px-3 py-1.5 text-[11px] font-mono flex items-center justify-between"
-                style={{
-                  borderColor: "var(--border-glass)",
-                  backgroundColor: "var(--bg-input)",
-                }}
-              >
-                <span>
-                  {t("models.vramBudget")}: {vram.gpu}
-                </span>
-                <span>
-                  {vram.free_mib} / {vram.total_mib} MiB free
-                </span>
-              </div>
-            )}
-
-            <div className="flex flex-col gap-2 max-h-56 overflow-y-auto">
-              {downloadTarget.quants.map((q) => {
-                const selected = (selectedQuant?.id || "") === q.id;
-                const fits = !vram?.available || q.vram_mib <= vram.total_mib - 400;
-                return (
-                  <button
-                    key={q.id}
-                    type="button"
-                    onClick={() => setSelectedQuantId(q.id)}
-                    className={clsx(
-                      "rounded-xl border p-2.5 text-left flex items-center justify-between gap-2 transition-colors",
-                      selected ? "border-cyan-400/70" : "border-white/10"
-                    )}
-                    style={{ backgroundColor: "var(--bg-input)" }}
-                  >
-                    <div className="flex flex-col">
-                      <span className="text-xs font-semibold">{q.label}</span>
-                      <span
-                        className={clsx(
-                          "text-[10px] font-mono",
-                          fits ? "text-emerald-300" : "text-amber-300"
-                        )}
-                      >
-                        {fits ? t("models.fitsVram") : t("models.tightVram")}
-                      </span>
-                    </div>
-                    <div className="text-right text-[11px] font-mono">
-                      <div>{formatDiskSize(q.disk_mb)}</div>
-                      <div style={{ color: "var(--text-muted)" }}>
-                        {formatVramSize(q.vram_mib)} VRAM
-                      </div>
-                    </div>
-                  </button>
-                );
-              })}
-            </div>
-
-            <div className="flex justify-end gap-2 pt-1">
-              <button
-                type="button"
-                onClick={() => setDownloadTarget(null)}
-                className="rounded-xl border px-3 py-1.5 text-xs"
-                style={{ borderColor: "var(--border-glass)" }}
-              >
-                {t("models.cancel")}
-              </button>
-              <button
-                type="button"
-                onClick={confirmDownload}
-                className="inline-flex items-center gap-1.5 rounded-xl border border-cyan-400/60 bg-cyan-500/20 px-3.5 py-1.5 text-xs font-semibold text-cyan-200"
-              >
-                <Download className="w-3.5 h-3.5" />
-                {t("models.startDownload")}
-              </button>
-            </div>
-          </GlassCard>
-        </div>
-      )}
-
-      {/* Custom Hugging Face URL Modal */}
-      {hfOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/65 backdrop-blur-sm p-4">
-          <GlassCard className="w-full max-w-lg p-4 flex flex-col gap-3">
-            <div className="flex items-center justify-between gap-2">
-              <h3 className="text-sm font-semibold">{t("models.hfTitle")}</h3>
-              <button
-                type="button"
-                onClick={() => setHfOpen(false)}
-                className="opacity-70 hover:opacity-100"
-              >
-                <X className="w-4 h-4" />
-              </button>
-            </div>
-
-            <div className="flex gap-2">
-              <input
-                type="text"
-                value={hfUrl}
-                onChange={(e) => setHfUrl(e.target.value)}
-                placeholder={t("models.hfUrlPlaceholder")}
-                className="flex-1 rounded-xl border px-3 py-1.5 text-xs font-mono outline-none"
-                style={{
-                  borderColor: "var(--border-glass)",
-                  backgroundColor: "var(--bg-input)",
-                }}
-              />
-              <button
-                type="button"
-                disabled={hfInspecting || !hfUrl.trim()}
-                onClick={handleInspectHf}
-                className="inline-flex items-center gap-1 rounded-xl border px-3 py-1.5 text-xs font-medium hover:border-cyan-400/60 disabled:opacity-40"
-                style={{
-                  borderColor: "var(--border-glass)",
-                  backgroundColor: "var(--bg-elevated)",
-                }}
-              >
-                {hfInspecting ? (
-                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                ) : (
-                  <Search className="w-3.5 h-3.5" />
-                )}
-                {t("models.inspect")}
-              </button>
-            </div>
-
-            {hfPreview && (
-              <>
-                <div className="grid grid-cols-3 gap-2">
-                  <div className="col-span-2 flex flex-col gap-1">
-                    <span className="text-[10px] font-mono" style={{ color: "var(--text-muted)" }}>
-                      {t("models.modelName")}
-                    </span>
-                    <input
-                      type="text"
-                      value={hfName}
-                      onChange={(e) => setHfName(e.target.value)}
-                      className="rounded-xl border px-2.5 py-1 text-xs outline-none"
-                      style={{
-                        borderColor: "var(--border-glass)",
-                        backgroundColor: "var(--bg-input)",
-                      }}
-                    />
-                  </div>
-                  <div className="flex flex-col gap-1">
-                    <span className="text-[10px] font-mono" style={{ color: "var(--text-muted)" }}>
-                      {t("models.modelType")}
-                    </span>
-                    <select
-                      value={hfKind}
-                      onChange={(e) => setHfKind(e.target.value as "tts" | "stt")}
-                      className="rounded-xl border px-2.5 py-1 text-xs outline-none"
-                      style={{
-                        borderColor: "var(--border-glass)",
-                        backgroundColor: "var(--bg-input)",
-                      }}
-                    >
-                      <option value="tts">TTS</option>
-                      <option value="stt">STT</option>
-                    </select>
-                  </div>
-                </div>
-
-                <div className="flex flex-col gap-1">
-                  <span className="text-[10px] font-mono" style={{ color: "var(--text-muted)" }}>
-                    {t("models.selectFiles")}
-                  </span>
-                  <div
-                    className="max-h-44 overflow-y-auto rounded-xl border p-2 flex flex-col gap-1"
-                    style={{
-                      borderColor: "var(--border-glass)",
-                      backgroundColor: "var(--bg-input)",
-                    }}
-                  >
-                    {hfPreview.files.map((f) => {
-                      const checked = hfFiles.includes(f.filename);
-                      return (
-                        <label
-                          key={f.filename}
-                          className="flex items-center justify-between gap-2 text-xs font-mono cursor-pointer py-0.5"
-                        >
-                          <span className="flex items-center gap-2 truncate">
-                            <input
-                              type="checkbox"
-                              checked={checked}
-                              onChange={() =>
-                                setHfFiles((prev) =>
-                                  checked
-                                    ? prev.filter((x) => x !== f.filename)
-                                    : [...prev, f.filename]
-                                )
-                              }
-                            />
-                            <span className="truncate">{f.filename}</span>
-                          </span>
-                          <span className="shrink-0 opacity-70">{f.size_mb} MB</span>
-                        </label>
-                      );
-                    })}
-                  </div>
-                </div>
-
-                <div className="flex justify-end gap-2">
-                  <button
-                    type="button"
-                    onClick={() => setHfOpen(false)}
-                    className="rounded-xl border px-3 py-1.5 text-xs"
-                    style={{ borderColor: "var(--border-glass)" }}
-                  >
-                    {t("models.cancel")}
-                  </button>
-                  <button
-                    type="button"
-                    disabled={hfFiles.length === 0 || busyKey === "hf-install"}
-                    onClick={handleInstallHf}
-                    className="inline-flex items-center gap-1.5 rounded-xl border border-cyan-400/60 bg-cyan-500/20 px-3.5 py-1.5 text-xs font-semibold text-cyan-200 disabled:opacity-40"
-                  >
-                    <Download className="w-3.5 h-3.5" />
-                    {t("models.installSelected")}
-                  </button>
-                </div>
-              </>
-            )}
-          </GlassCard>
-        </div>
-      )}
+      <ModelHubModal
+        open={hubModalKind !== null}
+        kind={hubModalKind ?? "tts"}
+        baseUrl={baseUrl}
+        catalog={catalog}
+        downloads={downloads}
+        vram={vram}
+        onClose={() => setHubModalKind(null)}
+        onRefreshCatalog={refreshCatalog}
+        onRequestRemove={(entry) => setRemoveTarget(entry)}
+      />
 
       {/* Remove Model Confirmation Modal */}
       {removeTarget && (
