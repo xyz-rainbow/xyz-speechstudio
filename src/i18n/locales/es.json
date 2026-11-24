@@ -111,7 +111,7 @@
     "waiting": "Esperando voz",
     "history": "Sesión",
     "working": "Arrancando",
-    "unsupportedPlatform": "Los subtítulos en vivo requieren captura por bucle de proceso en Windows. En esta plataforma aún no están disponibles."
+    "unsupportedPlatform": "Los subtítulos en vivo todavía no están disponibles en este sistema."
   },
   "models": {
     "title": "Modelos y Endpoints",
