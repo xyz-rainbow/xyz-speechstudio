@@ -1,0 +1,344 @@
+import React, { useState } from "react";
+import { open as openDialog } from "@tauri-apps/plugin-dialog";
+import { CheckCircle2, Edit3, FileAudio, Loader2, Plus, Sparkles, Trash2 } from "lucide-react";
+import { useI18n } from "../i18n";
+import {
+  buildProfileVoice,
+  createProfile,
+  deleteProfile,
+  isTauri,
+  transcribeAudioFile,
+  updateProfile,
+} from "../services/api";
+import type { EngineKind, VoiceProfile } from "../types";
+import { BorderBeamButton } from "./BorderBeamButton";
+import { GlassCard } from "./GlassCard";
+
+interface ProfilesViewProps {
+  baseUrl: string;
+  profiles: VoiceProfile[];
+  selectedProfileId: string;
+  onProfilesChange: (next: VoiceProfile[]) => void;
+  onUseProfile: (id: string) => void;
+  onAfterGpuAction: () => void;
+}
+
+export const ProfilesView: React.FC<ProfilesViewProps> = ({
+  baseUrl,
+  profiles,
+  selectedProfileId,
+  onProfilesChange,
+  onUseProfile,
+  onAfterGpuAction,
+}) => {
+  const { t } = useI18n();
+  const [editingId, setEditingId] = useState<string | "new" | null>(null);
+  const [name, setName] = useState("");
+  const [language, setLanguage] = useState("Spanish");
+  const [engine, setEngine] = useState<EngineKind>("qwen");
+  const [refAudioPath, setRefAudioPath] = useState("");
+  const [refText, setRefText] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [transcribing, setTranscribing] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const openNew = () => {
+    setEditingId("new");
+    setName("");
+    setLanguage("Spanish");
+    setEngine("qwen");
+    setRefAudioPath("");
+    setRefText("");
+    setError(null);
+  };
+
+  const openEdit = (p: VoiceProfile) => {
+    setEditingId(p.id);
+    setName(p.name);
+    setLanguage(p.language);
+    setEngine(p.engine);
+    setRefAudioPath(p.ref_audio_path);
+    setRefText(p.ref_text);
+    setError(null);
+  };
+
+  const pickAudio = async () => {
+    if (!isTauri()) return;
+    const selected = await openDialog({
+      multiple: false,
+      filters: [{ name: "Audio", extensions: ["wav", "mp3", "m4a", "flac", "ogg"] }],
+    });
+    if (typeof selected === "string" && selected.length > 0) {
+      setRefAudioPath(selected);
+    }
+  };
+
+  const handleSave = async () => {
+    if (!baseUrl || !name.trim()) return;
+    setBusy(true);
+    setError(null);
+    try {
+      if (editingId === "new") {
+        const created = await createProfile(baseUrl, {
+          name,
+          language,
+          engine,
+          ref_audio_path: refAudioPath,
+          ref_text: refText,
+          build_voice: engine === "qwen" && !!refAudioPath,
+        });
+        onProfilesChange([...profiles, created]);
+      } else if (editingId) {
+        const updated = await updateProfile(baseUrl, editingId, {
+          name,
+          language,
+          engine,
+          ref_audio_path: refAudioPath,
+          ref_text: refText,
+          rebuild_voice: false,
+        });
+        onProfilesChange(profiles.map((p) => (p.id === updated.id ? updated : p)));
+      }
+      setEditingId(null);
+      onAfterGpuAction();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const handleBuild = async (p: VoiceProfile) => {
+    if (!baseUrl) return;
+    setBusy(true);
+    setError(null);
+    try {
+      const updated = await buildProfileVoice(baseUrl, p.id);
+      onProfilesChange(profiles.map((item) => (item.id === updated.id ? updated : item)));
+      onAfterGpuAction();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const handleAutoTranscribe = async () => {
+    if (!baseUrl || !refAudioPath.trim()) return;
+    setTranscribing(true);
+    setError(null);
+    try {
+      const res = await transcribeAudioFile(baseUrl, { audio_path: refAudioPath.trim() });
+      setRefText(res.text);
+      onAfterGpuAction();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setTranscribing(false);
+    }
+  };
+
+  const handleDelete = async (p: VoiceProfile) => {
+    if (!baseUrl) return;
+    await deleteProfile(baseUrl, p.id);
+    onProfilesChange(profiles.filter((item) => item.id !== p.id));
+  };
+
+  return (
+    <div className="flex flex-col gap-3 pb-4">
+      <div className="flex items-center justify-between gap-2">
+        <div>
+          <h1 className="text-lg font-semibold leading-tight">{t("profiles.title")}</h1>
+          <p className="text-xs" style={{ color: "var(--text-secondary)" }}>
+            {t("profiles.subtitle")}
+          </p>
+        </div>
+        <BorderBeamButton onClick={openNew}>
+          <Plus className="w-4 h-4" />
+          {t("profiles.newProfile")}
+        </BorderBeamButton>
+      </div>
+
+      {error && (
+        <div className="rounded-xl border border-rose-500/40 bg-rose-500/10 px-3 py-2 text-xs text-rose-300">
+          {error}
+        </div>
+      )}
+
+      {editingId && (
+        <GlassCard className="p-4 flex flex-col gap-3">
+          <h2 className="text-sm font-semibold">
+            {editingId === "new" ? t("profiles.newProfile") : t("profiles.editProfile")}
+          </h2>
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
+            <input
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              placeholder={t("profiles.name")}
+              className="rounded-xl border px-3 py-2 text-xs outline-none"
+              style={{ backgroundColor: "var(--bg-input)", borderColor: "var(--border-glass)" }}
+            />
+            <input
+              value={language}
+              onChange={(e) => setLanguage(e.target.value)}
+              placeholder={t("profiles.language")}
+              className="rounded-xl border px-3 py-2 text-xs outline-none"
+              style={{ backgroundColor: "var(--bg-input)", borderColor: "var(--border-glass)" }}
+            />
+            <select
+              value={engine}
+              onChange={(e) => setEngine(e.target.value as EngineKind)}
+              className="rounded-xl border px-3 py-2 text-xs outline-none"
+              style={{
+                backgroundColor: "var(--bg-input)",
+                borderColor: "var(--border-glass)",
+                color: "var(--text-primary)",
+              }}
+            >
+              <option value="qwen">Qwen3-TTS</option>
+              <option value="xtts">XTTS v2 (Phase 4)</option>
+            </select>
+          </div>
+
+          <div className="flex items-center gap-2">
+            <input
+              value={refAudioPath}
+              onChange={(e) => setRefAudioPath(e.target.value)}
+              placeholder={t("profiles.refAudio")}
+              className="flex-1 rounded-xl border px-3 py-2 text-xs font-mono outline-none"
+              style={{ backgroundColor: "var(--bg-input)", borderColor: "var(--border-glass)" }}
+            />
+            <button
+              type="button"
+              onClick={pickAudio}
+              className="inline-flex items-center gap-1.5 rounded-xl border px-3 py-2 text-xs font-medium hover:border-cyan-400/50"
+              style={{ borderColor: "var(--border-glass)", backgroundColor: "var(--bg-elevated)" }}
+            >
+              <FileAudio className="w-3.5 h-3.5" />
+              {t("profiles.selectAudio")}
+            </button>
+          </div>
+
+          <div className="flex flex-col gap-1.5">
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-medium" style={{ color: "var(--text-secondary)" }}>
+                {t("profiles.refText")}
+              </span>
+              <button
+                type="button"
+                disabled={transcribing || busy || !refAudioPath.trim()}
+                onClick={handleAutoTranscribe}
+                className="inline-flex items-center gap-1 rounded-xl border px-2.5 py-1 text-[11px] hover:border-cyan-400/50 disabled:opacity-45"
+                style={{ borderColor: "var(--border-glass)", backgroundColor: "var(--bg-elevated)" }}
+              >
+                {transcribing ? (
+                  <Loader2 className="w-3 h-3 animate-spin" />
+                ) : (
+                  <Sparkles className="w-3 h-3" />
+                )}
+                {transcribing ? t("profiles.transcribing") : t("profiles.transcribe")}
+              </button>
+            </div>
+            <textarea
+              rows={3}
+              value={refText}
+              onChange={(e) => setRefText(e.target.value)}
+              placeholder={t("profiles.refTextPlaceholder")}
+              className="w-full rounded-2xl border p-2.5 text-xs outline-none"
+              style={{ backgroundColor: "var(--bg-input)", borderColor: "var(--border-glass)" }}
+            />
+          </div>
+
+          <div className="flex items-center gap-2">
+            <BorderBeamButton disabled={busy || !name.trim()} onClick={handleSave}>
+              {busy && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
+              {busy ? t("profiles.building") : t("profiles.save")}
+            </BorderBeamButton>
+            <button
+              type="button"
+              disabled={busy}
+              onClick={() => setEditingId(null)}
+              className="rounded-full border px-4 py-2 text-xs font-medium"
+              style={{ borderColor: "var(--border-glass)", backgroundColor: "var(--bg-elevated)" }}
+            >
+              {t("profiles.cancel")}
+            </button>
+          </div>
+        </GlassCard>
+      )}
+
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+        {profiles.map((p) => {
+          const active = p.id === selectedProfileId;
+          return (
+            <GlassCard key={p.id} className="p-4 flex flex-col gap-2.5">
+              <div className="flex items-center justify-between gap-2">
+                <div className="flex items-center gap-2 min-w-0">
+                  <span className="font-semibold text-sm truncate">{p.name}</span>
+                  <span className="rounded-full px-2 py-0.5 text-[10px] font-mono border border-white/10">
+                    {p.engine} · {p.language}
+                  </span>
+                </div>
+                <span
+                  className="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-mono border shrink-0"
+                  style={{
+                    borderColor: p.ready ? "rgba(16,185,129,0.4)" : "rgba(245,158,11,0.4)",
+                    color: p.ready ? "#34d399" : "#fbbf24",
+                  }}
+                >
+                  <CheckCircle2 className="w-3 h-3" />
+                  {p.ready ? t("profiles.ready") : t("profiles.notBuilt")}
+                </span>
+              </div>
+
+              <p className="text-xs line-clamp-2" style={{ color: "var(--text-secondary)" }}>
+                {p.ref_text || "—"}
+              </p>
+
+              <div className="flex flex-wrap items-center gap-1.5 mt-auto pt-1">
+                <button
+                  type="button"
+                  onClick={() => onUseProfile(p.id)}
+                  className="rounded-xl border px-2.5 py-1 text-xs font-medium transition-colors"
+                  style={{
+                    borderColor: active ? "var(--accent-secondary)" : "var(--border-glass)",
+                    backgroundColor: "var(--bg-elevated)",
+                  }}
+                >
+                  {t("profiles.useInStudio")}
+                </button>
+                {!p.ready && p.engine === "qwen" && (
+                  <button
+                    type="button"
+                    disabled={busy}
+                    onClick={() => handleBuild(p)}
+                    className="rounded-xl border px-2.5 py-1 text-xs font-medium border-cyan-400/40 text-cyan-300"
+                  >
+                    {t("profiles.buildNow")}
+                  </button>
+                )}
+                <button
+                  type="button"
+                  onClick={() => openEdit(p)}
+                  className="inline-flex items-center gap-1 rounded-xl border px-2.5 py-1 text-xs"
+                  style={{ borderColor: "var(--border-glass)", backgroundColor: "var(--bg-elevated)" }}
+                >
+                  <Edit3 className="w-3 h-3" />
+                  {t("profiles.edit")}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleDelete(p)}
+                  className="inline-flex items-center gap-1 rounded-xl border px-2 py-1 text-xs text-rose-300 hover:border-rose-500/50 ml-auto"
+                  style={{ borderColor: "var(--border-glass)", backgroundColor: "var(--bg-elevated)" }}
+                >
+                  <Trash2 className="w-3 h-3" />
+                </button>
+              </div>
+            </GlassCard>
+          );
+        })}
+      </div>
+    </div>
+  );
+};

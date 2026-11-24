@@ -1,0 +1,59 @@
+# runtime data, voice profiles, history, downloaded models
+data/
+outputs/
+profiles/
+settings.json
+settings.backup.json
+*.local.json
+
+# secrets
+.env
+.env.*
+!.env.example
+
+# python
+.venvs/
+.venv/
+venv/
+__pycache__/
+*.pyc
+*.pyo
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# node / vite
+node_modules/
+dist/
+*.tsbuildinfo
+
+# rust / tauri
+target/
+**/target/
+
+# model weights and audio captures
+*.wav
+*.spk
+*.rvq
+*.gguf
+*.onnx
+*.safetensors
+*.bin
+*.pt
+*.pth
+
+# logs and OS junk
+*.log
+Thumbs.db
+Desktop.ini
+.DS_Store
+
+# editors
+.idea/
+.vscode/
+*.swp
+
+# installers
+*.msi
+*.exe
