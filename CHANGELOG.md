@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Linux tray: the primary click shows the main window and still opens the menu. The existing Open Speech Studio item is unchanged. Close-to-tray and quit-stops-backend were already cross-platform. Ubuntu was not tried.
 - Linux (Ubuntu 24.04) development path: Tauri `cargo check`/`clippy` in CI, Unix Python venv paths (`.venvs/<name>/bin/python`), process-group orchestrator lifecycle, and README/CONTRIBUTING setup notes.
 - `BackendInfo` flags `live_captions_supported` and `read_selection_supported` so the UI can disable Windows-only features on other platforms.
 
