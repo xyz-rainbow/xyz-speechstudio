@@ -1,0 +1,87 @@
+# Ephemeral GitHub Actions runner for Speech Studio on k3s.
+# Label set: self-hosted, linux, k3s  (matches .github/workflows/ci.yml)
+#
+# Prerequisites (once):
+#   1. Create a repo or org runner registration token on GitHub.
+#   2. kubectl -n ci create secret generic gha-runner-token --from-literal=token=XXXX
+#   3. kubectl apply -f ci/k3s/github-actions-runner.yaml
+#
+# Optional: pin the runner to a node with build tools via nodeSelector.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: ci
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: gha-runner
+  namespace: ci
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: gha-runner-speechstudio
+  namespace: ci
+  labels:
+    app: gha-runner-speechstudio
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: gha-runner-speechstudio
+  template:
+    metadata:
+      labels:
+        app: gha-runner-speechstudio
+    spec:
+      serviceAccountName: gha-runner
+      containers:
+        - name: runner
+          # Official actions runner image; register against xyz-speechstudio.
+          image: ghcr.io/actions/actions-runner:latest
+          env:
+            - name: REPO_URL
+              value: https://github.com/xyz-rainbow/xyz-speechstudio
+            - name: RUNNER_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
+            - name: RUNNER_LABELS
+              value: self-hosted,linux,k3s
+            - name: RUNNER_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: gha-runner-token
+                  key: token
+            - name: RUNNER_WORKDIR
+              value: /home/runner/_work
+          command:
+            - /bin/bash
+            - -lc
+            - |
+              set -euo pipefail
+              cd /home/runner
+              if [ ! -f .runner ]; then
+                ./config.sh --unattended \
+                  --url "$REPO_URL" \
+                  --token "$RUNNER_TOKEN" \
+                  --name "$RUNNER_NAME" \
+                  --labels "$RUNNER_LABELS" \
+                  --work "$RUNNER_WORKDIR" \
+                  --replace
+              fi
+              ./run.sh
+          resources:
+            requests:
+              cpu: "500m"
+              memory: 2Gi
+            limits:
+              cpu: "4"
+              memory: 8Gi
+          volumeMounts:
+            - name: work
+              mountPath: /home/runner/_work
+      volumes:
+        - name: work
+          emptyDir: {}

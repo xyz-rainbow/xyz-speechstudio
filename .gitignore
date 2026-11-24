@@ -10,6 +10,7 @@ settings.backup.json
 .env
 .env.*
 !.env.example
+ci/k3s/ssh-homelab.conf
 
 # python
 .venvs/
