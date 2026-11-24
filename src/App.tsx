@@ -68,6 +68,8 @@ const DEFAULT_SETTINGS: AppSettings = {
   read_hotkey: "",
   close_behavior: "ask",
   external_endpoints: [],
+  capabilities_v1: true,
+  installed_languages: {},
 };
 
 function MainStudio() {

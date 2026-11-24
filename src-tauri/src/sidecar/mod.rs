@@ -44,26 +44,27 @@ struct RunningBackend {
 }
 
 fn core_venv_python(app_root: &Path) -> Option<PathBuf> {
+    // Canonical: runtime/envs; legacy: .venvs (read fallback).
+    let roots = [
+        app_root.join("runtime").join("envs"),
+        app_root.join(".venvs"),
+    ];
     #[cfg(windows)]
     {
-        let path = app_root
-            .join(".venvs")
-            .join("core")
-            .join("Scripts")
-            .join("python.exe");
-        if path.exists() {
-            return Some(path);
+        for root in &roots {
+            let path = root.join("core").join("Scripts").join("python.exe");
+            if path.exists() {
+                return Some(path);
+            }
         }
     }
     #[cfg(not(windows))]
     {
-        let path = app_root
-            .join(".venvs")
-            .join("core")
-            .join("bin")
-            .join("python");
-        if path.exists() {
-            return Some(path);
+        for root in &roots {
+            let path = root.join("core").join("bin").join("python");
+            if path.exists() {
+                return Some(path);
+            }
         }
     }
     None
@@ -178,7 +179,9 @@ impl BackendState {
 
     pub fn start(&self) -> Result<BackendInfo, String> {
         let py_exe = core_venv_python(&self.app_root)
-            .ok_or_else(|| "Python core venv missing (.venvs/core)".to_string())?;
+            .ok_or_else(|| {
+                "Python core env missing (runtime/envs/core or legacy .venvs/core)".to_string()
+            })?;
 
         let tmp_dir = self.app_root.join("data").join("tmp");
         let _ = fs::create_dir_all(&tmp_dir);

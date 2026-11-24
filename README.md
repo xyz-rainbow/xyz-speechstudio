@@ -1,4 +1,4 @@
-**English** | [Español](README.es.md)
+﻿**English** | [Español](README.es.md)
 
 # Speech Studio
 
@@ -19,7 +19,7 @@ Speech Studio is a [Tauri 2](https://tauri.app/) desktop shell (React + TypeScri
 - **TTS Studio** — synthesize with a cloned voice profile, preview playback, and export WAV history (save, save-as, reveal in Explorer, delete).
 - **Voice profiles** — create profiles from reference audio and a transcript; extract `.spk` / `.rvq` embeddings with the Qwen worker; transcribe the reference clip when needed.
 - **Transcriber** — transcribe `.wav`, `.mp3`, `.m4a`, `.flac`, or `.opus` files with local faster-whisper (tiny, base, small, medium, large-v3-turbo) or an external STT endpoint. Returns full text plus timestamped segments. Language can be auto-detected.
-- **Models & endpoints** — download built-in catalog models from Hugging Face, inspect and install files from a custom repo, switch local vs endpoint sources, and eject TTS or STT workers. **Qwen and faster-whisper load today.** Coqui XTTS v2 has a worker, `.venvs/xtts`, and local checkpoint weights; a real synthesis may still be validating. NVIDIA Parakeet TDT, Moonshine Base ONNX, and Fish Audio stay in the catalog with `runtime_supported: false`.
+- **Models & endpoints** — download built-in catalog models from Hugging Face, inspect and install files from a custom repo, switch local vs endpoint sources, and eject TTS or STT workers. **Qwen and faster-whisper load today.** Coqui XTTS v2 has a worker, `runtime/envs/xtts`, and local checkpoint weights; a real synthesis may still be validating. NVIDIA Parakeet TDT, Moonshine Base ONNX, and Fish Audio stay in the catalog with `runtime_supported: false`.
 - **Optional local API** — OpenAI-compatible `POST /v1/audio/speech` and `POST /v1/audio/transcriptions`, with an on/off switch, bind host (`127.0.0.1` or `0.0.0.0`), fixed or dynamic port, and a Bearer token. Listening on `0.0.0.0` requires a non-empty token. Settings will not save that combination, and the orchestrator will not serve it.
 - **External endpoints** — presets for OpenAI, Groq, ElevenLabs, and Deepgram, plus custom OpenAI-compatible URLs. Test connection and copy a cURL snippet from Settings.
 - **Windows desktop shell** — system tray (show/hide, captions shortcut, eject models, exit), single-instance, close-to-tray, NVIDIA VRAM meter, GPU or CPU device selectors, and a global hotkey that reads the selected text via UI Automation (the clipboard is not used) and sends it to TTS Studio.
@@ -29,14 +29,14 @@ Speech Studio is a [Tauri 2](https://tauri.app/) desktop shell (React + TypeScri
 
 ## Requirements
 
-- Windows 10 or 11. The Rust sidecar, UI Automation hotkey, tray, toasts, and `.venvs\*\Scripts\python.exe` paths are Windows-specific.
+- Windows 10 or 11. The Rust sidecar, UI Automation hotkey, tray, toasts, and `runtime\envs\*\Scripts\python.exe` paths are Windows-specific.
 - [Node.js](https://nodejs.org/) 20+ and npm.
 - Rust stable and the [Tauri 2 Windows prerequisites](https://v2.tauri.app/start/prerequisites/).
 - 64-bit Python 3.11 or newer.
 - Optional: an NVIDIA GPU and a recent driver (`nvidia-smi` / NVML) for GPU inference and the VRAM meter. CPU mode is supported.
 - Optional: the PowerShell [BurntToast](https://github.com/Windos/BurntToast) module for toasts.
 
-Virtual environments come from [`installer/setup-env.ps1`](installer/setup-env.ps1) (`uv`, Python 3.12) and the pinned files [`installer/requirements-core.txt`](installer/requirements-core.txt), [`requirements-qwen.txt`](installer/requirements-qwen.txt), [`requirements-stt.txt`](installer/requirements-stt.txt), and [`requirements-xtts.txt`](installer/requirements-xtts.txt). The Windows package is Inno Setup: `installer/Output/SpeechStudio_0.1.0_Setup.exe`. A silent clean install on 24 Nov 2026 wrote the app to `C:\Program Files (x86)\XYZ-Productions\Speech Studio`. `setup-env.ps1` exited 0 and created the `.venvs`. A silent `/DIR` pointing at another folder was ignored. The template default is `{autopf}\XYZ-Productions\Speech Studio`. MSI and NSIS bundles from `tauri build` do not install Python. `uv` has to be on the machine. Model weights are not in the installer.
+Virtual environments come from [`installer/setup-env.ps1`](installer/setup-env.ps1) (`uv`, Python 3.12) and the pinned files [`installer/requirements-core.txt`](installer/requirements-core.txt), [`requirements-qwen.txt`](installer/requirements-qwen.txt), [`requirements-stt.txt`](installer/requirements-stt.txt), and [`requirements-xtts.txt`](installer/requirements-xtts.txt). The Windows package is Inno Setup: `installer/Output/SpeechStudio_0.1.0_Setup.exe`. A silent clean install on 24 Nov 2026 wrote the app to `C:\Program Files (x86)\XYZ-Productions\Speech Studio`. `setup-env.ps1` exited 0 and created the `runtime/envs`. A silent `/DIR` pointing at another folder was ignored. The template default is `{autopf}\XYZ-Productions\Speech Studio`. MSI and NSIS bundles from `tauri build` do not install Python. `uv` has to be on the machine. Model weights are not in the installer.
 
 ### Linux (Ubuntu 24.04) — development
 
@@ -51,15 +51,15 @@ sudo apt install -y libwebkit2gtk-4.1-dev build-essential curl wget file \
 `installer/setup-env.ps1` is Windows-only. On Linux, create the same environments with `uv` and the requirements files (`bin/python`, not `Scripts/python.exe`):
 
 ```bash
-uv venv --python 3.12 .venvs/core
-uv pip install --python .venvs/core/bin/python -r installer/requirements-core.txt
-uv venv --python 3.12 .venvs/qwen
-uv pip install --python .venvs/qwen/bin/python -r installer/requirements-qwen.txt
-uv venv --python 3.12 .venvs/stt
-uv pip install --python .venvs/stt/bin/python -r installer/requirements-stt.txt
+uv venv --python 3.12 runtime/envs/core
+uv pip install --python runtime/envs/core/bin/python -r installer/requirements-core.txt
+uv venv --python 3.12 runtime/envs/qwen
+uv pip install --python runtime/envs/qwen/bin/python -r installer/requirements-qwen.txt
+uv venv --python 3.12 runtime/envs/stt
+uv pip install --python runtime/envs/stt/bin/python -r installer/requirements-stt.txt
 ```
 
-XTTS also needs PyTorch before `installer/requirements-xtts.txt` (`uv pip install --python .venvs/xtts/bin/python torch torchaudio torchcodec --torch-backend=auto`, after `uv venv --python 3.12 .venvs/xtts`). Then `npm install` and `npm run tauri dev`. The Rust sidecar uses a process group on Unix instead of Windows Job Objects. On Linux, `notify-send` is used when notifications are enabled. Linux CI builds the shell and does not produce an AppImage or a `.deb`.
+XTTS also needs PyTorch before `installer/requirements-xtts.txt` (`uv pip install --python runtime/envs/xtts/bin/python torch torchaudio torchcodec --torch-backend=auto`, after `uv venv --python 3.12 runtime/envs/xtts`). Then `npm install` and `npm run tauri dev`. The Rust sidecar uses a process group on Unix instead of Windows Job Objects. On Linux, `notify-send` is used when notifications are enabled. Linux CI builds the shell and does not produce an AppImage or a `.deb`.
 
 ## Installation
 
@@ -70,14 +70,14 @@ npm install
 powershell -NoProfile -ExecutionPolicy Bypass -File .\installer\setup-env.ps1 -AppRoot (Get-Location).Path
 ```
 
-`setup-env.ps1` is the official bootstrap. It needs [`uv`](https://docs.astral.sh/uv/) and Python 3.12, and it creates four environments under `.venvs\` (the shell looks for `Scripts\python.exe` on Windows):
+`setup-env.ps1` is the official bootstrap. It needs [`uv`](https://docs.astral.sh/uv/) and Python 3.12, and it creates four environments under `runtime\envs\` (the shell looks for `Scripts\python.exe` on Windows):
 
 | Venv | Requirements | Used for |
 | --- | --- | --- |
-| `.venvs\core` | `installer/requirements-core.txt` | Orchestrator (`backend.orchestrator.main`) |
-| `.venvs\qwen` | `installer/requirements-qwen.txt` | Qwen TTS worker (`realtimetts-qwen-native`) |
-| `.venvs\stt` | `installer/requirements-stt.txt` | faster-whisper worker |
-| `.venvs\xtts` | `installer/requirements-xtts.txt` | Coqui XTTS v2 (`coqui-tts==0.28.0` and `six==1.17.0`). PyTorch, torchaudio, and torchcodec are installed first with `--torch-backend=auto`. |
+| `runtime\envs\core` | `installer/requirements-core.txt` | Orchestrator (`backend.orchestrator.main`) |
+| `runtime\envs\qwen` | `installer/requirements-qwen.txt` | Qwen TTS worker (`realtimetts-qwen-native`) |
+| `runtime\envs\stt` | `installer/requirements-stt.txt` | faster-whisper worker |
+| `runtime\envs\xtts` | `installer/requirements-xtts.txt` | Coqui XTTS v2 (`coqui-tts==0.28.0` and `six==1.17.0`). PyTorch, torchaudio, and torchcodec are installed first with `--torch-backend=auto`. |
 
 Download a Qwen3-TTS GGUF pair (talker + tokenizer) and a faster-whisper model from the in-app **Models** view, or place them in the configured models folder. Built-in Qwen builds come from [`Serveurperso/Qwen3-TTS-GGUF`](https://huggingface.co/Serveurperso/Qwen3-TTS-GGUF); Whisper builds come from the Systran `faster-whisper-*` repos. XTTS checkpoint weights are not in git (Coqui Public Model License). On this tree the weights are already on disk; a real synthesis may still be validating. A load failed once because `six` was missing, until `pip install six` (`six` is now pinned). Parakeet, Moonshine, and Fish Audio do not load.
 
@@ -87,7 +87,7 @@ Download a Qwen3-TTS GGUF pair (talker + tokenizer) and a faster-whisper model f
 npm run tauri dev
 ```
 
-This starts the Vite UI and the Tauri window. The Rust sidecar launches the orchestrator from `.venvs\core` and writes `data/tmp/orchestrator.stderr.log`.
+This starts the Vite UI and the Tauri window. The Rust sidecar launches the orchestrator from `runtime\envs\core` and writes `data/tmp/orchestrator.stderr.log`.
 
 1. Open **Models**, download or select a TTS model and an STT model, and load the workers (GPU or CPU from the top bar).
 2. Open **Profiles**, add a reference audio file and its transcript, then extract the voice.

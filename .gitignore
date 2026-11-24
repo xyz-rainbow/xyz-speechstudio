@@ -14,6 +14,7 @@ ci/k3s/ssh-homelab.conf
 
 # python
 .venvs/
+runtime/envs/
 .venv/
 venv/
 __pycache__/

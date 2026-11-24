@@ -690,6 +690,44 @@ def delete_installed_model(model_id: str):
         raise HTTPException(status_code=404, detail=str(exc))
 
 
+class UninstallLanguageRequest(BaseModel):
+    family_id: str
+    language: str
+    install_mode: Literal["shared_weights", "per_language_checkpoint", "voices_pack"] = (
+        "per_language_checkpoint"
+    )
+
+
+@app.post("/api/models/uninstall-language")
+def uninstall_language_pack(req: UninstallLanguageRequest):
+    from .catalog_capabilities import uninstall_language_pack as _uninstall
+    from .config import resolved_models_dir
+    from .downloader import BUILTIN_MODELS
+
+    if req.install_mode == "shared_weights":
+        raise HTTPException(
+            status_code=400,
+            detail="shared_weights has no per-language uninstall; remove the whole model instead.",
+        )
+    s = load_settings()
+    deleted = _uninstall(
+        models_root=resolved_models_dir(s),
+        install_mode=req.install_mode,
+        family_id=req.family_id,
+        language=req.language,
+        catalog_specs=BUILTIN_MODELS,
+    )
+    langs = dict(s.installed_languages)
+    ready = [x for x in langs.get(req.family_id, []) if x != req.language]
+    if ready:
+        langs[req.family_id] = ready
+    else:
+        langs.pop(req.family_id, None)
+    s.installed_languages = langs
+    save_settings(s)
+    return {"ok": True, "deleted": deleted, "installed_languages": s.installed_languages}
+
+
 @app.post("/api/workers/xtts/load")
 def load_xtts_worker(req: LoadQwenRequest):
     ensure_xtts_loaded(

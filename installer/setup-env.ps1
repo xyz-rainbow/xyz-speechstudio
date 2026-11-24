@@ -26,7 +26,7 @@ function Install-Env {
         [string]$Name,
         [string]$Requirements
     )
-    $venv = Join-Path $AppRoot ".venvs\$Name"
+    $venv = Join-Path $AppRoot "runtime\envs\$Name"
     $python = Join-Path $venv "Scripts\python.exe"
     Write-Host "[Speech Studio] Entorno $Name"
     & $Uv venv --python 3.12 $venv
@@ -64,4 +64,4 @@ foreach ($pair in @(
 foreach ($dir in @("data", "data\models", "data\profiles", "data\outputs", "data\tmp")) {
     New-Item -ItemType Directory -Force -Path (Join-Path $AppRoot $dir) | Out-Null
 }
-Write-Host "[Speech Studio] Entornos core, qwen, stt y xtts listos."
+Write-Host "[Speech Studio] Entornos core, qwen, stt y xtts listos en runtime\envs."

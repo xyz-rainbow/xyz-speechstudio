@@ -51,6 +51,9 @@ export interface AppSettings {
   read_hotkey: string;
   close_behavior: CloseBehavior;
   external_endpoints: ExternalEndpointConfig[];
+  capabilities_v1: boolean;
+  /** family_id → language codes ready on disk */
+  installed_languages: Record<string, string[]>;
 }
 
 export interface SettingsResponse {
@@ -167,6 +170,17 @@ export interface QuantOption {
   recommended: boolean;
 }
 
+export type InstallMode = "shared_weights" | "per_language_checkpoint" | "voices_pack";
+export type VoiceMode = "clone_profile" | "builtin_voices";
+export type QuantPolicy = "gguf" | "checkpoint" | "onnx" | "binary" | "post_quantize";
+
+export interface ModelCapabilities {
+  install_mode: InstallMode;
+  voice_mode: VoiceMode;
+  quant_policy: QuantPolicy;
+  languages: string[];
+}
+
 export interface CatalogModelEntry {
   id: string;
   name: string;
@@ -178,6 +192,7 @@ export interface CatalogModelEntry {
   repo_id: string;
   description: string;
   runtime_supported: boolean;
+  capabilities: ModelCapabilities;
   quants: QuantOption[];
   installed: boolean;
   installed_quant: string | null;

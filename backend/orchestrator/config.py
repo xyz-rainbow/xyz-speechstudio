@@ -61,6 +61,9 @@ class AppSettings(BaseModel):
     read_hotkey: str = ""
     close_behavior: Literal["ask", "minimize", "quit"] = "ask"
     external_endpoints: list[ExternalEndpointConfig] = Field(default_factory=list)
+    # TTS capabilities UX (Fase 1): feature flag + per-family language stock.
+    capabilities_v1: bool = True
+    installed_languages: dict[str, list[str]] = Field(default_factory=dict)
 
     @model_validator(mode="after")
     def lan_bind_requires_bearer_token(self) -> "AppSettings":

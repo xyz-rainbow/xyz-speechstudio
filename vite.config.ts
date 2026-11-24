@@ -8,7 +8,7 @@ export default defineConfig({
     port: 1420,
     strictPort: true,
     watch: {
-      ignored: ["**/src-tauri/**", "**/.venvs/**", "**/data/**", "**/spikes/**"],
+      ignored: ["**/src-tauri/**", "**/.venvs/**", "**/runtime/envs/**", "**/data/**", "**/spikes/**"],
     },
   },
 });

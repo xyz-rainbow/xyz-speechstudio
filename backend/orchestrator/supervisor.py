@@ -61,7 +61,9 @@ class WorkerSupervisor:
     live_captions_active: bool = False
 
     def venv_python(self, family: str) -> Path:
-        base = APP_ROOT / ".venvs" / family
+        from .catalog_capabilities import resolve_runtime_envs_root
+
+        base = resolve_runtime_envs_root(APP_ROOT) / family
         if sys.platform == "win32":
             return base / "Scripts" / "python.exe"
         return base / "bin" / "python"

@@ -1,9 +1,12 @@
 #!/usr/bin/env bash
 set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-PY="$ROOT/.venvs/core/bin/python"
-if [[ ! -x "$PY" ]]; then
-  echo "Speech Studio Python environment not found at $PY" >&2
+if [[ -x "$ROOT/runtime/envs/core/bin/python" ]]; then
+  PY="$ROOT/runtime/envs/core/bin/python"
+elif [[ -x "$ROOT/.venvs/core/bin/python" ]]; then
+  PY="$ROOT/.venvs/core/bin/python"
+else
+  echo "Speech Studio Python environment not found under runtime/envs/core (or legacy .venvs/core)" >&2
   exit 1
 fi
 exec "$PY" -m backend.cli.main "$@"

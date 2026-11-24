@@ -14,6 +14,7 @@ import httpx
 from huggingface_hub import HfApi, hf_hub_url
 from pydantic import BaseModel, Field
 
+from .catalog_capabilities import ModelCapabilities, capabilities_from_spec
 from .config import AppSettings, resolved_models_dir
 
 
@@ -38,6 +39,7 @@ class CatalogModelEntry(BaseModel):
     repo_id: str
     description: str = ""
     runtime_supported: bool = True
+    capabilities: ModelCapabilities = Field(default_factory=ModelCapabilities)
     quants: list[QuantOption] = Field(default_factory=list)
     installed: bool = False
     installed_quant: Optional[str] = None
@@ -113,6 +115,9 @@ BUILTIN_MODELS: list[dict[str, Any]] = [
         "dir_names": ["qwen3-1.7b", "qwen3-1.7b-base"],
         "description": "Zero-shot voice cloning GGUF (Talker + 12Hz codec).",
         "runtime_supported": True,
+        "install_mode": "shared_weights",
+        "voice_mode": "clone_profile",
+        "quant_policy": "gguf",
         "quants": [
             {
                 "id": "Q4_K_M",
@@ -233,6 +238,9 @@ BUILTIN_MODELS: list[dict[str, Any]] = [
         "dir_names": ["xtts-v2"],
         "description": "Multilingual expressive voice cloning (Coqui Public Model License).",
         "runtime_supported": True,
+        "install_mode": "shared_weights",
+        "voice_mode": "clone_profile",
+        "quant_policy": "checkpoint",
         "quants": [
             {
                 "id": "fp16",
@@ -256,10 +264,13 @@ BUILTIN_MODELS: list[dict[str, Any]] = [
         "dir_names": ["fish-speech-1.5"],
         "description": "Multilingual neural TTS from Fish Audio (catalog download; worker upcoming).",
         "runtime_supported": False,
+        "install_mode": "shared_weights",
+        "voice_mode": "clone_profile",
+        "quant_policy": "post_quantize",
         "quants": [
             {
-                "id": "fp16",
-                "label": "FP16 Weights",
+                "id": "bf16",
+                "label": "BF16 Weights",
                 "disk_mb": 1400,
                 "vram_mib": 2200,
                 "files": [
@@ -279,15 +290,19 @@ BUILTIN_MODELS: list[dict[str, Any]] = [
         "engine": "f5-tts",
         "family_id": "f5-tts",
         "family_name": "F5-TTS",
-        "variant_label": "v1 Base (EN-centric)",
+        "variant_label": "v1 Base (EN+zh)",
         "repo_id": "SWivid/F5-TTS",
         "dir_names": ["f5-tts-v1-base"],
         "description": (
-            "Flow-matching voice clone (SWivid). English-centric base. "
-            "FP16/safetensors only — Q8/GGUF is not recommended (ODE error accumulates). "
+            "Flow-matching voice clone (SWivid). EN+zh base. "
+            "FP16/safetensors; GGUF F16 via CrispASR later. "
             "Catalog download; worker not wired yet."
         ),
         "runtime_supported": False,
+        "install_mode": "per_language_checkpoint",
+        "voice_mode": "clone_profile",
+        "quant_policy": "checkpoint",
+        "languages": ["en", "zh"],
         "quants": [
             {
                 "id": "fp16",
@@ -318,6 +333,10 @@ BUILTIN_MODELS: list[dict[str, Any]] = [
             "Catalog download; worker not wired yet."
         ),
         "runtime_supported": False,
+        "install_mode": "per_language_checkpoint",
+        "voice_mode": "clone_profile",
+        "quant_policy": "checkpoint",
+        "languages": ["es"],
         "quants": [
             {
                 "id": "fp16",
@@ -795,6 +814,7 @@ def build_catalog(settings: AppSettings) -> list[CatalogModelEntry]:
         quants = [QuantOption(**q) for q in m.get("quants", [])]
         rec_q = next((q for q in quants if q.recommended), quants[0] if quants else None)
         active_q = next((q for q in quants if q.id == q_id), rec_q)
+        caps = capabilities_from_spec(m)
         entries.append(
             CatalogModelEntry(
                 id=m["id"],
@@ -807,6 +827,7 @@ def build_catalog(settings: AppSettings) -> list[CatalogModelEntry]:
                 repo_id=m["repo_id"],
                 description=m.get("description", ""),
                 runtime_supported=m.get("runtime_supported", True),
+                capabilities=caps,
                 quants=quants,
                 installed=installed,
                 installed_quant=q_id,
@@ -848,6 +869,15 @@ def build_catalog(settings: AppSettings) -> list[CatalogModelEntry]:
                 repo_id=custom.get("repo_id", source),
                 description=f"{source}: {custom.get('repo_id', '')}",
                 runtime_supported=is_ct2 or is_gguf_qwen,
+                capabilities=capabilities_from_spec(
+                    {
+                        "engine": "faster-whisper" if is_ct2 else ("qwen" if is_gguf_qwen else f"custom-{source}"),
+                        "install_mode": "shared_weights",
+                        "voice_mode": "clone_profile" if is_gguf_qwen else "builtin_voices",
+                        "quant_policy": "gguf" if is_gguf_qwen else "checkpoint",
+                        "languages": [],
+                    }
+                ),
                 quants=[
                     QuantOption(
                         id=source,
