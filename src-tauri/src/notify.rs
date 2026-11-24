@@ -1,5 +1,8 @@
-use std::path::{Path, PathBuf};
+use std::path::Path;
+#[cfg(any(windows, target_os = "linux"))]
+use std::path::PathBuf;
 
+#[cfg(any(windows, target_os = "macos"))]
 const APP_ID: &str = "com.xyz.speechstudio";
 #[cfg(any(windows, target_os = "linux"))]
 const APP_NAME: &str = "Speech Studio";

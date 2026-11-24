@@ -78,9 +78,7 @@ fn x11_window_map() -> HashMap<u32, (String, String)> {
 }
 
 fn capture_x11_thumbnail(wid: &str) -> Option<String> {
-    if std::env::var_os("DISPLAY").is_none() {
-        return None;
-    }
+    std::env::var_os("DISPLAY")?;
     let out = Command::new("import")
         .args(["-window", wid, "-resize", "320x180", "png:-"])
         .output()
