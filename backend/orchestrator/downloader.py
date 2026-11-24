@@ -1118,6 +1118,27 @@ def resolve_stt_load_target(settings: AppSettings, model_id: str) -> tuple[str, 
     return "base", None, 350
 
 
+def _runtime_supported_for_builtin(m: dict) -> bool:
+    """Honor catalog flag; promote CrispASR-ready engines when binary is present."""
+    if m.get("runtime_supported", True):
+        return True
+    engine = (m.get("engine") or "").lower()
+    mid = (m.get("id") or "").lower()
+    try:
+        from .crispasr import is_available
+
+        if not is_available():
+            return False
+        if engine == "piper":
+            return True
+        # F5: only the GGUF F16 variant (EN+zh), not per-language safetensors/pt.
+        if engine in {"f5", "f5-tts"} and ("gguf" in mid):
+            return True
+    except Exception:
+        return False
+    return False
+
+
 def build_catalog(settings: AppSettings) -> list[CatalogModelEntry]:
     models_root = resolved_models_dir(settings)
     entries: list[CatalogModelEntry] = []
@@ -1139,7 +1160,7 @@ def build_catalog(settings: AppSettings) -> list[CatalogModelEntry]:
                 variant_label=m.get("variant_label", m["name"]),
                 repo_id=m["repo_id"],
                 description=m.get("description", ""),
-                runtime_supported=m.get("runtime_supported", True),
+                runtime_supported=_runtime_supported_for_builtin(m),
                 capabilities=caps,
                 quants=quants,
                 installed=installed,

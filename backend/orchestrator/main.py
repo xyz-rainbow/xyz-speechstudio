@@ -860,6 +860,43 @@ def delete_profile_route(profile_id: str):
 # --- TTS Synthesis & History ---
 
 
+def _active_tts_catalog_entry(settings) -> Optional[downloader.CatalogModelEntry]:
+    mid = (settings.active_tts_model or "").strip()
+    if not mid:
+        return None
+    for entry in downloader.build_catalog(settings):
+        if entry.kind != "tts":
+            continue
+        if entry.id == mid or entry.id.startswith(mid) or mid.startswith(entry.id):
+            return entry
+    return None
+
+
+def _run_crispasr_tts(
+    *,
+    entry: downloader.CatalogModelEntry,
+    text: str,
+    lang: str,
+    out_path: Path,
+) -> tuple[dict, str]:
+    from . import crispasr
+
+    model_dir = Path(entry.install_dir) if entry.install_dir else None
+    try:
+        res = crispasr.synthesize_tts(
+            engine=entry.engine,
+            text=text,
+            out_path=out_path,
+            language=lang,
+            model_dir=model_dir,
+        )
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=503, detail=str(exc))
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"CrispASR synthesis failed: {exc}")
+    return res, entry.name
+
+
 def _run_tts(
     *,
     prof: Optional[profiles.VoiceProfile],
@@ -877,6 +914,19 @@ def _run_tts(
             return res, ep.name
         except Exception as exc:
             raise HTTPException(status_code=502, detail=f"External TTS error ({ep.name}): {exc}")
+
+    from . import crispasr
+
+    entry = _active_tts_catalog_entry(settings)
+    # Prefer CrispASR for builtin-voice engines / F5 GGUF; keep clone profiles on Python workers.
+    if entry is not None:
+        model_dir = Path(entry.install_dir) if entry.install_dir else None
+        voice_mode = entry.capabilities.voice_mode if entry.capabilities else "clone_profile"
+        if crispasr.supports_engine(entry.engine, model_dir=model_dir) and (
+            voice_mode == "builtin_voices"
+            or (entry.engine in ("f5", "f5-tts") and "gguf" in entry.id.lower())
+        ):
+            return _run_crispasr_tts(entry=entry, text=text, lang=lang, out_path=out_path)
 
     if prof is None:
         raise HTTPException(status_code=404, detail="Voice profile not found.")
@@ -934,8 +984,20 @@ def tts_synthesize(req: SynthesizeRequest):
     if not text:
         raise HTTPException(status_code=400, detail="Input text is empty.")
     settings = load_settings()
+    from . import crispasr
+
     prof = profiles.get_profile(req.profile_id)
-    if settings.tts_source == "local" and prof is None:
+    entry = _active_tts_catalog_entry(settings) if settings.tts_source == "local" else None
+    model_dir = Path(entry.install_dir) if entry and entry.install_dir else None
+    builtin_ok = (
+        entry is not None
+        and crispasr.supports_engine(entry.engine, model_dir=model_dir)
+        and (
+            (entry.capabilities.voice_mode if entry.capabilities else "") == "builtin_voices"
+            or (entry.engine in ("f5", "f5-tts") and "gguf" in entry.id.lower())
+        )
+    )
+    if settings.tts_source == "local" and prof is None and not builtin_ok:
         raise HTTPException(status_code=404, detail=f"Profile not found: {req.profile_id}")
 
     lang = (req.language or (prof.language if prof else "Spanish") or "Spanish").strip()
