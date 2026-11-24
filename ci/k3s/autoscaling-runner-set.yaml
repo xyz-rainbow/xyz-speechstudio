@@ -1,0 +1,50 @@
+# ARC scale set for xyz-speechstudio (Linux jobs on k3s).
+# runs-on: arc-xyz-speechstudio
+# Labels must include app.kubernetes.io/version matching the controller (0.15.0)
+# or ARC deletes the resource immediately.
+apiVersion: actions.github.com/v1alpha1
+kind: AutoscalingRunnerSet
+metadata:
+  name: arc-xyz-speechstudio
+  namespace: arc-runners
+  labels:
+    actions.github.com/organization: xyz-rainbow
+    actions.github.com/repository: xyz-speechstudio
+    actions.github.com/scale-set-name: arc-xyz-speechstudio
+    actions.github.com/scale-set-namespace: arc-runners
+    app.kubernetes.io/component: autoscaling-runner-set
+    app.kubernetes.io/instance: arc-xyz-speechstudio
+    app.kubernetes.io/managed-by: kubectl
+    app.kubernetes.io/name: arc-xyz-speechstudio
+    app.kubernetes.io/part-of: gha-rs
+    app.kubernetes.io/version: "0.15.0"
+    helm.sh/chart: gha-rs-0.15.0
+  annotations:
+    actions.github.com/runner-group-name: Default
+    actions.github.com/runner-scale-set-name: arc-xyz-speechstudio
+spec:
+  githubConfigSecret: gh-arc-pat
+  githubConfigUrl: https://github.com/xyz-rainbow/xyz-speechstudio
+  maxRunners: 3
+  minRunners: 0
+  runnerScaleSetName: arc-xyz-speechstudio
+  listenerConfig:
+    scaler:
+      burst: 100
+      qps: 50
+  template:
+    spec:
+      serviceAccountName: arc-deployer
+      restartPolicy: Never
+      containers:
+        - name: runner
+          image: ghcr.io/actions/actions-runner:latest
+          command:
+            - /home/runner/run.sh
+          resources:
+            requests:
+              cpu: 250m
+              memory: 1Gi
+            limits:
+              cpu: "2"
+              memory: 4Gi

@@ -1,8 +1,7 @@
-# Lint, test and build checks on every push/PR to main.
-# Rust is typechecked on Windows, Ubuntu 24.04, and macOS.
-# Ubuntu also links the Tauri shell with `cargo build` (debug, not a package).
-# Packaged installers are not built here. The Python sidecars are not bundled,
-# and there is no AppImage, .deb, or macOS bundle.
+# CI for Speech Studio on homelab ARC (k3s).
+# Linux jobs: runs-on arc-xyz-speechstudio (AutoscalingRunnerSet in arc-runners).
+# macOS job: self-hosted Mac in the same homelab CI (labels self-hosted,macOS,k3s).
+# GitHub-hosted fallback only via workflow_dispatch.
 
 name: CI
 
@@ -11,6 +10,12 @@ on:
     branches: [main]
   pull_request:
     branches: [main]
+  workflow_dispatch:
+    inputs:
+      use_github_hosted:
+        description: "Run on GitHub-hosted runners instead of k3s/homelab"
+        type: boolean
+        default: false
 
 concurrency:
   group: ci-${{ github.workflow }}-${{ github.ref }}
@@ -22,7 +27,7 @@ permissions:
 jobs:
   frontend:
     name: Frontend lint and build
-    runs-on: ubuntu-24.04
+    runs-on: ${{ inputs.use_github_hosted && 'ubuntu-24.04' || 'arc-xyz-speechstudio' }}
     steps:
       - name: Checkout
         uses: actions/checkout@v7
@@ -41,7 +46,7 @@ jobs:
 
   python:
     name: Python lint and test
-    runs-on: ubuntu-24.04
+    runs-on: ${{ inputs.use_github_hosted && 'ubuntu-24.04' || 'arc-xyz-speechstudio' }}
     steps:
       - name: Checkout
         uses: actions/checkout@v7
@@ -62,45 +67,28 @@ jobs:
       - name: Pytest
         run: pytest -q
 
-  rust-windows:
-    name: Rust check (Windows)
-    runs-on: windows-latest
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v7
-
-      - name: Setup Rust
-        uses: dtolnay/rust-toolchain@stable
-
-      - name: Cache cargo
-        uses: Swatinem/rust-cache@v2
-        with:
-          workspaces: src-tauri
-
-      - name: Cargo check
-        working-directory: src-tauri
-        run: cargo check --locked
-
   rust-linux:
     name: Rust check and build (Linux)
-    runs-on: ubuntu-24.04
+    runs-on: ${{ inputs.use_github_hosted && 'ubuntu-24.04' || 'arc-xyz-speechstudio' }}
     steps:
       - name: Checkout
         uses: actions/checkout@v7
 
       - name: Install Tauri system dependencies
         run: |
-          sudo apt-get update
-          sudo apt-get install -y \
-            libwebkit2gtk-4.1-dev \
-            build-essential \
-            curl \
-            wget \
-            file \
-            libxdo-dev \
-            libssl-dev \
-            libayatana-appindicator3-dev \
-            librsvg2-dev
+          if command -v apt-get >/dev/null 2>&1; then
+            sudo apt-get update
+            sudo apt-get install -y \
+              libwebkit2gtk-4.1-dev \
+              build-essential \
+              curl \
+              wget \
+              file \
+              libxdo-dev \
+              libssl-dev \
+              libayatana-appindicator3-dev \
+              librsvg2-dev || true
+          fi
 
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@stable
@@ -126,7 +114,7 @@ jobs:
 
   rust-macos:
     name: Rust check (macOS)
-    runs-on: macos-latest
+    runs-on: ${{ inputs.use_github_hosted && 'macos-latest' || fromJSON('["self-hosted","macOS","k3s"]') }}
     steps:
       - name: Checkout
         uses: actions/checkout@v7
@@ -148,3 +136,23 @@ jobs:
       - name: Cargo clippy
         working-directory: src-tauri
         run: cargo clippy --locked --all-targets -- -D warnings
+
+  rust-windows:
+    name: Rust check (Windows)
+    if: ${{ github.event_name == 'workflow_dispatch' && inputs.use_github_hosted }}
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+
+      - name: Cargo check
+        working-directory: src-tauri
+        run: cargo check --locked
