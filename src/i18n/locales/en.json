@@ -192,7 +192,15 @@
     "importNow": "Import Model",
     "emptySectionHint": "No models installed yet. Click (+) to browse Featured, Explore Hub or Import.",
     "backToResults": "Back to results",
-    "localPathPlaceholder": "Folder or file path..."
+    "localPathPlaceholder": "Folder or file path...",
+    "languages": "Languages",
+    "installModeShared": "One download covers all listed languages",
+    "installModePerLanguage": "Install a checkpoint per language",
+    "installModeVoices": "Install voice pack per language",
+    "removeLanguage": "Remove language",
+    "removeLanguageConfirm": "Delete the installed files for this language?",
+    "confirmRemoveLanguage": "Delete language",
+    "postQuantHint": "Quantize after BF16 download (tooling later)"
   },
   "tray": {
     "open": "Open Speech Studio",

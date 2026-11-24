@@ -192,7 +192,15 @@
     "importNow": "Importar Modelo",
     "emptySectionHint": "Aún no hay modelos instalados. Pulsa (+) para abrir Destacados, Explorar Hub o Importar.",
     "backToResults": "Volver a resultados",
-    "localPathPlaceholder": "Ruta de carpeta o archivo..."
+    "localPathPlaceholder": "Ruta de carpeta o archivo...",
+    "languages": "Idiomas",
+    "installModeShared": "Una descarga cubre todos los idiomas listados",
+    "installModePerLanguage": "Instala un checkpoint por idioma",
+    "installModeVoices": "Instala el pack de voces por idioma",
+    "removeLanguage": "Eliminar idioma",
+    "removeLanguageConfirm": "¿Borrar los archivos instalados de este idioma?",
+    "confirmRemoveLanguage": "Eliminar idioma",
+    "postQuantHint": "Cuantizar tras descargar BF16 (herramienta más adelante)"
   },
   "tray": {
     "open": "Abrir Speech Studio",

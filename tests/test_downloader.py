@@ -31,9 +31,19 @@ def test_builtin_catalog_has_family_grouping_and_fish_audio() -> None:
     assert "parakeet-v3" in families
     assert "moonshine" in families
     f5 = [m for m in downloader.BUILTIN_MODELS if m.get("family_id") == "f5-tts"]
-    assert {m["id"] for m in f5} >= {"f5-tts-v1-base", "f5-tts-spanish"}
+    assert {m["id"] for m in f5} >= {
+        "f5-tts-v1-base",
+        "f5-tts-spanish",
+        "f5-tts-french",
+        "f5-tts-german",
+        "f5-tts-gguf-f16",
+    }
+    assert "kokoro" in families
+    assert "kitten-tts" in families
+    assert "piper" in families
     assert all(m.get("runtime_supported") is False for m in f5)
-    assert all(len(m.get("quants", [])) == 1 and m["quants"][0]["id"] == "fp16" for m in f5)
+    assert all(m.get("install_mode") == "per_language_checkpoint" for m in f5)
+    assert all(len(m.get("quants", [])) >= 1 for m in f5)
 
 
 def test_empty_models_dir_reports_zero_installed() -> None:

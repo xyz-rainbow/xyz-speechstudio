@@ -1004,9 +1004,13 @@ export const ModelsView: React.FC<ModelsViewProps> = ({
         catalog={catalog}
         downloads={downloads}
         vram={vram}
+        installedLanguages={settings.installed_languages}
         onClose={() => setHubModalKind(null)}
         onRefreshCatalog={refreshCatalog}
         onRequestRemove={(entry) => setRemoveTarget(entry)}
+        onInstalledLanguagesChange={(next) => {
+          void onSaveSettings({ ...settings, installed_languages: next });
+        }}
       />
 
       {/* Remove Model Confirmation Modal */}

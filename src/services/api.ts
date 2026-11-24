@@ -518,6 +518,24 @@ export async function removeInstalledModel(baseUrl: string, modelId: string): Pr
   await parseErrorOrJson(res);
 }
 
+export async function uninstallLanguagePack(
+  baseUrl: string,
+  familyId: string,
+  language: string,
+  installMode: "per_language_checkpoint" | "voices_pack",
+): Promise<{ ok: boolean; deleted: string[]; installed_languages: Record<string, string[]> }> {
+  const res = await fetch(`${baseUrl}/api/models/uninstall-language`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      family_id: familyId,
+      language,
+      install_mode: installMode,
+    }),
+  });
+  return parseErrorOrJson(res);
+}
+
 export async function inspectHfRepo(baseUrl: string, url: string): Promise<HfInspectResponse> {
   const res = await fetch(`${baseUrl}/api/models/hf/inspect`, {
     method: "POST",

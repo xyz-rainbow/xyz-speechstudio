@@ -22,6 +22,7 @@ import {
   installModelFromUrl,
   searchModelHub,
   startModelDownload,
+  uninstallLanguagePack,
 } from "../services/api";
 import { pickFile, pickFolder } from "../services/fileDialog";
 import type {
@@ -29,6 +30,7 @@ import type {
   DownloadJob,
   HfInspectResponse,
   HubModelSummary,
+  InstallMode,
   VramStatus,
 } from "../types";
 import { GlassCard } from "./GlassCard";
@@ -40,9 +42,11 @@ interface ModelHubModalProps {
   catalog: CatalogModelEntry[];
   downloads: DownloadJob[];
   vram: VramStatus | null;
+  installedLanguages?: Record<string, string[]>;
   onClose: () => void;
   onRefreshCatalog: () => Promise<void>;
   onRequestRemove: (entry: CatalogModelEntry) => void;
+  onInstalledLanguagesChange?: (next: Record<string, string[]>) => void;
 }
 
 interface FamilyGroup {
@@ -61,6 +65,31 @@ function formatVramSize(mib: number): string {
   return mib >= 1024 ? `~${(mib / 1024).toFixed(1)} GB` : `~${mib} MB`;
 }
 
+function installModeHintKey(mode: InstallMode): string {
+  if (mode === "per_language_checkpoint") return "models.installModePerLanguage";
+  if (mode === "voices_pack") return "models.installModeVoices";
+  return "models.installModeShared";
+}
+
+function familyLanguages(variants: CatalogModelEntry[]): string[] {
+  const set = new Set<string>();
+  for (const v of variants) {
+    for (const lang of v.capabilities?.languages ?? []) set.add(lang);
+  }
+  return Array.from(set);
+}
+
+function variantForLanguage(
+  variants: CatalogModelEntry[],
+  language: string | undefined,
+): CatalogModelEntry {
+  if (language) {
+    const match = variants.find((v) => (v.capabilities?.languages ?? []).includes(language));
+    if (match) return match;
+  }
+  return variants[0];
+}
+
 export const ModelHubModal: React.FC<ModelHubModalProps> = ({
   open,
   kind,
@@ -68,13 +97,21 @@ export const ModelHubModal: React.FC<ModelHubModalProps> = ({
   catalog,
   downloads,
   vram,
+  installedLanguages = {},
   onClose,
   onRefreshCatalog,
   onRequestRemove,
+  onInstalledLanguagesChange,
 }) => {
   const { t } = useI18n();
   const [tab, setTab] = useState<"featured" | "hub" | "import">("featured");
   const [error, setError] = useState<string | null>(null);
+  const [langChoice, setLangChoice] = useState<Record<string, string>>({});
+  const [pendingLangRemove, setPendingLangRemove] = useState<{
+    familyId: string;
+    language: string;
+    mode: InstallMode;
+  } | null>(null);
 
   // Featured state
   const [featuredPage, setFeaturedPage] = useState(1);
@@ -406,9 +443,23 @@ export const ModelHubModal: React.FC<ModelHubModalProps> = ({
             <>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                 {pagedFamilies.map((fam) => {
-                  const chosenVarId = variantChoice[fam.familyId] || fam.variants[0]?.id;
-                  const variant =
-                    fam.variants.find((v) => v.id === chosenVarId) || fam.variants[0];
+                  const installMode =
+                    fam.variants[0]?.capabilities?.install_mode ?? "shared_weights";
+                  const langs = familyLanguages(fam.variants);
+                  const selectedLang =
+                    langChoice[fam.familyId] ||
+                    langs.find((l) =>
+                      fam.variants.some(
+                        (v) =>
+                          (v.capabilities?.languages ?? []).includes(l) && v.installed,
+                      ),
+                    ) ||
+                    langs[0];
+                  const chosenVarId = variantChoice[fam.familyId];
+                  const variant = chosenVarId
+                    ? fam.variants.find((v) => v.id === chosenVarId) ||
+                      variantForLanguage(fam.variants, selectedLang)
+                    : variantForLanguage(fam.variants, selectedLang);
                   const recQuant =
                     variant.quants.find((q) => q.recommended) || variant.quants[0];
                   const chosenQId = quantChoice[variant.id] || recQuant?.id || "";
@@ -417,6 +468,15 @@ export const ModelHubModal: React.FC<ModelHubModalProps> = ({
                   const activeJob = activeJobFor(variant.id);
                   const fitsVram =
                     !vram?.available || !quant || quant.vram_mib <= vram.total_mib - 400;
+                  const readyLangs = new Set<string>([
+                    ...(installedLanguages[fam.familyId] ?? []),
+                    ...fam.variants
+                      .filter((v) => v.installed)
+                      .flatMap((v) => v.capabilities?.languages ?? []),
+                  ]);
+                  const showLangTrash =
+                    installMode === "per_language_checkpoint" ||
+                    installMode === "voices_pack";
 
                   return (
                     <div
@@ -438,6 +498,12 @@ export const ModelHubModal: React.FC<ModelHubModalProps> = ({
                           >
                             {variant.description}
                           </p>
+                          <p
+                            className="text-[10px] mt-1"
+                            style={{ color: "var(--text-muted)" }}
+                          >
+                            {t(installModeHintKey(installMode))}
+                          </p>
                         </div>
                         {!variant.runtime_supported && (
                           <span className="rounded-full px-2 py-0.5 text-[10px] font-mono bg-amber-500/15 text-amber-300 border border-amber-500/35 shrink-0">
@@ -446,8 +512,77 @@ export const ModelHubModal: React.FC<ModelHubModalProps> = ({
                         )}
                       </div>
 
+                      {langs.length > 0 && (
+                        <div className="flex flex-col gap-1.5">
+                          <span
+                            className="text-[10px] font-mono"
+                            style={{ color: "var(--text-muted)" }}
+                          >
+                            {t("models.languages")}
+                          </span>
+                          <div className="flex flex-wrap gap-1.5">
+                            {langs.map((lang) => {
+                              const active = selectedLang === lang;
+                              const ready = readyLangs.has(lang);
+                              return (
+                                <div key={lang} className="inline-flex items-center gap-0.5">
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      setLangChoice((prev) => ({
+                                        ...prev,
+                                        [fam.familyId]: lang,
+                                      }));
+                                      if (installMode === "per_language_checkpoint") {
+                                        const next = variantForLanguage(fam.variants, lang);
+                                        setVariantChoice((prev) => ({
+                                          ...prev,
+                                          [fam.familyId]: next.id,
+                                        }));
+                                      }
+                                    }}
+                                    className={clsx(
+                                      "rounded-lg border px-2 py-0.5 text-[10px] font-mono uppercase",
+                                      active && "border-cyan-400/60 text-cyan-200",
+                                      ready && !active && "border-emerald-500/40 text-emerald-300",
+                                    )}
+                                    style={{
+                                      borderColor: active
+                                        ? undefined
+                                        : "var(--border-glass)",
+                                      backgroundColor: "var(--bg-elevated)",
+                                      color: active ? undefined : "var(--text-secondary)",
+                                    }}
+                                  >
+                                    {lang}
+                                  </button>
+                                  {showLangTrash && ready && (
+                                    <button
+                                      type="button"
+                                      title={t("models.removeLanguage")}
+                                      aria-label={t("models.removeLanguage")}
+                                      onClick={() =>
+                                        setPendingLangRemove({
+                                          familyId: fam.familyId,
+                                          language: lang,
+                                          mode: installMode,
+                                        })
+                                      }
+                                      className="rounded-md p-0.5 text-rose-400/70 hover:text-rose-300 hover:bg-rose-500/10"
+                                    >
+                                      <Trash2 className="w-3 h-3" />
+                                    </button>
+                                  )}
+                                </div>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      )}
+
                       <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                        {fam.variants.length > 1 && (
+                        {fam.variants.length > 1 &&
+                          installMode !== "per_language_checkpoint" && (
                           <div className="flex flex-col gap-1">
                             <span
                               className="text-[10px] font-mono"
@@ -482,7 +617,9 @@ export const ModelHubModal: React.FC<ModelHubModalProps> = ({
                         <div
                           className={clsx(
                             "flex flex-col gap-1",
-                            fam.variants.length <= 1 && "sm:col-span-2"
+                            (fam.variants.length <= 1 ||
+                              installMode === "per_language_checkpoint") &&
+                              "sm:col-span-2"
                           )}
                         >
                           <span
@@ -513,6 +650,11 @@ export const ModelHubModal: React.FC<ModelHubModalProps> = ({
                               </option>
                             ))}
                           </select>
+                          {quant && quant.files.length === 0 && (
+                            <span className="text-[10px] text-amber-300/90">
+                              {t("models.postQuantHint")}
+                            </span>
+                          )}
                         </div>
                       </div>
 
@@ -887,6 +1029,56 @@ export const ModelHubModal: React.FC<ModelHubModalProps> = ({
           )}
         </div>
       </GlassCard>
+
+      {pendingLangRemove && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/65 backdrop-blur-sm p-4">
+          <GlassCard className="w-full max-w-sm p-4 flex flex-col gap-3">
+            <h3 className="text-sm font-semibold">{t("models.removeLanguage")}</h3>
+            <p className="text-xs" style={{ color: "var(--text-secondary)" }}>
+              {t("models.removeLanguageConfirm")} ({pendingLangRemove.language})
+            </p>
+            <div className="flex justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => setPendingLangRemove(null)}
+                className="rounded-xl border px-3 py-1.5 text-xs"
+                style={{ borderColor: "var(--border-glass)" }}
+              >
+                {t("models.cancel")}
+              </button>
+              <button
+                type="button"
+                onClick={async () => {
+                  if (
+                    pendingLangRemove.mode !== "per_language_checkpoint" &&
+                    pendingLangRemove.mode !== "voices_pack"
+                  ) {
+                    setPendingLangRemove(null);
+                    return;
+                  }
+                  try {
+                    const res = await uninstallLanguagePack(
+                      baseUrl,
+                      pendingLangRemove.familyId,
+                      pendingLangRemove.language,
+                      pendingLangRemove.mode,
+                    );
+                    onInstalledLanguagesChange?.(res.installed_languages);
+                    await onRefreshCatalog();
+                  } catch (err) {
+                    setError(err instanceof Error ? err.message : String(err));
+                  } finally {
+                    setPendingLangRemove(null);
+                  }
+                }}
+                className="rounded-xl border border-rose-400/50 bg-rose-500/20 px-3 py-1.5 text-xs text-rose-200"
+              >
+                {t("models.confirmRemoveLanguage")}
+              </button>
+            </div>
+          </GlassCard>
+        </div>
+      )}
     </div>
   );
 };
