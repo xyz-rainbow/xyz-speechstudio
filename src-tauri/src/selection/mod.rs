@@ -42,15 +42,17 @@ impl SelectionPayload {
 pub fn read_selection() -> SelectionPayload {
     #[cfg(windows)]
     {
-        return match windows::read_selected_text() {
+        match windows::read_selected_text() {
             Some(text) if !text.trim().is_empty() => SelectionPayload::text(text),
             _ => SelectionPayload::empty(),
-        };
+        }
     }
     #[cfg(target_os = "linux")]
     {
-        return linux::read_primary_selection();
+        linux::read_primary_selection()
     }
     #[cfg(not(any(windows, target_os = "linux")))]
-    SelectionPayload::empty()
+    {
+        SelectionPayload::empty()
+    }
 }
