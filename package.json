@@ -16,7 +16,7 @@
     "@tauri-apps/plugin-dialog": "^2.2.0",
     "@tauri-apps/plugin-shell": "^2.2.0",
     "clsx": "^2.1.1",
-    "framer-motion": "^12.12.1",
+    "framer-motion": "^14.14.0",
     "lucide-react": "^1.77.0",
     "react": "^19.1.0",
     "react-dom": "^19.1.0",
