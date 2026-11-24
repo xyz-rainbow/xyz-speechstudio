@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Linux read-selection uses only the primary selection (`wl-paste --primary`, then `xclip -selection primary`). There is no clipboard fallback. Missing tools show a translated message. `read_selection_supported` is true on Linux. A real Wayland or X11 selection was not read from this machine.
 - Linux (Ubuntu 24.04) development path: Tauri `cargo check`/`clippy` in CI, Unix Python venv paths (`.venvs/<name>/bin/python`), process-group orchestrator lifecycle, and README/CONTRIBUTING setup notes.
 - `BackendInfo` flags `live_captions_supported` and `read_selection_supported` so the UI can disable Windows-only features on other platforms.
 

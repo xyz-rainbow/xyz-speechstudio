@@ -164,14 +164,37 @@ function MainStudio() {
   );
   const baseUrlRef = useRef("");
   baseUrlRef.current = backend.base_url;
+  const notificationsRef = useRef(true);
+  notificationsRef.current = settings.notifications_enabled;
+  const tRef = useRef(t);
+  tRef.current = t;
 
-  // Global hotkey: selected text read by the Rust side via UI Automation (clipboard untouched).
+  // Windows: UI Automation. Linux: primary selection only, never the clipboard.
   useEffect(() => {
     if (!isTauri()) return;
     let unlisten: (() => void) | undefined;
-    listen<string | null>("read-selection", (ev) => {
+    listen<{ text?: string; code?: string } | string | null>("read-selection", (ev) => {
+      const payload = ev.payload;
+      let code = "empty";
+      let text = "";
+      if (typeof payload === "string") {
+        text = payload;
+        code = payload.trim() ? "text" : "empty";
+      } else if (payload && typeof payload === "object") {
+        text = payload.text ?? "";
+        code = payload.code ?? (text.trim() ? "text" : "empty");
+      }
+      if (code === "unavailable") {
+        const translate = tRef.current;
+        void notify(
+          notificationsRef.current,
+          translate("toast.title"),
+          translate("hotkey.selectionTools")
+        );
+        return;
+      }
       setActiveTab("synthesize");
-      setIncomingSpeak((prev) => ({ text: ev.payload ?? "", nonce: (prev?.nonce ?? 0) + 1 }));
+      setIncomingSpeak((prev) => ({ text, nonce: (prev?.nonce ?? 0) + 1 }));
     }).then((fn) => {
       unlisten = fn;
     });
