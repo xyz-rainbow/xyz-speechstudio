@@ -2,26 +2,30 @@
 
 Speech Studio uses [CrispASR](https://github.com/CrispStrobe/CrispASR) as the preferred shared C++ runtime for Piper, F5-TTS GGUF, and (when GGUF voices are present) Kokoro.
 
-## Install
+The **TopBar GPU / CPU selector** (`tts_device`) picks which build to run:
 
-1. Download a release asset for your OS from  
-   https://github.com/CrispStrobe/CrispASR/releases/latest  
-   (Windows: `crispasr-windows-x86_64-cuda.zip` or `…-cpu.zip`).
-2. Extract so the executable is here:
-   - Windows: `runtime/bin/crispasr.exe`
-   - Linux/macOS: `runtime/bin/crispasr`
-3. Or set `CRISPASR_BIN` to the full path of the binary.
+| Selector | Path |
+| --- | --- |
+| GPU | `runtime/bin/cuda/crispasr.exe` |
+| CPU | `runtime/bin/cpu/crispasr.exe` |
 
-Optional helper (Windows):
+If only one variant is installed, the other selector falls back (CPU on a CUDA-only install adds `--no-gpu`).
+
+## Install both variants
 
 ```powershell
 .\scripts\fetch-crispasr.ps1
+# or explicitly:
+.\scripts\fetch-crispasr.ps1 -Variant both
 ```
+
+Override with `CRISPASR_BIN` (full path). When the selector is CPU and `CRISPASR_BIN` points at a CUDA build, `--no-gpu` is still passed.
 
 ## Check
 
 ```text
-runtime/bin/crispasr --backend piper -m auto --tts "Hello" --tts-output out.wav
+runtime\bin\cuda\crispasr.exe --backend piper -m auto --tts "Hello GPU" --tts-output out-gpu.wav
+runtime\bin\cpu\crispasr.exe  --backend piper -m auto --tts "Hello CPU" --tts-output out-cpu.wav
 ```
 
-When the binary is present, the catalog promotes Piper (and F5 GGUF) to `runtime_supported: true`.
+The Inno payload copies `cuda/` and `cpu/` when present (`installer/windows/build.ps1`).

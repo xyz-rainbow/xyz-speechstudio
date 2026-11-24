@@ -16,6 +16,6 @@ Hace falta el `speech-studio.exe` de `npx tauri build` e Inno Setup 6.
 
 El resultado queda en `installer\Output\SpeechStudio_0.1.0_Setup.exe`.
 
-Al instalar, `setup-env.ps1` crea con `uv` y Python 3.12 los entornos `.venvs\core`, `.venvs\qwen`, `.venvs\stt` y `.venvs\xtts` desde `requirements-core.txt`, `requirements-qwen.txt`, `requirements-stt.txt` y `requirements-xtts.txt`. XTTS instala PyTorch con `--torch-backend=auto` y luego `coqui-tts==0.28.0` y `six==1.17.0`. Hace falta `uv` en el equipo de destino y WebView2.
+Al instalar, `setup-env.ps1` crea con `uv` y Python 3.12 los entornos `runtime\envs\core`, `qwen`, `stt` y `xtts` desde `requirements-*.txt`. XTTS instala PyTorch con `--torch-backend=auto` y luego `coqui-tts==0.28.0` y `six==1.17.0`. Si `runtime\bin\cuda\` y `runtime\bin\cpu\` están en el payload (tras `scripts\fetch-crispasr.ps1`), Piper/F5 GGUF siguen el selector GPU/CPU de la app. Hace falta `uv` en el equipo de destino y WebView2.
 
-El 24 de noviembre de 2026 se ejecutó una instalación silenciosa. El programa quedó en `C:\Program Files (x86)\XYZ-Productions\Speech Studio`, `setup-env.ps1` salió con código 0 y creó los `.venvs`. `/DIR` en silencio ignoró la ruta pedida. La plantilla sigue en `{autopf}\XYZ-Productions\Speech Studio`. El CI de Linux compila el shell y no hay AppImage ni `.deb`. macOS sigue sin paquete.
+El 24 de noviembre de 2026 se ejecutó una instalación silenciosa en `C:\Program Files (x86)\XYZ-Productions\Speech Studio`. `/DIR` en silencio ignoró la ruta pedida. El CI de Linux compila el shell; no hay AppImage/`.deb` ni bundle macOS.

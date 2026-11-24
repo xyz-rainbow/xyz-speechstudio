@@ -1,9 +1,14 @@
 """CrispASR CLI bridge — shared C++ runtime for TTS/STT backends.
 
-Binary resolution order:
-1. CRISPASR_BIN env
-2. runtime/bin/crispasr(.exe)
-3. PATH (`crispasr` / `crispasr.exe`)
+Binary layout (Windows):
+  runtime/bin/cuda/crispasr.exe   ← TopBar GPU
+  runtime/bin/cpu/crispasr.exe    ← TopBar CPU
+
+Resolution order for device=gpu:
+  CRISPASR_BIN → cuda/ → flat runtime/bin/ → cpu/ → PATH
+
+Resolution order for device=cpu:
+  CRISPASR_BIN → cpu/ → flat runtime/bin/ → cuda/ (+ --no-gpu) → PATH
 """
 
 from __future__ import annotations
@@ -15,9 +20,11 @@ import sys
 import time
 import wave
 from pathlib import Path
-from typing import Optional
+from typing import Literal, Optional
 
 from .config import APP_ROOT
+
+DeviceKind = Literal["gpu", "cpu"]
 
 # Speech Studio engine id → CrispASR --backend name
 ENGINE_BACKEND: dict[str, str] = {
@@ -30,7 +37,6 @@ ENGINE_BACKEND: dict[str, str] = {
 }
 
 # Engines that can use `-m auto` without a local GGUF (Piper).
-# F5 still needs a GGUF on disk or CrispASR auto-download via engine path in synthesize.
 CRISPASR_AUTO_ENGINES = frozenset({"piper"})
 # Catalog promotion set (see downloader._runtime_supported_for_builtin).
 CRISPASR_READY_ENGINES = frozenset({"piper", "f5", "f5-tts"})
@@ -60,32 +66,77 @@ def resolve_runtime_bin_dir(app_root: Optional[Path] = None) -> Path:
     return root / "runtime" / "bin"
 
 
-def resolve_crispasr_bin(app_root: Optional[Path] = None) -> Optional[Path]:
+def _exe_names() -> list[str]:
+    return ["crispasr.exe", "crispasr"] if sys.platform == "win32" else ["crispasr", "crispasr.exe"]
+
+
+def _find_in_dir(directory: Path) -> Optional[Path]:
+    if not directory.is_dir():
+        return None
+    for name in _exe_names():
+        p = directory / name
+        if p.is_file():
+            return p
+    return None
+
+
+def resolve_crispasr_bin(
+    app_root: Optional[Path] = None,
+    *,
+    device: DeviceKind = "gpu",
+) -> tuple[Optional[Path], bool]:
+    """Return (binary_path, force_no_gpu).
+
+    force_no_gpu is True when CPU was requested but only a CUDA build was found.
+    """
     env = (os.environ.get("CRISPASR_BIN") or "").strip()
     if env:
         p = Path(env)
         if p.is_file():
-            return p
+            # Caller asked for CPU via selector but forced a specific bin — still pass --no-gpu.
+            return p, device == "cpu"
 
     bin_dir = resolve_runtime_bin_dir(app_root)
-    candidates = ["crispasr.exe", "crispasr"] if sys.platform == "win32" else ["crispasr", "crispasr.exe"]
-    for name in candidates:
-        p = bin_dir / name
-        if p.is_file():
-            return p
+    cuda_bin = _find_in_dir(bin_dir / "cuda")
+    cpu_bin = _find_in_dir(bin_dir / "cpu")
+    flat_bin = _find_in_dir(bin_dir)
 
-    which = shutil.which("crispasr.exe" if sys.platform == "win32" else "crispasr")
+    if device == "cpu":
+        if cpu_bin:
+            return cpu_bin, False
+        if flat_bin:
+            return flat_bin, True
+        if cuda_bin:
+            return cuda_bin, True
+    else:
+        if cuda_bin:
+            return cuda_bin, False
+        if flat_bin:
+            return flat_bin, False
+        if cpu_bin:
+            return cpu_bin, False
+
+    which_name = "crispasr.exe" if sys.platform == "win32" else "crispasr"
+    which = shutil.which(which_name)
     if which:
-        return Path(which)
+        return Path(which), device == "cpu"
     if sys.platform == "win32":
         which = shutil.which("crispasr")
         if which:
-            return Path(which)
-    return None
+            return Path(which), device == "cpu"
+    return None, False
 
 
-def is_available(app_root: Optional[Path] = None) -> bool:
-    return resolve_crispasr_bin(app_root) is not None
+def is_available(app_root: Optional[Path] = None, *, device: Optional[DeviceKind] = None) -> bool:
+    if device is None:
+        # Any variant counts for catalog promotion.
+        for d in ("gpu", "cpu"):
+            path, _ = resolve_crispasr_bin(app_root, device=d)  # type: ignore[arg-type]
+            if path is not None:
+                return True
+        return False
+    path, _ = resolve_crispasr_bin(app_root, device=device)
+    return path is not None
 
 
 def backend_for_engine(engine: str) -> Optional[str]:
@@ -97,16 +148,15 @@ def supports_engine(
     app_root: Optional[Path] = None,
     *,
     model_dir: Optional[Path] = None,
+    device: Optional[DeviceKind] = None,
 ) -> bool:
     """True when CrispASR can synthesize for this engine right now."""
-    if backend_for_engine(engine) is None or not is_available(app_root):
+    if backend_for_engine(engine) is None or not is_available(app_root, device=device):
         return False
     eng = (engine or "").strip().lower()
     if eng in CRISPASR_AUTO_ENGINES:
         return True
-    # F5 / Kokoro / others: require a local GGUF (or rely on -m auto only for piper).
     if eng in {"f5", "f5-tts"}:
-        # Allow -m auto for F5 when no local file (CrispASR can fetch F16).
         return True
     return find_gguf_model(model_dir) is not None
 
@@ -134,6 +184,7 @@ def build_tts_command(
     language: str = "en",
     model_path: Optional[Path] = None,
     voice: Optional[str] = None,
+    force_no_gpu: bool = False,
     extra_args: Optional[list[str]] = None,
 ) -> list[str]:
     backend = backend_for_engine(engine)
@@ -154,6 +205,8 @@ def build_tts_command(
         "--tts-output",
         str(out_path),
     ]
+    if force_no_gpu:
+        cmd.append("--no-gpu")
     if voice:
         cmd.extend(["--voice", voice])
     if extra_args:
@@ -169,14 +222,15 @@ def synthesize_tts(
     language: str = "en",
     model_dir: Optional[Path] = None,
     voice: Optional[str] = None,
+    device: DeviceKind = "gpu",
     timeout_s: float = 300.0,
     app_root: Optional[Path] = None,
 ) -> dict:
-    binary = resolve_crispasr_bin(app_root)
+    binary, force_no_gpu = resolve_crispasr_bin(app_root, device=device)
     if binary is None:
         raise FileNotFoundError(
-            "CrispASR binary not found. Place it under runtime/bin/ or set CRISPASR_BIN. "
-            "See runtime/bin/README.md"
+            "CrispASR binary not found. Place cuda/ and cpu/ under runtime/bin/ "
+            "(scripts/fetch-crispasr.ps1) or set CRISPASR_BIN. See runtime/bin/README.md"
         )
     text = text.strip()
     if not text:
@@ -193,13 +247,14 @@ def synthesize_tts(
         language=language,
         model_path=gguf,
         voice=voice,
+        force_no_gpu=force_no_gpu,
     )
 
     creationflags = getattr(subprocess, "CREATE_NO_WINDOW", 0)
     t0 = time.perf_counter()
     proc = subprocess.run(
         cmd,
-        cwd=str(app_root or APP_ROOT),
+        cwd=str(binary.parent),  # DLLs next to the chosen variant
         capture_output=True,
         text=True,
         timeout=timeout_s,
@@ -221,6 +276,9 @@ def synthesize_tts(
     return {
         "engine": engine,
         "backend": backend_for_engine(engine),
+        "device": device,
+        "binary": str(binary),
+        "force_no_gpu": force_no_gpu,
         "out_path": str(out_path),
         "model": str(gguf) if gguf else "auto",
         "duration_s": round(dur, 3),

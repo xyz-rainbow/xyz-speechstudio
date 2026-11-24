@@ -1,4 +1,4 @@
-"""CrispASR bridge helpers (Fase 4)."""
+"""CrispASR bridge helpers (Fase 4) — device selector + cuda/cpu layout."""
 
 from __future__ import annotations
 
@@ -42,32 +42,69 @@ def test_build_tts_command_uses_auto_when_no_gguf(tmp_path: Path):
     assert "-l" in cmd and "es" in cmd
     assert "--tts" in cmd and "Hola" in cmd
     assert "--tts-output" in cmd and str(out) in cmd
+    assert "--no-gpu" not in cmd
 
 
-def test_build_tts_command_prefers_gguf(tmp_path: Path):
-    binary = tmp_path / "crispasr"
+def test_build_tts_command_force_no_gpu(tmp_path: Path):
+    binary = tmp_path / "crispasr.exe"
     binary.write_text("")
-    gguf = tmp_path / "model.gguf"
-    gguf.write_bytes(b"GGUF")
     out = tmp_path / "out.wav"
     cmd = crispasr.build_tts_command(
         binary=binary,
-        engine="f5-tts",
+        engine="piper",
         text="Hi",
         out_path=out,
-        language="en",
-        model_path=gguf,
+        force_no_gpu=True,
     )
-    assert str(gguf) in cmd
+    assert "--no-gpu" in cmd
+
+
+def test_resolve_prefers_cuda_for_gpu(tmp_path: Path, monkeypatch):
+    root = tmp_path
+    cuda = root / "runtime" / "bin" / "cuda"
+    cpu = root / "runtime" / "bin" / "cpu"
+    cuda.mkdir(parents=True)
+    cpu.mkdir(parents=True)
+    (cuda / "crispasr.exe").write_text("")
+    (cpu / "crispasr.exe").write_text("")
+    monkeypatch.delenv("CRISPASR_BIN", raising=False)
+
+    path, no_gpu = crispasr.resolve_crispasr_bin(root, device="gpu")
+    assert path == cuda / "crispasr.exe"
+    assert no_gpu is False
+
+    path, no_gpu = crispasr.resolve_crispasr_bin(root, device="cpu")
+    assert path == cpu / "crispasr.exe"
+    assert no_gpu is False
+
+
+def test_resolve_cpu_falls_back_to_cuda_with_no_gpu(tmp_path: Path, monkeypatch):
+    root = tmp_path
+    cuda = root / "runtime" / "bin" / "cuda"
+    cuda.mkdir(parents=True)
+    (cuda / "crispasr.exe").write_text("")
+    monkeypatch.delenv("CRISPASR_BIN", raising=False)
+
+    path, no_gpu = crispasr.resolve_crispasr_bin(root, device="cpu")
+    assert path == cuda / "crispasr.exe"
+    assert no_gpu is True
 
 
 def test_supports_engine_requires_binary(monkeypatch, tmp_path: Path):
-    monkeypatch.setattr(crispasr, "resolve_crispasr_bin", lambda app_root=None: None)
+    monkeypatch.setattr(
+        crispasr,
+        "resolve_crispasr_bin",
+        lambda app_root=None, device="gpu": (None, False),
+    )
     assert crispasr.supports_engine("piper") is False
 
     fake = tmp_path / "crispasr.exe"
     fake.write_text("")
-    monkeypatch.setattr(crispasr, "resolve_crispasr_bin", lambda app_root=None: fake)
+    monkeypatch.setattr(
+        crispasr,
+        "resolve_crispasr_bin",
+        lambda app_root=None, device="gpu": (fake, False),
+    )
     assert crispasr.supports_engine("piper") is True
     assert crispasr.supports_engine("f5-tts") is True
     assert crispasr.supports_engine("kokoro") is False

@@ -15,12 +15,15 @@ ci/k3s/ssh-homelab.conf
 # python
 .venvs/
 runtime/envs/
-# CrispASR binary (fetched locally; keep README/.gitkeep)
+# CrispASR binaries (fetched locally; keep README/.gitkeep)
 runtime/bin/crispasr
 runtime/bin/crispasr.exe
 runtime/bin/*.dll
 runtime/bin/*.so
 runtime/bin/*.dylib
+runtime/bin/cuda/
+runtime/bin/cpu/
+runtime/bin/vulkan/
 .venv/
 venv/
 __pycache__/

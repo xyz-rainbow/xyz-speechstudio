@@ -113,6 +113,11 @@ Name: "{app}\data\profiles"; Permissions: users-modify; Flags: uninsneveruninsta
 Name: "{app}\data\outputs"; Permissions: users-modify; Flags: uninsneveruninstall
 Name: "{app}\data\tmp"; Permissions: users-modify; Flags: uninsneveruninstall
 Name: "{app}\.venvs"; Permissions: users-modify
+Name: "{app}\runtime"; Permissions: users-modify
+Name: "{app}\runtime\envs"; Permissions: users-modify
+Name: "{app}\runtime\bin"; Permissions: users-modify
+Name: "{app}\runtime\bin\cuda"; Permissions: users-modify
+Name: "{app}\runtime\bin\cpu"; Permissions: users-modify
 
 [Icons]
 Name: "{commonprograms}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; WorkingDir: "{app}"; IconFilename: "{app}\speech-studio.ico"; Check: IsAllUsers

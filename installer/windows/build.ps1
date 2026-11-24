@@ -1,4 +1,4 @@
-# XYZ-PRODUCTIONS - Speech Studio installer compiler
+﻿# XYZ-PRODUCTIONS - Speech Studio installer compiler
 $ErrorActionPreference = "Stop"
 
 Write-Host "==============================================================================" -ForegroundColor Magenta
@@ -32,6 +32,38 @@ New-Item -ItemType Directory -Force -Path (Join-Path $payload "scripts") | Out-N
 Copy-Item -LiteralPath (Join-Path $repo "scripts\notify.ps1") -Destination (Join-Path $payload "scripts\notify.ps1")
 if (Test-Path -LiteralPath (Join-Path $repo "scripts\speechstudio.cmd")) {
     Copy-Item -LiteralPath (Join-Path $repo "scripts\speechstudio.cmd") -Destination (Join-Path $payload "scripts\speechstudio.cmd")
+}
+# CrispASR: GPU (cuda/) + CPU (cpu/) follow the in-app device selector.
+$crispasrSrc = Join-Path $repo "runtime\bin"
+$crispasrDst = Join-Path $payload "runtime\bin"
+New-Item -ItemType Directory -Force -Path $crispasrDst | Out-Null
+if (Test-Path -LiteralPath (Join-Path $crispasrSrc "README.md")) {
+    Copy-Item -LiteralPath (Join-Path $crispasrSrc "README.md") -Destination (Join-Path $crispasrDst "README.md")
+}
+$packed = 0
+foreach ($variant in @("cuda", "cpu")) {
+    $srcVar = Join-Path $crispasrSrc $variant
+    if (-not (Test-Path -LiteralPath $srcVar)) { continue }
+    $dstVar = Join-Path $crispasrDst $variant
+    New-Item -ItemType Directory -Force -Path $dstVar | Out-Null
+    Get-ChildItem -LiteralPath $srcVar -File -ErrorAction SilentlyContinue |
+        Where-Object { $_.Name -match '^(crispasr\.exe|crispasr)$' -or $_.Extension -in '.dll', '.so', '.dylib' } |
+        ForEach-Object {
+            Copy-Item -LiteralPath $_.FullName -Destination (Join-Path $dstVar $_.Name)
+            $packed++
+        }
+}
+# Legacy flat layout (pre cuda/cpu split) — still ship if present.
+Get-ChildItem -LiteralPath $crispasrSrc -File -ErrorAction SilentlyContinue |
+    Where-Object { $_.Name -match '^(crispasr\.exe|crispasr)$' -or $_.Extension -in '.dll', '.so', '.dylib' } |
+    ForEach-Object {
+        Copy-Item -LiteralPath $_.FullName -Destination (Join-Path $crispasrDst $_.Name)
+        $packed++
+    }
+if ($packed -gt 0) {
+    Write-Host "[INFO] CrispASR empaquetado ($packed archivos; cuda/ + cpu/ si existen)" -ForegroundColor Green
+} else {
+    Write-Host "[WARN] Sin crispasr en runtime\bin\cuda|cpu — ejecuta scripts\fetch-crispasr.ps1" -ForegroundColor Yellow
 }
 $stagedInstaller = Join-Path $payload "installer"
 New-Item -ItemType Directory -Force -Path $stagedInstaller | Out-Null

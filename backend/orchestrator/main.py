@@ -878,10 +878,12 @@ def _run_crispasr_tts(
     text: str,
     lang: str,
     out_path: Path,
+    device: str = "gpu",
 ) -> tuple[dict, str]:
     from . import crispasr
 
     model_dir = Path(entry.install_dir) if entry.install_dir else None
+    dev = "cpu" if device == "cpu" else "gpu"
     try:
         res = crispasr.synthesize_tts(
             engine=entry.engine,
@@ -889,6 +891,7 @@ def _run_crispasr_tts(
             out_path=out_path,
             language=lang,
             model_dir=model_dir,
+            device=dev,
         )
     except FileNotFoundError as exc:
         raise HTTPException(status_code=503, detail=str(exc))
@@ -922,11 +925,18 @@ def _run_tts(
     if entry is not None:
         model_dir = Path(entry.install_dir) if entry.install_dir else None
         voice_mode = entry.capabilities.voice_mode if entry.capabilities else "clone_profile"
-        if crispasr.supports_engine(entry.engine, model_dir=model_dir) and (
+        tts_dev = "cpu" if settings.tts_device == "cpu" else "gpu"
+        if crispasr.supports_engine(entry.engine, model_dir=model_dir, device=tts_dev) and (
             voice_mode == "builtin_voices"
             or (entry.engine in ("f5", "f5-tts") and "gguf" in entry.id.lower())
         ):
-            return _run_crispasr_tts(entry=entry, text=text, lang=lang, out_path=out_path)
+            return _run_crispasr_tts(
+                entry=entry,
+                text=text,
+                lang=lang,
+                out_path=out_path,
+                device=tts_dev,
+            )
 
     if prof is None:
         raise HTTPException(status_code=404, detail="Voice profile not found.")
