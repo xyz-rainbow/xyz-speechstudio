@@ -1,5 +1,5 @@
 # Prepares the Speech Studio uv environments next to the installed app.
-# core, qwen and stt are created. xtts stays pending.
+# core, qwen, stt and xtts are created. xtts also installs PyTorch via uv.
 param(
     [Parameter(Mandatory = $true)]
     [string]$AppRoot
@@ -31,6 +31,11 @@ function Install-Env {
     Write-Host "[Speech Studio] Entorno $Name"
     & $Uv venv --python 3.12 $venv
     if ($LASTEXITCODE -ne 0) { throw "uv venv fallo para $Name" }
+    if ($Name -eq "xtts") {
+        Write-Host "[Speech Studio] PyTorch para xtts (--torch-backend=auto)"
+        & $Uv pip install --python $python torch torchaudio torchcodec --torch-backend=auto
+        if ($LASTEXITCODE -ne 0) { throw "uv pip install de torch fallo para xtts" }
+    }
     & $Uv pip install --python $python -r $Requirements
     if ($LASTEXITCODE -ne 0) { throw "uv pip install fallo para $Name" }
 }
@@ -46,7 +51,8 @@ Write-Host "[Speech Studio] uv: $uv"
 foreach ($pair in @(
     @{ Name = "core"; File = "requirements-core.txt" },
     @{ Name = "qwen"; File = "requirements-qwen.txt" },
-    @{ Name = "stt"; File = "requirements-stt.txt" }
+    @{ Name = "stt"; File = "requirements-stt.txt" },
+    @{ Name = "xtts"; File = "requirements-xtts.txt" }
 )) {
     $req = Join-Path $here $pair.File
     if (-not (Test-Path -LiteralPath $req)) {
@@ -55,8 +61,7 @@ foreach ($pair in @(
     Install-Env -Uv $uv -Name $pair.Name -Requirements $req
 }
 
-Write-Host "[Speech Studio] xtts queda pendiente: el worker no esta en esta version."
 foreach ($dir in @("data", "data\models", "data\profiles", "data\outputs", "data\tmp")) {
     New-Item -ItemType Directory -Force -Path (Join-Path $AppRoot $dir) | Out-Null
 }
-Write-Host "[Speech Studio] Entornos core, qwen y stt listos."
+Write-Host "[Speech Studio] Entornos core, qwen, stt y xtts listos."

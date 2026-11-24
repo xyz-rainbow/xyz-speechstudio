@@ -214,6 +214,62 @@ def ensure_qwen_loaded(
     return handle
 
 
+def ensure_xtts_loaded(
+    *,
+    model_id: Optional[str] = None,
+    device: Optional[str] = None,
+    force_stop_captions: bool = False,
+) -> WorkerHandle:
+    settings = load_settings()
+    dev = device or settings.tts_device
+    requested = model_id or settings.active_tts_model
+    if not requested or not str(requested).startswith("xtts"):
+        requested = "xtts-v2"
+    try:
+        model_dir, resolved_id = downloader.resolve_xtts_dir(settings, model_id=requested)
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc))
+
+    existing = supervisor.active_workers.get("xtts")
+    if (
+        existing
+        and existing.process.poll() is None
+        and existing.device == dev
+        and existing.model_id == resolved_id
+    ):
+        return existing
+
+    if existing and existing.process.poll() is None:
+        supervisor.eject("xtts")
+
+    total_mib, free_mib = query_nvidia_vram()
+    vram_est = 2300
+    supervisor.ensure_vram_or_evict(
+        target_family="xtts",
+        device=dev,
+        vram_est_mib=vram_est,
+        free_vram_mib=free_mib,
+        total_vram_mib=total_mib,
+        force_stop_captions=force_stop_captions,
+    )
+
+    handle = supervisor.spawn_worker(
+        family="xtts",
+        model_id=resolved_id,
+        device=dev,
+        vram_est_mib=vram_est,
+    )
+    with httpx.Client(timeout=300.0) as client:
+        resp = client.post(
+            f"http://127.0.0.1:{handle.port}/load",
+            json={"model_dir": str(model_dir)},
+        )
+        if resp.status_code >= 400:
+            supervisor.eject("xtts")
+            raise HTTPException(status_code=500, detail=f"XTTS worker load failed: {resp.text}")
+    return handle
+
+
 def ensure_stt_loaded(
     *,
     model_id: Optional[str] = None,
@@ -449,6 +505,9 @@ def delete_installed_model(model_id: str):
     qwen_w = supervisor.active_workers.get("qwen")
     if qwen_w and qwen_w.model_id.startswith(model_id):
         supervisor.eject("qwen")
+    xtts_w = supervisor.active_workers.get("xtts")
+    if xtts_w and xtts_w.model_id.startswith(model_id):
+        supervisor.eject("xtts")
     stt_w = supervisor.active_workers.get("stt")
     if stt_w and stt_w.model_id == model_id:
         supervisor.eject("stt")
@@ -460,6 +519,16 @@ def delete_installed_model(model_id: str):
         raise HTTPException(status_code=403, detail=str(exc))
     except FileNotFoundError as exc:
         raise HTTPException(status_code=404, detail=str(exc))
+
+
+@app.post("/api/workers/xtts/load")
+def load_xtts_worker(req: LoadQwenRequest):
+    ensure_xtts_loaded(
+        model_id=req.model_id,
+        device=req.device,
+        force_stop_captions=req.force_stop_captions,
+    )
+    return supervisor.status_snapshot()
 
 
 @app.post("/api/workers/stt/load")
@@ -563,6 +632,12 @@ def build_profile_route(profile_id: str, force_stop_captions: bool = False):
     prof = profiles.get_profile(profile_id)
     if prof is None:
         raise HTTPException(status_code=404, detail="Profile not found.")
+    if prof.engine == "xtts":
+        if not prof.ref_audio_path or not Path(prof.ref_audio_path).exists():
+            raise HTTPException(status_code=400, detail="Profile needs a valid reference audio file.")
+        updated = profiles.update_profile(prof.id, ready=True)
+        assert updated is not None
+        return {"profile": updated.model_dump()}
     updated = build_qwen_profile(prof, force_stop_captions=force_stop_captions)
     return {"profile": updated.model_dump()}
 
@@ -598,8 +673,25 @@ def _run_tts(
 
     if prof is None:
         raise HTTPException(status_code=404, detail="Voice profile not found.")
+    if prof.engine == "xtts":
+        if not prof.ref_audio_path or not Path(prof.ref_audio_path).exists():
+            raise HTTPException(status_code=400, detail="Profile needs a valid reference audio file.")
+        handle = ensure_xtts_loaded(force_stop_captions=force_stop_captions)
+        with httpx.Client(timeout=240.0) as client:
+            resp = client.post(
+                f"http://127.0.0.1:{handle.port}/synthesize",
+                json={
+                    "text": text,
+                    "lang": lang,
+                    "speaker_wav": prof.ref_audio_path,
+                    "out_path": str(out_path),
+                },
+            )
+            if resp.status_code >= 400:
+                raise HTTPException(status_code=500, detail=f"Synthesis failed: {resp.text}")
+            return resp.json(), prof.name
     if prof.engine != "qwen":
-        raise HTTPException(status_code=501, detail="XTTS v2 engine connects in Phase 4.")
+        raise HTTPException(status_code=501, detail=f"Engine '{prof.engine}' is not connected.")
     if not prof.ready:
         prof = build_qwen_profile(prof, force_stop_captions=force_stop_captions)
     handle = ensure_qwen_loaded(force_stop_captions=force_stop_captions)

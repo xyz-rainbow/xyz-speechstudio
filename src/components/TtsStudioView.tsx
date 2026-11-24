@@ -79,7 +79,15 @@ export const TtsStudioView: React.FC<TtsStudioViewProps> = ({
   );
   const audioRef = useRef<HTMLAudioElement | null>(null);
 
-  const selectedProfile = profiles.find((p) => p.id === selectedProfileId) || profiles[0];
+  const modelFamily = modelId.startsWith("xtts") ? "xtts" : "qwen";
+  const visibleProfiles = profiles.filter((p) => p.engine === modelFamily);
+  const selectedProfile =
+    visibleProfiles.find((p) => p.id === selectedProfileId) || visibleProfiles[0];
+
+  useEffect(() => {
+    if (visibleProfiles.some((p) => p.id === selectedProfileId)) return;
+    if (visibleProfiles[0]) onSelectProfileId(visibleProfiles[0].id);
+  }, [modelId, profiles, selectedProfileId, onSelectProfileId]);
 
   useEffect(() => {
     if (selectedProfile) {
@@ -353,9 +361,7 @@ export const TtsStudioView: React.FC<TtsStudioViewProps> = ({
               }}
             >
               <option value="qwen3-1.7b-base-Q8_0">Qwen3-TTS 1.7B Base (Q8_0 · ~3.2 GB)</option>
-              <option value="xtts-v2" disabled>
-                XTTS v2 (Phase 4 · ~2.1 GB)
-              </option>
+              <option value="xtts-v2">XTTS v2 (~2.1 GB)</option>
             </select>
 
             <select
@@ -368,10 +374,10 @@ export const TtsStudioView: React.FC<TtsStudioViewProps> = ({
                 color: "var(--text-primary)",
               }}
             >
-              {profiles.length === 0 ? (
+              {visibleProfiles.length === 0 ? (
                 <option value="">{t("synthesize.noProfiles")}</option>
               ) : (
-                profiles.map((p) => (
+                visibleProfiles.map((p) => (
                   <option key={p.id} value={p.id}>
                     {p.name} ({p.engine})
                   </option>

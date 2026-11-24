@@ -28,6 +28,7 @@ import {
   installHfModel,
   loadQwenWorker,
   loadSttWorker,
+  loadXttsWorker,
   notify,
   removeInstalledModel,
   startModelDownload,
@@ -332,7 +333,10 @@ export const ModelsView: React.FC<ModelsViewProps> = ({
     try {
       if (card.kind === "tts") {
         await onSaveSettings({ ...settings, active_tts_model: card.id });
-        const snap = await loadQwenWorker(baseUrl, settings.tts_device, false, card.id);
+        const snap =
+          card.engine === "xtts"
+            ? await loadXttsWorker(baseUrl, settings.tts_device, false, card.id)
+            : await loadQwenWorker(baseUrl, settings.tts_device, false, card.id);
         onWorkersChange(snap);
       } else {
         await onSaveSettings({ ...settings, active_stt_model: card.id });
@@ -535,12 +539,13 @@ export const ModelsView: React.FC<ModelsViewProps> = ({
         <div className="flex gap-3 overflow-x-auto pb-2">
           {!isEndpoint
             ? opts.localCards.map((card) => {
+                const ttsWorker =
+                  card.engine === "xtts" ? xttsWorker : card.engine === "qwen" ? qwenWorker : undefined;
                 const isLoaded =
                   card.kind === "tts"
-                    ? card.engine === "qwen" &&
-                      !!qwenWorker?.running &&
-                      (qwenWorker.model_id === card.id ||
-                        !!qwenWorker.model_id?.startsWith(`${card.id}-`))
+                    ? !!ttsWorker?.running &&
+                      (ttsWorker.model_id === card.id ||
+                        !!ttsWorker.model_id?.startsWith(`${card.id}-`))
                     : !!sttWorker?.running && sttWorker.model_id === card.id;
                 const isSelected =
                   card.kind === "tts"

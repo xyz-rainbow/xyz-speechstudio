@@ -198,8 +198,8 @@ BUILTIN_MODELS: list[dict[str, Any]] = [
         "engine": "xtts",
         "repo_id": "coqui/XTTS-v2",
         "dir_names": ["xtts-v2"],
-        "description": "Multilingual XTTS v2 expressive voice cloner (worker hooks in Phase 4).",
-        "runtime_supported": False,
+        "description": "Multilingual XTTS v2 voice cloner. Synthesis uses the profile reference audio. Weights use the Coqui Public Model License.",
+        "runtime_supported": True,
         "quants": [
             {
                 "id": "fp16",
@@ -557,6 +557,28 @@ def _detect_builtin_install(entry: dict[str, Any], settings: AppSettings) -> tup
             q_id = entry["quants"][0]["id"] if entry["quants"] else "fp16"
             return True, q_id, tts_dir, False, _dir_size_mb(tts_dir)
     return False, None, None, False, 0
+
+
+def resolve_xtts_dir(settings: AppSettings, model_id: Optional[str] = None) -> tuple[Path, str]:
+    """Return the installed XTTS v2 checkpoint directory and catalog id."""
+    preferred = model_id or "xtts-v2"
+    if preferred.startswith("xtts"):
+        preferred = "xtts-v2"
+    entry = BUILTIN_BY_ID.get(preferred)
+    if entry is None or entry.get("engine") != "xtts":
+        raise FileNotFoundError(f"Unknown XTTS model: {model_id or 'xtts-v2'}")
+    installed, _, install_dir, _, _ = _detect_builtin_install(entry, settings)
+    if not installed or install_dir is None:
+        raise FileNotFoundError(
+            "XTTS v2 checkpoint is not installed. Download xtts-v2 from Models."
+        )
+    required = ("config.json", "model.pth", "vocab.json", "speakers_xtts.pth")
+    missing = [name for name in required if not (install_dir / name).is_file()]
+    if missing:
+        raise FileNotFoundError(
+            f"XTTS checkpoint at {install_dir} is missing {', '.join(missing)}."
+        )
+    return install_dir, entry["id"]
 
 
 def resolve_qwen_paths(settings: AppSettings, model_id: Optional[str] = None) -> tuple[Path, Path, str]:

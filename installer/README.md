@@ -16,6 +16,6 @@ Hace falta el `speech-studio.exe` de `npx tauri build` e Inno Setup 6.
 
 El resultado queda en `installer\Output\SpeechStudio_0.1.0_Setup.exe`.
 
-Al instalar, `setup-env.ps1` crea con `uv` y Python 3.12 los entornos `.venvs\core`, `.venvs\qwen` y `.venvs\stt`. `xtts` no se instala: el worker todavía no está. Hace falta `uv` en el equipo de destino y WebView2.
+Al instalar, `setup-env.ps1` crea con `uv` y Python 3.12 los entornos `.venvs\core`, `.venvs\qwen`, `.venvs\stt` y `.venvs\xtts`. XTTS instala PyTorch con `--torch-backend=auto` y luego `coqui-tts==0.28.0`. Ese script no se ha ejecutado. Hace falta `uv` en el equipo de destino y WebView2.
 
 Ese setup todavía no se ha ejecutado en esta máquina. Linux y macOS siguen pendientes.

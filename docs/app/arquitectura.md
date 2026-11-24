@@ -8,6 +8,7 @@ Speech Studio es una ventana Tauri. Rust arranca el orquestador Python y lo mete
 React  --invoke-->  Rust (Tauri)
 React  --HTTP---->  orquestador  .venvs/core   127.0.0.1
 orquestador --HTTP->  worker Qwen  .venvs/qwen
+orquestador --HTTP->  worker XTTS  .venvs/xtts
 orquestador --HTTP->  worker STT   .venvs/stt
 ```
 
@@ -20,9 +21,9 @@ Entornos que existen en disco, fuera de git:
 | `.venvs/core` | `backend.orchestrator.main` | Sí |
 | `.venvs/qwen` | `backend/workers/qwen_worker.py` | Sí |
 | `.venvs/stt` | `backend/workers/stt_worker.py` | Sí |
-| `.venvs/xtts` | `xtts_worker.py` | No existe |
+| `.venvs/xtts` | `backend/workers/xtts_worker.py` | Script sí. Entorno no creado |
 
-El supervisor ya nombra la familia `xtts` en `/api/workers`. `script_ready` sale falso porque no hay script ni entorno.
+El supervisor nombra la familia `xtts` en `/api/workers`. `script_ready` sale verdadero. `venv_ready` sale falso hasta que se cree el entorno.
 
 Rust también lee la VRAM con NVML, muestra el icono de bandeja, registra el hotkey global y puede abrir la ventana `overlay`.
 
@@ -33,4 +34,4 @@ Rust captura el audio y lo entrega al orquestador en `/api/captions/stream`. El 
 ## Pendiente
 
 - Probar una captura WASAPI real. El canal está escrito y no se ha oído todavía.
-- Worker y entorno XTTS
+- Crear `.venvs/xtts` con `setup-env.ps1`. Esa creación no se ha ejecutado y una síntesis no se ha oído.

@@ -144,7 +144,7 @@ def create_profile(
         ref_text=ref_text.strip(),
         spk_path=str(pdir / "voice.spk"),
         rvq_path=str(pdir / "voice.rvq"),
-        ready=False,
+        ready=engine == "xtts" and bool(stored_audio),
         created_at=now,
         updated_at=now,
     )
@@ -183,16 +183,25 @@ def update_profile(
                 new_audio = str(dst)
                 audio_changed = True
 
+        next_engine = engine if engine is not None else p.engine
+        if ready is not None:
+            next_ready = ready
+        elif next_engine == "xtts":
+            next_ready = bool(new_audio) and Path(new_audio).exists()
+        elif audio_changed or (engine is not None and engine != p.engine):
+            next_ready = False
+        else:
+            next_ready = p.ready
         updated = p.model_copy(
             update={
                 "name": name.strip() if name is not None else p.name,
                 "language": language.strip() if language is not None else p.language,
-                "engine": engine if engine is not None else p.engine,
+                "engine": next_engine,
                 "ref_audio_path": new_audio,
                 "ref_text": ref_text.strip() if ref_text is not None else p.ref_text,
                 "spk_path": spk_path if spk_path is not None else p.spk_path,
                 "rvq_path": rvq_path if rvq_path is not None else p.rvq_path,
-                "ready": ready if ready is not None else (False if audio_changed else p.ready),
+                "ready": next_ready,
                 "updated_at": time.time(),
             }
         )
