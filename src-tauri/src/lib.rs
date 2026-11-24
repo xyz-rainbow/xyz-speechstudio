@@ -141,11 +141,13 @@ fn reveal_in_explorer(path: String) -> Result<(), String> {
     }
 }
 
+#[cfg(windows)]
 #[derive(serde::Deserialize)]
 struct HotkeySettings {
     read_hotkey: Option<String>,
 }
 
+#[cfg(windows)]
 fn configured_read_hotkey(app_root: &std::path::Path) -> Option<String> {
     let text = std::fs::read_to_string(app_root.join("data").join("settings.json")).ok()?;
     let parsed: HotkeySettings = serde_json::from_str(&text).ok()?;
@@ -180,10 +182,13 @@ pub fn run() {
         .manage(backend)
         .setup(|app| {
             tray::create_tray(app.handle())?;
-            let root = app.state::<BackendState>().app_root.clone();
-            if let Some(acc) = configured_read_hotkey(&root) {
-                if let Err(e) = app.global_shortcut().register(acc.as_str()) {
-                    eprintln!("[Speech Studio] Could not register read hotkey '{acc}': {e}");
+            #[cfg(windows)]
+            {
+                let root = app.state::<BackendState>().app_root.clone();
+                if let Some(acc) = configured_read_hotkey(&root) {
+                    if let Err(e) = app.global_shortcut().register(acc.as_str()) {
+                        eprintln!("[Speech Studio] Could not register read hotkey '{acc}': {e}");
+                    }
                 }
             }
             Ok(())

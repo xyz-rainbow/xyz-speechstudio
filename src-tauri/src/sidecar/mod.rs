@@ -233,11 +233,15 @@ impl BackendState {
 
     pub fn info(&self) -> BackendInfo {
         let mut guard = self.inner.lock().unwrap();
-        if let Some(ref mut running) = *guard {
+        if let Some(mut running) = guard.take() {
             if let Ok(Some(_)) = running.child.try_wait() {
-                *guard = None;
+                #[cfg(unix)]
+                unix_lifecycle::kill_process_group(running.process_group_id);
+                let _ = running.child.wait();
             } else {
-                return running.info.clone();
+                let info = running.info.clone();
+                *guard = Some(running);
+                return info;
             }
         }
         idle_backend_info()

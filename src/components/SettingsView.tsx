@@ -517,7 +517,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
             </button>
             <button
               type="button"
-              disabled={!draft.read_hotkey || !readSelectionSupported}
+              disabled={!draft.read_hotkey}
               onClick={clearHotkey}
               className="inline-flex items-center gap-1 rounded-xl border px-3 py-1.5 text-xs font-medium disabled:opacity-40 hover:border-rose-400/50"
               style={{ borderColor: "var(--border-glass)", backgroundColor: "var(--bg-elevated)" }}
