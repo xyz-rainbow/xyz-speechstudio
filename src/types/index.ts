@@ -4,13 +4,14 @@ export type TabId =
   | "transcriber"
   | "subtitles"
   | "models"
-  | "settings";
+  | "settings"
+  | "updates";
 
 export type DeviceMode = "gpu" | "cpu";
 export type SourceMode = "local" | "endpoint";
 export type ThemeMode = "dark" | "light";
 export type AccentPreset = "cyber" | "emerald" | "amber" | "rose";
-export type EngineKind = "qwen" | "xtts";
+export type EngineKind = "qwen" | "xtts" | "f5" | "fish";
 export type EndpointProtocol = "openai" | "elevenlabs" | "deepgram";
 export type CloseBehavior = "ask" | "minimize" | "quit";
 

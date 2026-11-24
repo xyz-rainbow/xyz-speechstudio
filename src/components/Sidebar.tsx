@@ -124,7 +124,12 @@ export const Sidebar: React.FC<SidebarProps> = ({
         </nav>
       </div>
 
-      <UpdateBadge baseUrl={baseUrl} collapsed={collapsed} />
+      <UpdateBadge
+        baseUrl={baseUrl}
+        collapsed={collapsed}
+        active={activeTab === "updates"}
+        onOpen={() => onSelectTab("updates")}
+      />
     </aside>
   );
 };

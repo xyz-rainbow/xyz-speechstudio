@@ -129,7 +129,7 @@ fn register_start_menu_shortcut(app_root: &Path) -> std::io::Result<()> {
     let work_w = wide_os(workdir.as_os_str());
     let icon_w = wide_os(icon.as_os_str());
     let desc_w = wide(APP_NAME);
-    let mut app_w = wide(APP_ID);
+    let app_w = wide(APP_ID);
     let link_w = wide_os(shortcut.as_os_str());
 
     unsafe {
@@ -142,7 +142,7 @@ fn register_start_menu_shortcut(app_root: &Path) -> std::io::Result<()> {
             shell.SetIconLocation(PCWSTR(icon_w.as_ptr()), 0)?;
             shell.SetDescription(PCWSTR(desc_w.as_ptr()))?;
             let store: IPropertyStore = shell.cast()?;
-            let variant = string_propvariant(app_w.as_mut_ptr());
+            let variant = string_propvariant(&app_w)?;
             store.SetValue(&PKEY_APP_USER_MODEL_ID, &variant)?;
             store.Commit()?;
             let file: IPersistFile = shell.cast()?;
@@ -168,23 +168,50 @@ fn wide_os(value: &std::ffi::OsStr) -> Vec<u16> {
 }
 
 #[cfg(windows)]
-fn string_propvariant(ptr: *mut u16) -> windows::Win32::System::Com::StructuredStorage::PROPVARIANT {
+unsafe fn string_propvariant(
+    utf16_nul: &[u16],
+) -> windows::core::Result<windows::Win32::System::Com::StructuredStorage::PROPVARIANT> {
     use std::mem::ManuallyDrop;
-    use windows::core::PWSTR;
+    use windows::core::{Error, PWSTR};
+    use windows::Win32::Foundation::E_OUTOFMEMORY;
+    use windows::Win32::System::Com::CoTaskMemAlloc;
     use windows::Win32::System::Com::StructuredStorage::{
         PROPVARIANT, PROPVARIANT_0, PROPVARIANT_0_0, PROPVARIANT_0_0_0,
     };
     use windows::Win32::System::Variant::VT_LPWSTR;
-    PROPVARIANT {
+
+    // PropVariantClear() frees VT_LPWSTR via CoTaskMemFree; allocate on the COM heap.
+    let byte_len = utf16_nul.len() * std::mem::size_of::<u16>();
+    let buf = CoTaskMemAlloc(byte_len) as *mut u16;
+    if buf.is_null() {
+        return Err(Error::from(E_OUTOFMEMORY));
+    }
+    std::ptr::copy_nonoverlapping(utf16_nul.as_ptr(), buf, utf16_nul.len());
+
+    Ok(PROPVARIANT {
         Anonymous: PROPVARIANT_0 {
             Anonymous: ManuallyDrop::new(PROPVARIANT_0_0 {
                 vt: VT_LPWSTR,
                 wReserved1: 0,
                 wReserved2: 0,
                 wReserved3: 0,
-                Anonymous: PROPVARIANT_0_0_0 { pwszVal: PWSTR(ptr) },
+                Anonymous: PROPVARIANT_0_0_0 { pwszVal: PWSTR(buf) },
             }),
         },
+    })
+}
+
+#[cfg(all(test, windows))]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn propvariant_drop_does_not_corrupt_heap() {
+        let w = wide(APP_ID);
+        unsafe {
+            let v = string_propvariant(&w).expect("CoTaskMemAlloc");
+            drop(v);
+        }
     }
 }
 

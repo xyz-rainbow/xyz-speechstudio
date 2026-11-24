@@ -1,4 +1,5 @@
 import React, { useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import {
   Check,
   ChevronDown,
@@ -57,7 +58,9 @@ export const TranscriberView: React.FC<TranscriberViewProps> = ({
   const [error, setError] = useState<string | null>(null);
 
   const [menuOpen, setMenuOpen] = useState(false);
+  const [menuPos, setMenuPos] = useState<{ top: number; left: number; width: number } | null>(null);
   const menuRef = useRef<HTMLDivElement | null>(null);
+  const dropdownRef = useRef<HTMLDivElement | null>(null);
   const localModels = React.useMemo(
     () => catalog.filter((m) => m.kind === "stt" && m.installed && m.runtime_supported),
     [catalog]
@@ -66,12 +69,36 @@ export const TranscriberView: React.FC<TranscriberViewProps> = ({
   useEffect(() => {
     if (!menuOpen) return;
     const onPointerDown = (ev: MouseEvent) => {
-      if (menuRef.current && !menuRef.current.contains(ev.target as Node)) {
+      const target = ev.target as Node;
+      if (
+        menuRef.current &&
+        !menuRef.current.contains(target) &&
+        !dropdownRef.current?.contains(target)
+      ) {
         setMenuOpen(false);
       }
     };
     window.addEventListener("mousedown", onPointerDown);
     return () => window.removeEventListener("mousedown", onPointerDown);
+  }, [menuOpen]);
+
+  useEffect(() => {
+    if (!menuOpen) {
+      setMenuPos(null);
+      return;
+    }
+    const updatePos = () => {
+      const el = menuRef.current;
+      if (!el) return;
+      const rect = el.getBoundingClientRect();
+      const width = 280;
+      const rawLeft = rect.left + rect.width / 2 - width / 2;
+      const left = Math.max(12, Math.min(window.innerWidth - width - 12, rawLeft));
+      setMenuPos({ top: rect.bottom + 6, left, width });
+    };
+    updatePos();
+    window.addEventListener("resize", updatePos);
+    return () => window.removeEventListener("resize", updatePos);
   }, [menuOpen]);
 
   const sttEndpoints = settings.external_endpoints.filter((e) => e.kind === "stt");
@@ -175,8 +202,8 @@ export const TranscriberView: React.FC<TranscriberViewProps> = ({
             <button
               type="button"
               onClick={() => setMenuOpen((v) => !v)}
-              title={t("transcriber.selectModelHint")}
-              className="inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-[11px] font-mono border transition-colors hover:brightness-110"
+              title={sourceLabel}
+              className="w-[225px] inline-flex items-center justify-between gap-1.5 rounded-full px-3 py-1 text-[11px] font-mono border transition-colors hover:brightness-110"
               style={{
                 backgroundColor: "var(--bg-input)",
                 borderColor: isEndpointMode
@@ -185,20 +212,26 @@ export const TranscriberView: React.FC<TranscriberViewProps> = ({
                 color: isEndpointMode ? "#34d399" : "#67e8f9",
               }}
             >
-              <span>{sourceLabel}</span>
+              <span className="truncate">{sourceLabel}</span>
               <ChevronDown
-                className={clsx("w-3.5 h-3.5 transition-transform", menuOpen && "rotate-180")}
+                className={clsx("w-3.5 h-3.5 shrink-0 transition-transform", menuOpen && "rotate-180")}
               />
             </button>
 
-            {menuOpen && (
-              <div
-                className="absolute right-0 mt-1.5 z-40 min-w-[245px] max-w-[300px] max-h-[320px] overflow-y-auto rounded-2xl border p-1.5 shadow-2xl backdrop-blur-xl flex flex-col gap-0.5"
-                style={{
-                  backgroundColor: "var(--bg-elevated)",
-                  borderColor: "var(--border-glass)",
-                }}
-              >
+            {menuOpen &&
+              menuPos &&
+              createPortal(
+                <div
+                  ref={dropdownRef}
+                  className="fixed z-[9999] max-h-[320px] overflow-y-auto rounded-2xl border p-1.5 shadow-2xl backdrop-blur-xl flex flex-col gap-0.5"
+                  style={{
+                    top: menuPos.top,
+                    left: menuPos.left,
+                    width: menuPos.width,
+                    backgroundColor: "var(--bg-elevated)",
+                    borderColor: "var(--border-glass)",
+                  }}
+                >
                 <span
                   className="px-2.5 pt-1 pb-0.5 text-[10px] font-mono uppercase tracking-wider"
                   style={{ color: "var(--text-muted)" }}
@@ -278,8 +311,9 @@ export const TranscriberView: React.FC<TranscriberViewProps> = ({
                     {t("models.noExternalConfigured")}
                   </div>
                 )}
-              </div>
-            )}
+                </div>,
+                document.body
+              )}
           </div>
         </div>
 

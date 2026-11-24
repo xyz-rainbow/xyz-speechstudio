@@ -117,6 +117,7 @@ export const ModelHubModal: React.FC<ModelHubModalProps> = ({
   const [featuredPage, setFeaturedPage] = useState(1);
   const [variantChoice, setVariantChoice] = useState<Record<string, string>>({});
   const [quantChoice, setQuantChoice] = useState<Record<string, string>>({});
+  const [installingId, setInstallingId] = useState<string | null>(null);
 
   // Hub Search state
   const [hubQuery, setHubQuery] = useState("");
@@ -191,9 +192,10 @@ export const ModelHubModal: React.FC<ModelHubModalProps> = ({
 
   const PAGE_SIZE = 4;
   const totalFeaturedPages = Math.max(1, Math.ceil(families.length / PAGE_SIZE));
+  const safeFeaturedPage = Math.min(featuredPage, totalFeaturedPages);
   const pagedFamilies = families.slice(
-    (featuredPage - 1) * PAGE_SIZE,
-    featuredPage * PAGE_SIZE
+    (safeFeaturedPage - 1) * PAGE_SIZE,
+    safeFeaturedPage * PAGE_SIZE
   );
 
   if (!open) return null;
@@ -650,7 +652,10 @@ export const ModelHubModal: React.FC<ModelHubModalProps> = ({
                               </option>
                             ))}
                           </select>
-                          {quant && quant.files.length === 0 && (
+                          {quant &&
+                            quant.files.length === 0 &&
+                            variant.capabilities?.quant_policy !== "binary" &&
+                            variant.quants.some((q) => q.files.length > 0) && (
                             <span className="text-[10px] text-amber-300/90">
                               {t("models.postQuantHint")}
                             </span>
@@ -720,15 +725,20 @@ export const ModelHubModal: React.FC<ModelHubModalProps> = ({
                       ) : (
                         <button
                           type="button"
+                          disabled={installingId === variant.id}
                           onClick={async () => {
+                            setError(null);
+                            setInstallingId(variant.id);
                             try {
                               await startModelDownload(baseUrl, variant.id, chosenQId);
                               await onRefreshCatalog();
                             } catch (err) {
                               setError(err instanceof Error ? err.message : String(err));
+                            } finally {
+                              setInstallingId((cur) => (cur === variant.id ? null : cur));
                             }
                           }}
-                          className="mt-auto inline-flex items-center justify-center gap-1.5 rounded-xl border px-3 py-1.5 text-xs font-medium hover:border-cyan-400/60 text-cyan-200"
+                          className="mt-auto inline-flex items-center justify-center gap-1.5 rounded-xl border px-3 py-1.5 text-xs font-medium hover:border-cyan-400/60 text-cyan-200 disabled:opacity-50"
                           style={{
                             borderColor: "var(--border-glass)",
                             backgroundColor: "var(--bg-elevated)",

@@ -104,6 +104,9 @@ def _load_checkpoint(model_dir: Path):
     use_cuda = args.device == "gpu" and torch.cuda.is_available()
     if args.device == "gpu" and not use_cuda:
         raise RuntimeError("XTTS was asked to use the GPU, but CUDA is not available.")
+    if use_cuda:
+        # Avoid Windows cuDNN DLL symbol mismatch ("Cannot load symbol cudnnGetVersion").
+        torch.backends.cudnn.enabled = False
     model.load_checkpoint(
         config,
         checkpoint_dir=str(model_dir),

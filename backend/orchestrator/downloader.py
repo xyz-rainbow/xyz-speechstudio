@@ -579,7 +579,10 @@ BUILTIN_MODELS: list[dict[str, Any]] = [
                 "label": "Quality medium",
                 "disk_mb": 60,
                 "vram_mib": 200,
-                "files": [],
+                "files": [
+                    "en/en_US/lessac/medium/en_US-lessac-medium.onnx",
+                    "en/en_US/lessac/medium/en_US-lessac-medium.onnx.json",
+                ],
                 "recommended": True,
             },
             {
@@ -587,7 +590,10 @@ BUILTIN_MODELS: list[dict[str, Any]] = [
                 "label": "Quality low",
                 "disk_mb": 30,
                 "vram_mib": 150,
-                "files": [],
+                "files": [
+                    "en/en_US/lessac/low/en_US-lessac-low.onnx",
+                    "en/en_US/lessac/low/en_US-lessac-low.onnx.json",
+                ],
                 "recommended": False,
             },
             {
@@ -595,7 +601,10 @@ BUILTIN_MODELS: list[dict[str, Any]] = [
                 "label": "Quality high",
                 "disk_mb": 100,
                 "vram_mib": 250,
-                "files": [],
+                "files": [
+                    "en/en_US/lessac/high/en_US-lessac-high.onnx",
+                    "en/en_US/lessac/high/en_US-lessac-high.onnx.json",
+                ],
                 "recommended": False,
             },
         ],
@@ -610,19 +619,22 @@ BUILTIN_MODELS: list[dict[str, Any]] = [
         "variant_label": "Binary runtime",
         "repo_id": "espeak-ng/espeak-ng",
         "dir_names": ["espeak-ng"],
+        "direct_urls": {
+            "espeak-ng.msi": "https://github.com/espeak-ng/espeak-ng/releases/download/1.52.0/espeak-ng.msi",
+        },
         "description": "Tiny formant TTS binary. Install once; languages come with the package.",
         "runtime_supported": False,
         "install_mode": "shared_weights",
         "voice_mode": "builtin_voices",
         "quant_policy": "binary",
-        "languages": [],
+        "languages": ["en", "es", "fr", "de", "it", "pt", "ja", "ko", "zh", "ru", "hi", "ar", "nl", "pl", "tr"],
         "quants": [
             {
                 "id": "binary",
                 "label": "Runtime binary",
-                "disk_mb": 20,
+                "disk_mb": 13,
                 "vram_mib": 0,
-                "files": [],
+                "files": ["espeak-ng.msi"],
                 "recommended": True,
             },
         ],
@@ -1019,13 +1031,30 @@ def _detect_builtin_install(entry: dict[str, Any], settings: AppSettings) -> tup
             return True, "int8_float16", cache_dir, False, _dir_size_mb(cache_dir)
         return False, None, None, False, 0
 
-    # Other TTS (xtts-v2, fish-speech-1.5, etc.)
-    tts_dir = models_root / "tts" / mid
-    if tts_dir.is_dir() and any(
-        (tts_dir / fn).is_file() for fn in ("model.pth", "model.safetensors")
-    ):
-        q_id = entry["quants"][0]["id"] if entry["quants"] else "fp16"
-        return True, q_id, tts_dir, False, _dir_size_mb(tts_dir)
+    # Other TTS (xtts-v2, fish-speech-1.5, f5-tts, kokoro, piper, kitten, etc.)
+    tts_dirs = [models_root / "tts" / dn for dn in entry.get("dir_names", [mid])]
+    weight_exts = {".pth", ".pt", ".safetensors", ".gguf", ".onnx"}
+    for tts_dir in tts_dirs:
+        if not tts_dir.is_dir():
+            continue
+        meta_q = None
+        mf = _meta_file(tts_dir)
+        if mf.is_file():
+            try:
+                meta_q = json.loads(mf.read_text(encoding="utf-8")).get("quant")
+            except Exception:
+                meta_q = None
+        for q in entry.get("quants", []):
+            q_files = q.get("files") or []
+            if q_files and all((tts_dir / f).is_file() for f in q_files):
+                return True, meta_q or q["id"], tts_dir, False, _dir_size_mb(tts_dir)
+        has_weight = any(
+            p.is_file() and p.suffix.lower() in weight_exts
+            for p in tts_dir.rglob("*")
+        )
+        if has_weight:
+            q_id = meta_q or (entry["quants"][0]["id"] if entry.get("quants") else "fp16")
+            return True, q_id, tts_dir, False, _dir_size_mb(tts_dir)
     return False, None, None, False, 0
 
 
@@ -1129,10 +1158,9 @@ def _runtime_supported_for_builtin(m: dict) -> bool:
 
         if not is_available():
             return False
-        if engine == "piper":
+        if engine in {"piper", "kokoro", "espeak", "f5", "f5-tts", "fish", "fish-audio", "kitten"}:
             return True
-        # F5: only the GGUF F16 variant (EN+zh), not per-language safetensors/pt.
-        if engine in {"f5", "f5-tts"} and ("gguf" in mid):
+        if engine == "onnx-asr" and ("parakeet" in mid or "moonshine" in mid):
             return True
     except Exception:
         return False
@@ -1527,7 +1555,14 @@ def remove_installed_model(settings: AppSettings, model_id: str) -> dict[str, An
                     removed_files += 1
         return {"removed": removed_files > 0, "model_id": model_id}
 
-    shutil.rmtree(install_path, ignore_errors=False)
+    for attempt in range(3):
+        try:
+            shutil.rmtree(install_path, ignore_errors=False)
+            break
+        except (PermissionError, OSError):
+            if attempt == 2:
+                raise
+            time.sleep(0.2)
 
     if target.custom:
         reg = [r for r in load_custom_registry(settings) if r.get("id") != model_id]
@@ -1576,14 +1611,16 @@ class DownloadManager:
         chosen = next((q for q in quants if q["id"] == quant_id), None) or next(
             (q for q in quants if q.get("recommended")), quants[0]
         )
-        explicit_files = list(chosen.get("files", []))
-        # Post-quantize options (Fish int8/int4) share the BF16 download pack.
-        if not explicit_files:
+        has_files_key = "files" in chosen
+        explicit_files = list(chosen.get("files") or [])
+        # Post-quantize options (Fish int8/int4) share the BF16 download pack;
+        # full-repo STT models (faster-whisper-*) omit "files" to download the whole repo.
+        if has_files_key and not explicit_files:
             fallback = next((q for q in quants if q.get("files")), None)
             if fallback is None:
                 raise ValueError(
                     f"Model {model_id} quant {chosen['id']} has no downloadable files yet "
-                    "(install the runtime/voice pack in a later phase)."
+                    "(bundled runtime or external binary)."
                 )
             explicit_files = list(fallback["files"])
             chosen = {**chosen, "id": chosen["id"], "files": explicit_files}
@@ -1604,7 +1641,7 @@ class DownloadManager:
             dest_dir=dest_dir,
             explicit_files=explicit_files,
             engine=entry["engine"],
-            direct_urls={},
+            direct_urls=dict(entry.get("direct_urls") or {}),
         )
 
     def start_url_download(
@@ -1728,6 +1765,7 @@ class DownloadManager:
             with self._lock:
                 job = self._jobs[job_id]
                 job.status = "downloading"
+                job_name = job.name
 
             dest_dir.mkdir(parents=True, exist_ok=True)
             size_map: dict[str, int] = {}
@@ -1814,7 +1852,7 @@ class DownloadManager:
                                                 say("app"),
                                                 say(
                                                     "download_progress",
-                                                    name=self._jobs[job_id].name,
+                                                    name=job_name,
                                                     quant=quant,
                                                 ),
                                                 ms,
@@ -1838,7 +1876,7 @@ class DownloadManager:
 
                 self._notify_cb(
                     say("app"),
-                    say("download_ready", name=self._jobs[job_id].name, quant=quant),
+                    say("download_ready", name=job_name, quant=quant),
                     100,
                 )
 
@@ -1871,4 +1909,4 @@ class DownloadManager:
             if self._notify_cb:
                 from .toasts import say
 
-                self._notify_cb(say("app"), say("download_failed", name=self._jobs[job_id].name), None)
+                self._notify_cb(say("app"), say("download_failed", name=job_name), None)

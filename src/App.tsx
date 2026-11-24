@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { Component, type ReactNode, useCallback, useEffect, useRef, useState } from "react";
 import { listen } from "@tauri-apps/api/event";
 import { AsciiAmbientPool } from "./components/AsciiAmbientPool";
 import { CloseConfirmModal } from "./components/CloseConfirmModal";
@@ -10,6 +10,7 @@ import { TopBar } from "./components/TopBar";
 import { SubtitlesView } from "./components/SubtitlesView";
 import { TranscriberView } from "./components/TranscriberView";
 import { TtsStudioView } from "./components/TtsStudioView";
+import { UpdatesView } from "./components/UpdateBadge";
 import { I18nProvider, useI18n } from "./i18n";
 import {
   ejectWorkerGroup,
@@ -340,6 +341,7 @@ function MainStudio() {
               incomingSpeak={incomingSpeak}
               notificationsEnabled={settings.notifications_enabled}
               onOpenModels={() => setActiveTab("models")}
+              onOpenProfiles={() => setActiveTab("profiles")}
               onCatalogChange={setCatalog}
               onInstalledLanguagesChange={(next) =>
                 void handleSaveSettings({ ...settings, installed_languages: next })
@@ -350,6 +352,8 @@ function MainStudio() {
           {activeTab === "profiles" && (
             <ProfilesView
               baseUrl={backend.base_url}
+              catalog={catalog}
+              settings={settings}
               profiles={profiles}
               selectedProfileId={selectedProfileId}
               onProfilesChange={setProfiles}
@@ -406,6 +410,8 @@ function MainStudio() {
               onSave={handleSaveSettings}
             />
           )}
+
+          {activeTab === "updates" && <UpdatesView baseUrl={backend.base_url} />}
         </main>
       </div>
 
@@ -431,11 +437,47 @@ function MainStudio() {
   );
 }
 
+class AppErrorBoundary extends Component<
+  { children: ReactNode },
+  { error: Error | null }
+> {
+  state: { error: Error | null } = { error: null };
+
+  static getDerivedStateFromError(error: Error) {
+    return { error };
+  }
+
+  render() {
+    if (this.state.error) {
+      return (
+        <div className="w-screen h-screen flex items-center justify-center bg-[#09090f] text-slate-100 p-6">
+          <div className="max-w-md w-full rounded-2xl border border-rose-500/40 bg-rose-950/20 p-5 flex flex-col gap-3">
+            <h2 className="text-sm font-semibold text-rose-300">Speech Studio UI Error</h2>
+            <p className="text-xs font-mono text-slate-300 break-words">
+              {this.state.error.message}
+            </p>
+            <button
+              type="button"
+              onClick={() => this.setState({ error: null })}
+              className="self-start rounded-xl border border-white/20 px-3 py-1.5 text-xs font-medium hover:bg-white/10"
+            >
+              Reload view
+            </button>
+          </div>
+        </div>
+      );
+    }
+    return this.props.children;
+  }
+}
+
 export default function App() {
   const [lang, setLang] = useState<"en" | "es">("en");
   return (
-    <I18nProvider lang={lang} setLang={setLang}>
-      <MainStudio />
-    </I18nProvider>
+    <AppErrorBoundary>
+      <I18nProvider lang={lang} setLang={setLang}>
+        <MainStudio />
+      </I18nProvider>
+    </AppErrorBoundary>
   );
 }

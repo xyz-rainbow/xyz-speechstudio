@@ -117,6 +117,7 @@ class SynthesizeRequest(BaseModel):
     profile_id: str
     text: str
     language: Optional[str] = None
+    voice: Optional[str] = None
     mode: Literal["play", "wav"] = "play"
     seed: int = -1
     force_stop_captions: bool = False
@@ -291,6 +292,132 @@ def ensure_xtts_loaded(
         if resp.status_code >= 400:
             supervisor.eject("xtts")
             raise HTTPException(status_code=500, detail=f"XTTS worker load failed: {resp.text}")
+    return handle
+
+
+def ensure_f5_loaded(
+    *,
+    model_id: Optional[str] = None,
+    device: Optional[str] = None,
+    force_stop_captions: bool = False,
+) -> WorkerHandle:
+    settings = load_settings()
+    dev = device or settings.tts_device
+    entry = _active_tts_catalog_entry(
+        settings.model_copy(update={"active_tts_model": model_id or settings.active_tts_model})
+    )
+    if entry is None or not entry.install_dir:
+        raise FileNotFoundError("F5-TTS model is not installed. Download it from Models.")
+    resolved_id = entry.id
+    model_dir = Path(entry.install_dir)
+
+    existing = supervisor.active_workers.get("f5")
+    if existing and existing.process.poll() is None and existing.device == dev and existing.model_id == resolved_id:
+        return existing
+    if existing and existing.process.poll() is None:
+        supervisor.eject("f5")
+
+    total_mib, free_mib = query_nvidia_vram()
+    supervisor.ensure_vram_or_evict(
+        target_family="f5",
+        device=dev,
+        vram_est_mib=2400,
+        free_vram_mib=free_mib,
+        total_vram_mib=total_mib,
+        force_stop_captions=force_stop_captions,
+    )
+    handle = supervisor.spawn_worker(
+        family="f5",
+        model_id=resolved_id,
+        device=dev,
+        vram_est_mib=2400,
+    )
+    with httpx.Client(timeout=240.0) as client:
+        resp = client.post(f"http://127.0.0.1:{handle.port}/load", json={"model_dir": str(model_dir)})
+        if resp.status_code >= 400:
+            supervisor.eject("f5")
+            raise HTTPException(status_code=500, detail=f"F5-TTS worker load failed: {resp.text}")
+    return handle
+
+
+def ensure_fish_loaded(
+    *,
+    model_id: Optional[str] = None,
+    device: Optional[str] = None,
+    force_stop_captions: bool = False,
+) -> WorkerHandle:
+    settings = load_settings()
+    dev = device or settings.tts_device
+    entry = _active_tts_catalog_entry(
+        settings.model_copy(update={"active_tts_model": model_id or "fish-speech-1.5"})
+    )
+    if entry is None or not entry.install_dir:
+        raise FileNotFoundError("Fish Speech 1.5 is not installed. Download it from Models.")
+    resolved_id = entry.id
+    model_dir = Path(entry.install_dir)
+
+    existing = supervisor.active_workers.get("fish")
+    if existing and existing.process.poll() is None and existing.device == dev and existing.model_id == resolved_id:
+        return existing
+    if existing and existing.process.poll() is None:
+        supervisor.eject("fish")
+
+    total_mib, free_mib = query_nvidia_vram()
+    supervisor.ensure_vram_or_evict(
+        target_family="fish",
+        device=dev,
+        vram_est_mib=2200,
+        free_vram_mib=free_mib,
+        total_vram_mib=total_mib,
+        force_stop_captions=force_stop_captions,
+    )
+    handle = supervisor.spawn_worker(
+        family="fish",
+        model_id=resolved_id,
+        device=dev,
+        vram_est_mib=2200,
+    )
+    with httpx.Client(timeout=240.0) as client:
+        resp = client.post(f"http://127.0.0.1:{handle.port}/load", json={"model_dir": str(model_dir)})
+        if resp.status_code >= 400:
+            supervisor.eject("fish")
+            raise HTTPException(status_code=500, detail=f"Fish worker load failed: {resp.text}")
+    return handle
+
+
+def ensure_kitten_loaded(
+    *,
+    model_id: Optional[str] = None,
+    device: Optional[str] = None,
+    force_stop_captions: bool = False,
+) -> WorkerHandle:
+    settings = load_settings()
+    dev = device or settings.tts_device
+    entry = _active_tts_catalog_entry(
+        settings.model_copy(update={"active_tts_model": model_id or "kitten-tts-2-mini"})
+    )
+    if entry is None or not entry.install_dir:
+        raise FileNotFoundError("KittenTTS 2 Mini is not installed. Download it from Models.")
+    resolved_id = entry.id
+    model_dir = Path(entry.install_dir)
+
+    existing = supervisor.active_workers.get("kitten")
+    if existing and existing.process.poll() is None and existing.device == dev and existing.model_id == resolved_id:
+        return existing
+    if existing and existing.process.poll() is None:
+        supervisor.eject("kitten")
+
+    handle = supervisor.spawn_worker(
+        family="kitten",
+        model_id=resolved_id,
+        device=dev,
+        vram_est_mib=250,
+    )
+    with httpx.Client(timeout=180.0) as client:
+        resp = client.post(f"http://127.0.0.1:{handle.port}/load", json={"model_dir": str(model_dir)})
+        if resp.status_code >= 400:
+            supervisor.eject("kitten")
+            raise HTTPException(status_code=500, detail=f"KittenTTS worker load failed: {resp.text}")
     return handle
 
 
@@ -670,6 +797,12 @@ def inspect_app_state():
 @app.delete("/api/models/{model_id}")
 def delete_installed_model(model_id: str):
     s = load_settings()
+    # Cancel any active download for this model so file handles are released before rmtree.
+    for job in download_manager.list_jobs():
+        if job.model_id == model_id and job.status in ("queued", "downloading"):
+            download_manager.cancel_job(job.job_id)
+            time.sleep(0.2)
+
     # Eject loaded worker if it matches this model before unlinking files on Windows
     qwen_w = supervisor.active_workers.get("qwen")
     if qwen_w and qwen_w.model_id.startswith(model_id):
@@ -688,6 +821,8 @@ def delete_installed_model(model_id: str):
         raise HTTPException(status_code=403, detail=str(exc))
     except FileNotFoundError as exc:
         raise HTTPException(status_code=404, detail=str(exc))
+    except OSError as exc:
+        raise HTTPException(status_code=409, detail=str(exc))
 
 
 class UninstallLanguageRequest(BaseModel):
@@ -805,6 +940,29 @@ def get_profiles():
 def create_profile_route(req: CreateProfileRequest):
     if not req.name.strip():
         raise HTTPException(status_code=400, detail="Profile name is required.")
+    s = load_settings()
+    if req.engine == "qwen":
+        try:
+            resolve_qwen_gguf(s)
+        except FileNotFoundError as exc:
+            raise HTTPException(status_code=400, detail=str(exc))
+    elif req.engine == "xtts":
+        try:
+            downloader.resolve_xtts_dir(s)
+        except FileNotFoundError as exc:
+            raise HTTPException(status_code=400, detail=str(exc))
+    elif req.engine == "f5":
+        if not any(
+            m.kind == "tts" and m.engine in ("f5", "f5-tts") and m.installed
+            for m in downloader.build_catalog(s)
+        ):
+            raise HTTPException(status_code=400, detail="F5-TTS model is not installed. Download it from Models.")
+    elif req.engine == "fish":
+        if not any(
+            m.kind == "tts" and m.engine in ("fish", "fish-audio") and m.installed
+            for m in downloader.build_catalog(s)
+        ):
+            raise HTTPException(status_code=400, detail="Fish Speech 1.5 is not installed. Download it from Models.")
     prof = profiles.create_profile(
         name=req.name,
         language=req.language,
@@ -839,7 +997,7 @@ def build_profile_route(profile_id: str, force_stop_captions: bool = False):
     prof = profiles.get_profile(profile_id)
     if prof is None:
         raise HTTPException(status_code=404, detail="Profile not found.")
-    if prof.engine == "xtts":
+    if prof.engine in ("xtts", "f5", "f5-tts", "fish", "fish-audio"):
         if not prof.ref_audio_path or not Path(prof.ref_audio_path).exists():
             raise HTTPException(status_code=400, detail="Profile needs a valid reference audio file.")
         updated = profiles.update_profile(prof.id, ready=True)
@@ -878,6 +1036,7 @@ def _run_crispasr_tts(
     text: str,
     lang: str,
     out_path: Path,
+    voice: Optional[str] = None,
     device: str = "gpu",
 ) -> tuple[dict, str]:
     from . import crispasr
@@ -891,6 +1050,7 @@ def _run_crispasr_tts(
             out_path=out_path,
             language=lang,
             model_dir=model_dir,
+            voice=voice,
             device=dev,
         )
     except FileNotFoundError as exc:
@@ -908,6 +1068,7 @@ def _run_tts(
     out_path: Path,
     seed: int,
     force_stop_captions: bool,
+    voice: Optional[str] = None,
 ) -> tuple[dict, str]:
     settings = load_settings()
     if settings.tts_source == "endpoint":
@@ -935,8 +1096,19 @@ def _run_tts(
                 text=text,
                 lang=lang,
                 out_path=out_path,
+                voice=voice,
                 device=tts_dev,
             )
+        if entry.engine == "kitten":
+            handle = ensure_kitten_loaded(model_id=entry.id, force_stop_captions=force_stop_captions)
+            with httpx.Client(timeout=180.0) as client:
+                resp = client.post(
+                    f"http://127.0.0.1:{handle.port}/synthesize",
+                    json={"text": text, "lang": lang, "voice": voice, "out_path": str(out_path)},
+                )
+                if resp.status_code >= 400:
+                    raise HTTPException(status_code=500, detail=f"KittenTTS synthesis failed: {resp.text}")
+                return resp.json(), entry.name
 
     if prof is None:
         raise HTTPException(status_code=404, detail="Voice profile not found.")
@@ -965,6 +1137,43 @@ def _run_tts(
                 status = resp.status_code if 400 <= resp.status_code < 500 else 500
                 raise HTTPException(status_code=status, detail=f"Synthesis failed: {detail}")
             return resp.json(), prof.name
+    if prof.engine in ("f5", "f5-tts"):
+        if not prof.ref_audio_path or not Path(prof.ref_audio_path).exists():
+            raise HTTPException(status_code=400, detail="Profile needs a valid reference audio file.")
+        handle = ensure_f5_loaded(force_stop_captions=force_stop_captions)
+        with httpx.Client(timeout=240.0) as client:
+            resp = client.post(
+                f"http://127.0.0.1:{handle.port}/synthesize",
+                json={
+                    "text": text,
+                    "lang": lang,
+                    "speaker_wav": prof.ref_audio_path,
+                    "ref_text": prof.ref_text,
+                    "out_path": str(out_path),
+                    "seed": seed,
+                },
+            )
+            if resp.status_code >= 400:
+                raise HTTPException(status_code=500, detail=f"F5-TTS synthesis failed: {resp.text}")
+            return resp.json(), prof.name
+    if prof.engine in ("fish", "fish-audio"):
+        if not prof.ref_audio_path or not Path(prof.ref_audio_path).exists():
+            raise HTTPException(status_code=400, detail="Profile needs a valid reference audio file.")
+        handle = ensure_fish_loaded(force_stop_captions=force_stop_captions)
+        with httpx.Client(timeout=240.0) as client:
+            resp = client.post(
+                f"http://127.0.0.1:{handle.port}/synthesize",
+                json={
+                    "text": text,
+                    "lang": lang,
+                    "speaker_wav": prof.ref_audio_path,
+                    "ref_text": prof.ref_text,
+                    "out_path": str(out_path),
+                },
+            )
+            if resp.status_code >= 400:
+                raise HTTPException(status_code=500, detail=f"Fish synthesis failed: {resp.text}")
+            return resp.json(), prof.name
     if prof.engine != "qwen":
         raise HTTPException(status_code=501, detail=f"Engine '{prof.engine}' is not connected.")
     if not prof.ready:
@@ -988,6 +1197,28 @@ def _run_tts(
         return resp.json(), prof.name
 
 
+@app.get("/api/tts/voices")
+def list_tts_builtin_voices(model_id: Optional[str] = None, language: Optional[str] = None):
+    from . import crispasr
+
+    s = load_settings()
+    if model_id:
+        s = s.model_copy(update={"active_tts_model": model_id})
+    entry = _active_tts_catalog_entry(s)
+    if entry is None:
+        return {"voices": []}
+    if entry.engine == "kitten":
+        from backend.workers.kitten_worker import DEFAULT_VOICES
+
+        return {"voices": [{"id": v, "label": v} for v in DEFAULT_VOICES]}
+    model_dir = Path(entry.install_dir) if entry.install_dir else None
+    return {
+        "voices": crispasr.list_builtin_voices(
+            entry.engine, model_dir=model_dir, language=language
+        )
+    }
+
+
 @app.post("/api/tts/synthesize")
 def tts_synthesize(req: SynthesizeRequest):
     text = req.text.strip()
@@ -999,18 +1230,22 @@ def tts_synthesize(req: SynthesizeRequest):
     prof = profiles.get_profile(req.profile_id)
     entry = _active_tts_catalog_entry(settings) if settings.tts_source == "local" else None
     model_dir = Path(entry.install_dir) if entry and entry.install_dir else None
-    builtin_ok = (
-        entry is not None
-        and crispasr.supports_engine(entry.engine, model_dir=model_dir)
-        and (
-            (entry.capabilities.voice_mode if entry.capabilities else "") == "builtin_voices"
-            or (entry.engine in ("f5", "f5-tts") and "gguf" in entry.id.lower())
+    builtin_ok = entry is not None and (
+        entry.engine == "kitten"
+        or (
+            crispasr.supports_engine(entry.engine, model_dir=model_dir)
+            and (
+                (entry.capabilities.voice_mode if entry.capabilities else "") == "builtin_voices"
+                or (entry.engine in ("f5", "f5-tts") and "gguf" in entry.id.lower())
+            )
         )
     )
     if settings.tts_source == "local" and prof is None and not builtin_ok:
         raise HTTPException(status_code=404, detail=f"Profile not found: {req.profile_id}")
 
     lang = (req.language or (prof.language if prof else "Spanish") or "Spanish").strip()
+    if lang.lower() == "auto":
+        lang = "Spanish"
 
     if req.mode == "play":
         _cleanup_tmp_previews()
@@ -1023,6 +1258,7 @@ def tts_synthesize(req: SynthesizeRequest):
             out_path=out_path,
             seed=req.seed,
             force_stop_captions=req.force_stop_captions,
+            voice=req.voice,
         )
         return {
             "mode": "play",
@@ -1045,6 +1281,7 @@ def tts_synthesize(req: SynthesizeRequest):
         out_path=out_path,
         seed=req.seed,
         force_stop_captions=req.force_stop_captions,
+        voice=req.voice,
     )
     rec = history.add_record(
         profile_id=pid_tag,
@@ -1123,6 +1360,22 @@ def _run_stt(audio_path: Path, language: Optional[str] = None, model_id: Optiona
         except Exception as exc:
             raise HTTPException(status_code=502, detail=f"External STT error ({ep.name}): {exc}")
 
+    target_id = (model_id or settings.active_stt_model or "").strip()
+    from . import crispasr
+
+    stt_dev = "cpu" if settings.stt_device == "cpu" else "gpu"
+    if crispasr.stt_backend_for_model(target_id) and crispasr.is_available(device=stt_dev):
+        try:
+            res = crispasr.transcribe_stt(
+                model_id=target_id,
+                audio_path=audio_path,
+                language=language,
+                device=stt_dev,
+            )
+            return {**res, "source": "local", "model": target_id}
+        except Exception as exc:
+            raise HTTPException(status_code=500, detail=f"CrispASR STT failed: {exc}")
+
     handle = ensure_stt_loaded(model_id=model_id)
     with httpx.Client(timeout=300.0) as client:
         resp = client.post(
@@ -1154,15 +1407,31 @@ def openai_speech(request: Request, req: SpeechRequest):
 
     prof = profiles.get_profile(req.voice)
     if prof is None and s.tts_source == "local":
-        all_p = [p for p in profiles.list_profiles() if p.ready]
-        if not all_p:
-            raise HTTPException(
-                status_code=404,
-                detail="No local voice profile found. Create a profile or switch TTS to an external endpoint.",
+        from . import crispasr
+
+        entry = _active_tts_catalog_entry(s)
+        model_dir = Path(entry.install_dir) if entry and entry.install_dir else None
+        tts_dev = "cpu" if s.tts_device == "cpu" else "gpu"
+        builtin_ok = (
+            entry is not None
+            and crispasr.supports_engine(entry.engine, model_dir=model_dir, device=tts_dev)
+            and (
+                (entry.capabilities.voice_mode if entry.capabilities else "") == "builtin_voices"
+                or (entry.engine in ("f5", "f5-tts") and "gguf" in entry.id.lower())
             )
-        prof = all_p[0]
+        )
+        if not builtin_ok:
+            all_p = [p for p in profiles.list_profiles() if p.ready]
+            if not all_p:
+                raise HTTPException(
+                    status_code=404,
+                    detail="No local voice profile found. Create a profile or switch TTS to an external endpoint.",
+                )
+            prof = all_p[0]
 
     lang = (req.language or (prof.language if prof else "Spanish") or "Spanish").strip()
+    if lang.lower() == "auto":
+        lang = "Spanish"
     DEFAULT_TMP_DIR.mkdir(parents=True, exist_ok=True)
     tmp_wav = DEFAULT_TMP_DIR / f"api_{uuid.uuid4().hex[:10]}.wav"
     try:

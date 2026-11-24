@@ -312,15 +312,28 @@ export const ModelsView: React.FC<ModelsViewProps> = ({
     try {
       if (card.kind === "tts") {
         await onSaveSettings({ ...settings, active_tts_model: card.id });
-        const snap =
-          card.engine === "xtts"
-            ? await loadXttsWorker(baseUrl, settings.tts_device, false, card.id)
-            : await loadQwenWorker(baseUrl, settings.tts_device, false, card.id);
-        onWorkersChange(snap);
+        const isDirectLoadEngine =
+          card.engine === "piper" ||
+          card.engine === "kokoro" ||
+          card.engine === "espeak" ||
+          card.engine === "f5" ||
+          card.engine === "f5-tts" ||
+          card.engine === "fish" ||
+          card.engine === "fish-audio" ||
+          card.engine === "kitten";
+        if (!isDirectLoadEngine) {
+          const snap =
+            card.engine === "xtts"
+              ? await loadXttsWorker(baseUrl, settings.tts_device, false, card.id)
+              : await loadQwenWorker(baseUrl, settings.tts_device, false, card.id);
+          onWorkersChange(snap);
+        }
       } else {
         await onSaveSettings({ ...settings, active_stt_model: card.id });
-        const snap = await loadSttWorker(baseUrl, card.id, settings.stt_device);
-        onWorkersChange(snap);
+        if (card.engine !== "onnx-asr") {
+          const snap = await loadSttWorker(baseUrl, card.id, settings.stt_device);
+          onWorkersChange(snap);
+        }
       }
       onAfterGpuAction();
       void notify(settings.notifications_enabled, t("toast.title"), t("toast.modelLoaded"));
@@ -376,8 +389,15 @@ export const ModelsView: React.FC<ModelsViewProps> = ({
     setBusyKey(`rm-${removeTarget.id}`);
     setError(null);
     try {
-      await removeInstalledModel(baseUrl, removeTarget.id);
+      const targetId = removeTarget.id;
+      const targetKind = removeTarget.kind;
+      await removeInstalledModel(baseUrl, targetId);
       setRemoveTarget(null);
+      if (targetKind === "tts" && settings.active_tts_model === targetId) {
+        await onSaveSettings({ ...settings, active_tts_model: "" });
+      } else if (targetKind === "stt" && settings.active_stt_model === targetId) {
+        await onSaveSettings({ ...settings, active_stt_model: "" });
+      }
       await refreshCatalog();
       onAfterGpuAction();
       void notify(settings.notifications_enabled, t("toast.title"), t("toast.modelRemoved"));

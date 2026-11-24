@@ -411,12 +411,28 @@ export async function deleteProfile(baseUrl: string, profileId: string): Promise
   await parseErrorOrJson(res);
 }
 
+export async function fetchBuiltinVoices(
+  baseUrl: string,
+  modelId?: string,
+  language?: string
+): Promise<{ id: string; label: string }[]> {
+  const params = new URLSearchParams();
+  if (modelId) params.set("model_id", modelId);
+  if (language) params.set("language", language);
+  const qs = params.toString();
+  const res = await fetch(`${baseUrl}/api/tts/voices${qs ? `?${qs}` : ""}`);
+  if (!res.ok) return [];
+  const data = (await res.json()) as { voices?: { id: string; label: string }[] };
+  return data.voices || [];
+}
+
 export async function synthesizeTts(
   baseUrl: string,
   payload: {
     profile_id: string;
     text: string;
     language?: string;
+    voice?: string;
     mode: "play" | "wav";
     seed?: number;
     force_stop_captions?: boolean;

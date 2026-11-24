@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import subprocess
 import sys
+import threading
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -77,7 +78,7 @@ class WorkerSupervisor:
             self.active_workers.pop(k, None)
 
         families = {}
-        for fam in ("qwen", "stt", "xtts"):
+        for fam in ("qwen", "stt", "xtts", "f5", "fish", "kitten"):
             py = self.venv_python(fam)
             w = self.active_workers.get(fam)
             families[fam] = {
@@ -133,6 +134,36 @@ class WorkerSupervisor:
 
         return evicted
 
+    def ensure_venv(self, family: str) -> Path:
+        py_exe = self.venv_python(family)
+        if py_exe.exists():
+            return py_exe
+        req_file = APP_ROOT / "installer" / f"requirements-{family}.txt"
+        import shutil
+
+        uv_bin = shutil.which("uv")
+        if not uv_bin or not req_file.is_file():
+            raise FileNotFoundError(f"Worker venv not found: {py_exe}")
+
+        env_dir = py_exe.parent.parent
+        env_dir.parent.mkdir(parents=True, exist_ok=True)
+        creationflags = getattr(subprocess, "CREATE_NO_WINDOW", 0)
+        subprocess.run(
+            [uv_bin, "venv", str(env_dir), "--python", "3.12"],
+            check=True,
+            capture_output=True,
+            text=True,
+            creationflags=creationflags,
+        )
+        subprocess.run(
+            [uv_bin, "pip", "install", "--python", str(py_exe), "-r", str(req_file)],
+            check=True,
+            capture_output=True,
+            text=True,
+            creationflags=creationflags,
+        )
+        return py_exe
+
     def spawn_worker(
         self,
         family: str,
@@ -144,7 +175,7 @@ class WorkerSupervisor:
         if family in self.active_workers:
             self.eject(family)
 
-        py_exe = self.venv_python(family)
+        py_exe = self.ensure_venv(family)
         script = self.worker_script(family)
         if not py_exe.exists():
             raise FileNotFoundError(f"Worker venv not found: {py_exe}")
@@ -194,6 +225,17 @@ class WorkerSupervisor:
             proc.kill()
             raise TimeoutError(f"Timed out waiting for port handshake from {family}_worker")
 
+        # Keep draining worker stdout in background so logs never fill the pipe buffer and deadlock.
+        if proc.stdout is not None:
+            def _drain(pipe):
+                try:
+                    for _ in pipe:
+                        pass
+                except Exception:
+                    pass
+
+            threading.Thread(target=_drain, args=(proc.stdout,), daemon=True).start()
+
         handle = WorkerHandle(
             family=family,
             pid=proc.pid,
@@ -227,6 +269,11 @@ class WorkerSupervisor:
             except subprocess.TimeoutExpired:
                 handle.process.kill()
                 handle.process.wait(timeout=4)
+        if handle.process.stdout is not None:
+            try:
+                handle.process.stdout.close()
+            except Exception:
+                pass
         return True
 
     def shutdown_all(self) -> None:

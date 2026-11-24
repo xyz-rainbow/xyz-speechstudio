@@ -1,4 +1,5 @@
 import React, { useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { save as saveDialog } from "@tauri-apps/plugin-dialog";
 import {
   AlertTriangle,
@@ -19,6 +20,7 @@ import { clsx } from "clsx";
 import { useI18n } from "../i18n";
 import {
   deleteHistoryRecord,
+  fetchBuiltinVoices,
   fetchModelsCatalog,
   isTauri,
   LiveCaptionsConflictError,
@@ -52,6 +54,7 @@ interface TtsStudioViewProps {
   incomingSpeak?: { text: string; nonce: number } | null;
   notificationsEnabled: boolean;
   onOpenModels?: () => void;
+  onOpenProfiles?: () => void;
   onCatalogChange?: (models: CatalogModelEntry[]) => void;
   onInstalledLanguagesChange?: (next: Record<string, string[]>) => void;
 }
@@ -113,6 +116,7 @@ export const TtsStudioView: React.FC<TtsStudioViewProps> = ({
   incomingSpeak,
   notificationsEnabled,
   onOpenModels,
+  onOpenProfiles,
   onCatalogChange,
   onInstalledLanguagesChange,
 }) => {
@@ -128,10 +132,16 @@ export const TtsStudioView: React.FC<TtsStudioViewProps> = ({
     null
   );
   const [menuOpen, setMenuOpen] = useState(false);
+  const [menuPos, setMenuPos] = useState<{ top: number; left: number; width: number } | null>(null);
   const [langMenuOpen, setLangMenuOpen] = useState(false);
+  const [langMenuPos, setLangMenuPos] = useState<{ top: number; left: number; width: number } | null>(null);
   const [langBusy, setLangBusy] = useState(false);
+  const [builtinVoices, setBuiltinVoices] = useState<{ id: string; label: string }[]>([]);
+  const [selectedBuiltinVoice, setSelectedBuiltinVoice] = useState<string>("");
   const menuRef = useRef<HTMLDivElement | null>(null);
+  const dropdownRef = useRef<HTMLDivElement | null>(null);
   const langMenuRef = useRef<HTMLDivElement | null>(null);
+  const langDropdownRef = useRef<HTMLDivElement | null>(null);
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const catalogTts = React.useMemo(
     () =>
@@ -148,16 +158,67 @@ export const TtsStudioView: React.FC<TtsStudioViewProps> = ({
     if (!menuOpen && !langMenuOpen) return;
     const onPointerDown = (ev: MouseEvent) => {
       const target = ev.target as Node;
-      if (menuOpen && menuRef.current && !menuRef.current.contains(target)) {
+      if (
+        menuOpen &&
+        menuRef.current &&
+        !menuRef.current.contains(target) &&
+        !dropdownRef.current?.contains(target)
+      ) {
         setMenuOpen(false);
       }
-      if (langMenuOpen && langMenuRef.current && !langMenuRef.current.contains(target)) {
+      if (
+        langMenuOpen &&
+        langMenuRef.current &&
+        !langMenuRef.current.contains(target) &&
+        !langDropdownRef.current?.contains(target)
+      ) {
         setLangMenuOpen(false);
       }
     };
     window.addEventListener("mousedown", onPointerDown);
     return () => window.removeEventListener("mousedown", onPointerDown);
   }, [menuOpen, langMenuOpen]);
+
+  useEffect(() => {
+    if (!menuOpen) {
+      setMenuPos(null);
+      return;
+    }
+    const updatePos = () => {
+      const el = menuRef.current;
+      if (!el) return;
+      const rect = el.getBoundingClientRect();
+      const width = 280;
+      const rawLeft = rect.left + rect.width / 2 - width / 2;
+      const left = Math.max(12, Math.min(window.innerWidth - width - 12, rawLeft));
+      setMenuPos({
+        top: rect.bottom + 6,
+        left,
+        width,
+      });
+    };
+    updatePos();
+    window.addEventListener("resize", updatePos);
+    return () => window.removeEventListener("resize", updatePos);
+  }, [menuOpen]);
+
+  useEffect(() => {
+    if (!langMenuOpen) {
+      setLangMenuPos(null);
+      return;
+    }
+    const updateLangPos = () => {
+      const el = langMenuRef.current;
+      if (!el) return;
+      const rect = el.getBoundingClientRect();
+      const width = Math.max(192, rect.width);
+      const left = Math.max(12, Math.min(window.innerWidth - width - 12, rect.left));
+      setLangMenuPos({ top: rect.bottom + 6, left, width });
+    };
+    updateLangPos();
+    window.addEventListener("resize", updateLangPos);
+    return () => window.removeEventListener("resize", updateLangPos);
+  }, [langMenuOpen]);
 
   // Keep TTS catalog fresh while this view stays mounted across tabs.
   useEffect(() => {
@@ -193,6 +254,29 @@ export const TtsStudioView: React.FC<TtsStudioViewProps> = ({
   const voiceMode = activeEntry?.capabilities?.voice_mode ?? "clone_profile";
   const usesCloneProfiles = !isEndpointMode && voiceMode === "clone_profile";
   const usesBuiltinVoices = !isEndpointMode && voiceMode === "builtin_voices";
+
+  useEffect(() => {
+    if (!baseUrl || !usesBuiltinVoices || !activeEntry?.id) {
+      setBuiltinVoices([]);
+      setSelectedBuiltinVoice("");
+      return;
+    }
+    let cancelled = false;
+    void fetchBuiltinVoices(baseUrl, activeEntry.id, language)
+      .then((list) => {
+        if (cancelled) return;
+        setBuiltinVoices(list);
+        setSelectedBuiltinVoice((cur) =>
+          list.some((v) => v.id === cur) ? cur : list[0]?.id || ""
+        );
+      })
+      .catch(() => {
+        if (!cancelled) setBuiltinVoices([]);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [baseUrl, usesBuiltinVoices, activeEntry?.id, language]);
   const showLangTrash =
     !isEndpointMode &&
     (installMode === "per_language_checkpoint" || installMode === "voices_pack");
@@ -255,6 +339,8 @@ export const TtsStudioView: React.FC<TtsStudioViewProps> = ({
     const eng = activeEntry?.engine || activeLocal?.engine || "";
     if (eng === "xtts" || (activeLocal?.id || activeModelId).startsWith("xtts")) return "xtts";
     if (eng === "qwen" || eng.startsWith("qwen")) return "qwen";
+    if (eng === "f5" || eng === "f5-tts") return "f5";
+    if (eng === "fish" || eng === "fish-audio") return "fish";
     return eng || "qwen";
   })();
   const visibleProfiles = usesCloneProfiles
@@ -338,8 +424,12 @@ export const TtsStudioView: React.FC<TtsStudioViewProps> = ({
 
   useEffect(() => {
     if (usesCloneProfiles && selectedProfile) {
-      const fromProfile = selectedProfile.language || availableLanguages[0] || "Spanish";
-      setLanguage(fromProfile);
+      const profLang = (selectedProfile.language || "").trim();
+      if (profLang && profLang.toLowerCase() !== "auto") {
+        setLanguage(profLang);
+      } else if (availableLanguages.length > 0 && !availableLanguages.includes(language)) {
+        setLanguage(availableLanguages[0]);
+      }
       return;
     }
     if (availableLanguages.length > 0 && !availableLanguages.includes(language)) {
@@ -381,6 +471,7 @@ export const TtsStudioView: React.FC<TtsStudioViewProps> = ({
         profile_id: selectedProfile?.id || (usesBuiltinVoices ? "builtin" : "mario"),
         text: textOverride ?? text,
         language,
+        voice: usesBuiltinVoices && selectedBuiltinVoice ? selectedBuiltinVoice : undefined,
         mode,
         force_stop_captions: forceStopCaptions,
       });
@@ -621,8 +712,8 @@ export const TtsStudioView: React.FC<TtsStudioViewProps> = ({
               <button
                 type="button"
                 onClick={() => setMenuOpen((v) => !v)}
-                title={t("synthesize.model")}
-                className="inline-flex items-center gap-1.5 rounded-xl px-2.5 py-1.5 text-xs font-mono border transition-colors hover:brightness-110"
+                title={selectorLabel}
+                className="w-[225px] inline-flex items-center justify-between gap-1.5 rounded-xl px-2.5 py-1.5 text-xs font-mono border transition-colors hover:brightness-110"
                 style={{
                   backgroundColor: "var(--bg-input)",
                   borderColor: isEndpointMode
@@ -631,20 +722,26 @@ export const TtsStudioView: React.FC<TtsStudioViewProps> = ({
                   color: isEndpointMode ? "#34d399" : "var(--text-primary)",
                 }}
               >
-                <span>{selectorLabel}</span>
+                <span className="truncate">{selectorLabel}</span>
                 <ChevronDown
-                  className={clsx("w-3.5 h-3.5 transition-transform", menuOpen && "rotate-180")}
+                  className={clsx("w-3.5 h-3.5 shrink-0 transition-transform", menuOpen && "rotate-180")}
                 />
               </button>
 
-              {menuOpen && (
-                <div
-                  className="absolute right-0 mt-1.5 z-40 min-w-[255px] max-w-[310px] max-h-[320px] overflow-y-auto rounded-2xl border p-1.5 shadow-2xl backdrop-blur-xl flex flex-col gap-0.5"
-                  style={{
-                    backgroundColor: "var(--bg-elevated)",
-                    borderColor: "var(--border-glass)",
-                  }}
-                >
+              {menuOpen &&
+                menuPos &&
+                createPortal(
+                  <div
+                    ref={dropdownRef}
+                    className="fixed z-[9999] max-h-[320px] overflow-y-auto rounded-2xl border p-1.5 shadow-2xl backdrop-blur-xl flex flex-col gap-0.5"
+                    style={{
+                      top: menuPos.top,
+                      left: menuPos.left,
+                      width: menuPos.width,
+                      backgroundColor: "var(--bg-elevated)",
+                      borderColor: "var(--border-glass)",
+                    }}
+                  >
                   <span
                     className="px-2.5 pt-1 pb-0.5 text-[10px] font-mono uppercase tracking-wider"
                     style={{ color: "var(--text-muted)" }}
@@ -717,15 +814,16 @@ export const TtsStudioView: React.FC<TtsStudioViewProps> = ({
                       );
                     })
                   ) : (
-                    <div
-                      className="px-2.5 py-1.5 text-[11px]"
-                      style={{ color: "var(--text-secondary)" }}
-                    >
-                      {t("models.noExternalConfigured")}
-                    </div>
-                  )}
-                </div>
-              )}
+                      <div
+                        className="px-2.5 py-1.5 text-[11px]"
+                        style={{ color: "var(--text-secondary)" }}
+                      >
+                        {t("models.noExternalConfigured")}
+                      </div>
+                    )}
+                  </div>,
+                  document.body
+                )}
             </div>
 
             {isEndpointMode ? (
@@ -742,38 +840,60 @@ export const TtsStudioView: React.FC<TtsStudioViewProps> = ({
                 </span>
               )
             ) : usesCloneProfiles ? (
-              <select
-                value={selectedProfile?.id || ""}
-                onChange={(e) => onSelectProfileId(e.target.value)}
-                className="rounded-xl border px-2.5 py-1.5 text-xs font-medium outline-none"
-                style={{
-                  backgroundColor: "var(--bg-input)",
-                  borderColor: "var(--border-glass)",
-                  color: "var(--text-primary)",
-                }}
-              >
-                {visibleProfiles.length === 0 ? (
-                  <option value="">{t("synthesize.noProfiles")}</option>
-                ) : (
-                  visibleProfiles.map((p) => (
-                    <option key={p.id} value={p.id}>
-                      {p.name} ({p.engine})
-                    </option>
-                  ))
-                )}
-              </select>
-            ) : (
               <div className="flex items-center gap-1.5">
-                <span
-                  className="rounded-xl border px-2.5 py-1.5 text-xs"
+                <select
+                  value={selectedProfile?.id || ""}
+                  onChange={(e) => onSelectProfileId(e.target.value)}
+                  className="rounded-xl border px-2.5 py-1.5 text-xs font-medium outline-none"
                   style={{
                     backgroundColor: "var(--bg-input)",
                     borderColor: "var(--border-glass)",
-                    color: "var(--text-secondary)",
+                    color: "var(--text-primary)",
                   }}
                 >
-                  {t("synthesize.builtinVoices")}
-                </span>
+                  {visibleProfiles.length === 0 ? (
+                    <option value="">{t("synthesize.noProfiles")}</option>
+                  ) : (
+                    visibleProfiles.map((p) => (
+                      <option key={p.id} value={p.id}>
+                        {p.name} ({p.engine})
+                      </option>
+                    ))
+                  )}
+                </select>
+                {visibleProfiles.length === 0 && onOpenProfiles && (
+                  <button
+                    type="button"
+                    onClick={onOpenProfiles}
+                    className="rounded-xl border px-2.5 py-1.5 text-xs font-medium hover:bg-white/10"
+                    style={{
+                      borderColor: "var(--border-glass)",
+                      color: "var(--text-primary)",
+                    }}
+                  >
+                    {t("synthesize.createProfileCta")}
+                  </button>
+                )}
+              </div>
+            ) : (
+              <div className="flex items-center gap-1.5">
+                <select
+                  value={selectedBuiltinVoice}
+                  onChange={(e) => setSelectedBuiltinVoice(e.target.value)}
+                  className="rounded-xl border px-2.5 py-1.5 text-xs font-medium outline-none"
+                  style={{
+                    backgroundColor: "var(--bg-input)",
+                    borderColor: "var(--border-glass)",
+                    color: "var(--text-primary)",
+                  }}
+                >
+                  <option value="">{t("synthesize.builtinVoices")} (Auto)</option>
+                  {builtinVoices.map((v) => (
+                    <option key={v.id} value={v.id}>
+                      {v.label}
+                    </option>
+                  ))}
+                </select>
                 {(!activeLocal?.runtime_supported || availableLanguages.length === 0) &&
                   onOpenModels && (
                     <button
@@ -810,14 +930,20 @@ export const TtsStudioView: React.FC<TtsStudioViewProps> = ({
                 </span>
                 <ChevronDown className="w-3.5 h-3.5 opacity-60 shrink-0" />
               </button>
-              {langMenuOpen && (
-                <div
-                  className="absolute z-30 mt-1 min-w-[12rem] max-h-56 overflow-y-auto rounded-xl border p-1 shadow-lg"
-                  style={{
-                    backgroundColor: "var(--bg-panel)",
-                    borderColor: "var(--border-glass)",
-                  }}
-                >
+              {langMenuOpen &&
+                langMenuPos &&
+                createPortal(
+                  <div
+                    ref={langDropdownRef}
+                    className="fixed z-[9999] max-h-56 overflow-y-auto rounded-xl border p-1 shadow-2xl backdrop-blur-xl"
+                    style={{
+                      top: langMenuPos.top,
+                      left: langMenuPos.left,
+                      width: langMenuPos.width,
+                      backgroundColor: "var(--bg-elevated)",
+                      borderColor: "var(--border-glass)",
+                    }}
+                  >
                   {(isEndpointMode ? FALLBACK_LANGUAGES : availableLanguages).map((l) => {
                     const code = LABEL_TO_CODE[l] || l.toLowerCase().slice(0, 2);
                     return (
@@ -871,8 +997,9 @@ export const TtsStudioView: React.FC<TtsStudioViewProps> = ({
                         {t("synthesize.installInModels")}
                       </button>
                     )}
-                </div>
-              )}
+                  </div>,
+                  document.body
+                )}
             </div>
           </div>
         </div>
@@ -911,6 +1038,21 @@ export const TtsStudioView: React.FC<TtsStudioViewProps> = ({
                 {t("synthesize.cancel")}
               </button>
             </div>
+          </div>
+        )}
+
+        {usesCloneProfiles && !selectedProfile && text.trim() && (
+          <div className="shrink-0 rounded-xl border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs text-amber-200 flex items-center justify-between gap-2">
+            <span>{t("synthesize.profileRequiredHint")}</span>
+            {onOpenProfiles && (
+              <button
+                type="button"
+                onClick={onOpenProfiles}
+                className="shrink-0 rounded-lg border border-amber-400/40 px-2.5 py-1 text-[11px] font-medium hover:bg-amber-500/20"
+              >
+                {t("synthesize.createProfileCta")}
+              </button>
+            )}
           </div>
         )}
 
