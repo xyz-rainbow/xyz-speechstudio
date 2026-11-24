@@ -1,0 +1,72 @@
+name: Bug report
+description: Report a problem with Speech Studio
+title: "[Bug]: "
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for the report. Do not include API keys, tokens, private recordings, or the contents of `data/settings.json` if it has a Bearer token.
+        Hay una plantilla en [español](https://github.com/xyz-rainbow/xyz-speechstudio/issues/new?template=bug-report.es.yml).
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened?
+      description: A short, precise description of the problem.
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      description: Numbered steps that start from a known state.
+      placeholder: |
+        1. Open Speech Studio
+        2. …
+        3. …
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual behavior
+    validations:
+      required: true
+  - type: dropdown
+    id: os
+    attributes:
+      label: Operating system
+      options:
+        - Windows 11
+        - Windows 10
+        - Other
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: App version or commit
+      description: Release tag (for example v0.1.0) or a short commit SHA.
+    validations:
+      required: true
+  - type: input
+    id: gpu
+    attributes:
+      label: GPU
+      description: For example “NVIDIA RTX 4070” or “CPU only”.
+    validations:
+      required: false
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs
+      description: Paste relevant lines from the UI or from `data/tmp/orchestrator.stderr.log`. Redact secrets.
+      render: text
+    validations:
+      required: false

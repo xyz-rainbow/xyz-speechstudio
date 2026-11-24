@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Discussions / Debates
+    url: https://github.com/xyz-rainbow/xyz-speechstudio/discussions
+    about: Questions, ideas, and collaboration. Preguntas, ideas y colaboración.
+  - name: Security advisory / Aviso de seguridad
+    url: https://github.com/xyz-rainbow/xyz-speechstudio/security/advisories/new
+    about: Report vulnerabilities privately. Informa de vulnerabilidades en privado.

@@ -1,0 +1,72 @@
+name: Informe de error
+description: Informa de un problema en Speech Studio
+title: "[Error]: "
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Gracias por el informe. No incluyas claves de API, tokens, grabaciones privadas ni el contenido de `data/settings.json` si tiene un token Bearer.
+        There is also a template in [English](https://github.com/xyz-rainbow/xyz-speechstudio/issues/new?template=bug-report.yml).
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: ¿Qué ha pasado?
+      description: Una descripción breve y precisa del problema.
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Pasos para reproducirlo
+      description: Pasos numerados a partir de un estado conocido.
+      placeholder: |
+        1. Abre Speech Studio
+        2. …
+        3. …
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Comportamiento esperado
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: Comportamiento real
+    validations:
+      required: true
+  - type: dropdown
+    id: os
+    attributes:
+      label: Sistema operativo
+      options:
+        - Windows 11
+        - Windows 10
+        - Otro
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Versión de la app o commit
+      description: Etiqueta de la release (por ejemplo v0.1.0) o un SHA corto.
+    validations:
+      required: true
+  - type: input
+    id: gpu
+    attributes:
+      label: GPU
+      description: Por ejemplo «NVIDIA RTX 4070» o «solo CPU».
+    validations:
+      required: false
+  - type: textarea
+    id: logs
+    attributes:
+      label: Registros
+      description: Pega líneas relevantes de la interfaz o de `data/tmp/orchestrator.stderr.log`. Oculta los secretos.
+      render: text
+    validations:
+      required: false
