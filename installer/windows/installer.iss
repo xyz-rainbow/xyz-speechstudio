@@ -206,6 +206,43 @@ begin
   Result := Border;
 end;
 
+procedure ApplyRichEditTextColor(Memo: TRichEditViewer; BgrColor: Integer);
+var
+  R, G, B, I, Code: Integer;
+  Src: String;
+  Rtf, Body: AnsiString;
+  Ch: Char;
+begin
+  R := BgrColor and $FF;
+  G := (BgrColor shr 8) and $FF;
+  B := (BgrColor shr 16) and $FF;
+  Src := Memo.Text;
+  Rtf := '{\rtf1\ansi\deff0{\fonttbl{\f0 Consolas;}}{\colortbl ;\red' +
+    IntToStr(R) + '\green' + IntToStr(G) + '\blue' + IntToStr(B) + ';}' +
+    '\viewkind4\uc1\pard\cf1\f0\fs18 ';
+  Body := '';
+  for I := 1 to Length(Src) do
+  begin
+    Ch := Src[I];
+    Code := Ord(Ch);
+    if Ch = #13 then
+      Continue
+    else if Ch = #10 then
+      Body := Body + '\par '
+    else if (Ch = '\') or (Ch = '{') or (Ch = '}') then
+      Body := Body + '\' + AnsiString(Ch)
+    else if (Code >= 32) and (Code <= 126) then
+      Body := Body + AnsiString(Ch)
+    else
+    begin
+      if Code > 32767 then
+        Code := Code - 65536;
+      Body := Body + '\u' + IntToStr(Code) + '?';
+    end;
+  end;
+  Memo.RTFText := Rtf + Body + '}';
+end;
+
 procedure InitializeWizard();
 begin
   // 1. Cabecera personalizada Dark Cyber
@@ -247,11 +284,13 @@ begin
   WizardForm.InfoBeforeMemo.Font.Size := 9;
   WizardForm.InfoBeforeMemo.Color := {#ColorHeaderBg};
   WizardForm.InfoBeforeMemo.Font.Color := {#ColorLimeGreen};
+  ApplyRichEditTextColor(WizardForm.InfoBeforeMemo, {#ColorLimeGreen});
 
   WizardForm.LicenseMemo.Font.Name := 'Consolas';
   WizardForm.LicenseMemo.Font.Size := 9;
   WizardForm.LicenseMemo.Color := {#ColorHeaderBg};
   WizardForm.LicenseMemo.Font.Color := {#ColorTextSilver};
+  ApplyRichEditTextColor(WizardForm.LicenseMemo, {#ColorTextSilver});
 
   // 3. Bordes en Rosa Neón para botones
   BackBorderPanel := CreateNeonBorder(WizardForm.BackButton);
