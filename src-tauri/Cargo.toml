@@ -2,7 +2,7 @@
 license-file = "../LICENSE"
 publish = false
 name = "speech-studio"
-version = "0.1.1"
+version = "0.2.0"
 description = "Speech Studio - Local TTS, Voice Cloning, STT and Live Captions"
 authors = ["xyz-rainbow"]
 edition = "2021"

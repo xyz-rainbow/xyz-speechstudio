@@ -5,22 +5,23 @@
           ██╔╝ ██╗       ██║       ███████╗
           ╚═╝  ╚═╝       ╚═╝       ╚══════╝
 
-         -= [ XYZ-PRODUCTIONS - SPEECH STUDIO ] =-
+         -= [ RAINBOW TECHNOLOGY - SPEECH STUDIO ] =-
          -= [ MASTER RELEASE - NOT FOR RESALE ] =-
 
    RELEASE INFORMATION:
    --------------------------------------------------
    Application ....: Speech Studio
-   Version ........: 0.1.1
+   Version ........: 0.2.0
    Platform .......: Windows 10 / 11 (x64)
-   Architecture ...: Tauri + Rust + Python workers
-   Install path ...: Program Files\XYZ-Productions\Speech Studio
-   Engines ........: Qwen3-TTS, faster-whisper
-   Pending ........: XTTS v2 environment (worker not in this build)
+   Architecture ...: Tauri + Rust + CrispASR & Python workers
+   Install path ...: Program Files\Rainbow Technology\Speech Studio
+   Engines ........: Qwen3-TTS, Kokoro, Piper, Chatterbox, CosyVoice3,
+                     Parakeet, Whisper, eSpeak NG, XTTS v2, F5-TTS,
+                     Fish Speech 1.5, KittenTTS 2 Mini
 
    IMPORTANT NOTICE:
    --------------------------------------------------
-   The wizard uses the XYZ-Productions cyberpunk art.
+   The wizard uses the Rainbow Technology cyberpunk art.
    Program files go under Program Files. Profiles, models
    and generated audio stay in the data folder and are
    kept if you uninstall. WebView2 and uv are required.

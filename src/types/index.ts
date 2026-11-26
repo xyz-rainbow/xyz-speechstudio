@@ -11,7 +11,7 @@ export type DeviceMode = "gpu" | "cpu";
 export type SourceMode = "local" | "endpoint";
 export type ThemeMode = "dark" | "light";
 export type AccentPreset = "cyber" | "emerald" | "amber" | "rose";
-export type EngineKind = "qwen" | "xtts" | "f5" | "fish";
+export type EngineKind = "qwen" | "xtts" | "f5" | "fish" | "chatterbox" | "chatterbox-turbo" | "cosyvoice3-tts" | "orpheus" | "indextts";
 export type EndpointProtocol = "openai" | "elevenlabs" | "deepgram";
 export type CloseBehavior = "ask" | "minimize" | "quit";
 
@@ -51,6 +51,9 @@ export interface AppSettings {
   api_bearer_token: string;
   read_hotkey: string;
   close_behavior: CloseBehavior;
+  tts_chunk_enabled: boolean;
+  tts_chunk_max_chars: number;
+  model_runtimes?: Record<string, "crispasr" | "python">;
   external_endpoints: ExternalEndpointConfig[];
   capabilities_v1: boolean;
   /** family_id → language codes ready on disk */
@@ -82,7 +85,7 @@ export interface BackendInfo {
 }
 
 export interface WorkerInfo {
-  family: "qwen" | "stt" | "xtts";
+  family: "qwen" | "stt" | "xtts" | "f5" | "fish" | "kitten" | "crispasr" | string;
   venv_ready: boolean;
   script_ready: boolean;
   running: boolean;
@@ -105,6 +108,10 @@ export interface VoiceProfile {
   language: string;
   engine: EngineKind;
   ref_audio_path: string;
+  ref_24k_path?: string;
+  ref_original_path?: string;
+  ref_duration_s?: number;
+  ref_trimmed?: boolean;
   ref_text: string;
   spk_path: string;
   rvq_path: string;
@@ -193,6 +200,8 @@ export interface CatalogModelEntry {
   repo_id: string;
   description: string;
   runtime_supported: boolean;
+  available_runtimes?: string[];
+  active_runtime?: string;
   capabilities: ModelCapabilities;
   quants: QuantOption[];
   installed: boolean;
@@ -240,6 +249,11 @@ export interface HfInspectResponse {
   suggested_name: string;
   suggested_kind: "tts" | "stt";
   files: HfInspectFile[];
+  crispasr_ready?: boolean;
+  crispasr_backend?: string | null;
+  crispasr_reason?: string;
+  can_convert_gguf?: boolean;
+  convert_script?: string | null;
 }
 
 export interface HubModelSummary {
@@ -250,6 +264,9 @@ export interface HubModelSummary {
   likes: number;
   tags: string[];
   pipeline_tag: string;
+  crispasr_ready?: boolean;
+  crispasr_backend?: string | null;
+  crispasr_reason?: string;
 }
 
 export interface HubSearchResponse {

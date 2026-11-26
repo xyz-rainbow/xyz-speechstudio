@@ -1,6 +1,7 @@
 fastapi>=0.115.0
 uvicorn>=0.32.0
 pydantic>=2.9.0
-numpy>=1.26.0
+numpy>=1.26.4,<2.0.0
 soundfile>=0.12.1
-fish-speech>=0.1.0
+vector-quantize-pytorch>=1.17.0
+fish-speech @ git+https://github.com/fishaudio/fish-speech@v1.5.1

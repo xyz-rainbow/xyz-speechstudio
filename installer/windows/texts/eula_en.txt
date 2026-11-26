@@ -1,6 +1,6 @@
 ====================================================================
-  RAINBOW TECHNOLOGY / XYZ-PRODUCTIONS - EXCLUSIVE ACCESS
-  SPEECH STUDIO v0.1.1 [INTERNAL MASTER RELEASE]
+  RAINBOW TECHNOLOGY - EXCLUSIVE ACCESS
+  SPEECH STUDIO v0.2.0 [INTERNAL MASTER RELEASE]
 ====================================================================
 
 PROPRIETARY & CONFIDENTIAL SOFTWARE NOTICE:
@@ -11,7 +11,7 @@ FORM OR PLATFORM IS STRICTLY AND ENERGETICALLY PROHIBITED.
 1. LICENSE GRANT
    This Speech Studio package, including the executable, the workers,
    and the environments prepared by setup, is the intellectual property
-   of Rainbow Technology & XYZ-Productions. You are granted only a
+   of Rainbow Technology. You are granted only a
    personal, non-transferable, and non-exclusive license for local use.
 
 2. STRICT ANTI-PIRACY & RESALE RESTRICTIONS

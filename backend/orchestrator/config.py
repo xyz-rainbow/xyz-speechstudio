@@ -8,7 +8,7 @@ from pydantic import BaseModel, Field, ValidationError, model_validator
 
 from .external_providers import ExternalEndpointConfig
 
-APP_ROOT = Path(__file__).resolve().parents[2]
+APP_ROOT = Path(__file__).absolute().parents[2]
 DATA_DIR = APP_ROOT / "data"
 DEFAULT_MODELS_DIR = DATA_DIR / "models"
 DEFAULT_PROFILES_DIR = DATA_DIR / "profiles"
@@ -60,6 +60,9 @@ class AppSettings(BaseModel):
     api_bearer_token: str = ""
     read_hotkey: str = ""
     close_behavior: Literal["ask", "minimize", "quit"] = "ask"
+    tts_chunk_enabled: bool = True
+    tts_chunk_max_chars: int = Field(default=300, ge=120, le=800)
+    model_runtimes: dict[str, Literal["crispasr", "python"]] = Field(default_factory=dict)
     external_endpoints: list[ExternalEndpointConfig] = Field(default_factory=list)
     # TTS capabilities UX (Fase 1): feature flag + per-family language stock.
     capabilities_v1: bool = True

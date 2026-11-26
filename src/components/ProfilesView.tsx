@@ -1,12 +1,29 @@
-import React, { useEffect, useState } from "react";
-import { CheckCircle2, Edit3, FileAudio, Loader2, Plus, Sparkles, Trash2 } from "lucide-react";
+import React, { useEffect, useRef, useState } from "react";
+import {
+  AlertTriangle,
+  CheckCircle2,
+  Edit3,
+  FileAudio,
+  Loader2,
+  Pause,
+  Play,
+  Plus,
+  Scissors,
+  Sparkles,
+  Trash2,
+  X,
+} from "lucide-react";
+import { clsx } from "clsx";
 import { useI18n } from "../i18n";
 import {
   buildProfileVoice,
   createProfile,
   deleteProfile,
+  getPreviewAudioUrl,
+  getProfileAudioUrl,
   notify,
   transcribeAudioFile,
+  trimProfileAudio,
   updateProfile,
 } from "../services/api";
 import { pickFile } from "../services/fileDialog";
@@ -72,8 +89,46 @@ export const ProfilesView: React.FC<ProfilesViewProps> = ({
   const [refAudioPath, setRefAudioPath] = useState("");
   const [refText, setRefText] = useState("");
   const [busy, setBusy] = useState(false);
+  const [trimmingId, setTrimmingId] = useState<string | null>(null);
   const [transcribing, setTranscribing] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [previewKey, setPreviewKey] = useState<string | null>(null);
+  const previewAudioRef = useRef<HTMLAudioElement | null>(null);
+
+  const togglePreview = (key: string, url: string) => {
+    const cur = previewAudioRef.current;
+    if (previewKey === key && cur) {
+      cur.pause();
+      previewAudioRef.current = null;
+      setPreviewKey(null);
+      return;
+    }
+    if (cur) {
+      cur.pause();
+    }
+    const audio = new Audio(url);
+    previewAudioRef.current = audio;
+    setPreviewKey(key);
+    audio.onended = () => {
+      if (previewAudioRef.current === audio) {
+        previewAudioRef.current = null;
+        setPreviewKey(null);
+      }
+    };
+    audio.onerror = () => {
+      if (previewAudioRef.current === audio) {
+        previewAudioRef.current = null;
+        setPreviewKey(null);
+      }
+    };
+    audio.play().catch(() => setPreviewKey(null));
+  };
+
+  useEffect(() => {
+    return () => {
+      previewAudioRef.current?.pause();
+    };
+  }, []);
 
   const sttOptions = React.useMemo(
     () => catalog.filter((m) => m.kind === "stt" && m.installed && m.runtime_supported),
@@ -92,16 +147,39 @@ export const ProfilesView: React.FC<ProfilesViewProps> = ({
 
   const hasSttReady = isSttEndpoint || sttOptions.length > 0;
 
+  const profileCountByEngine = React.useMemo(() => {
+    const counts: Record<string, number> = {};
+    for (const p of profiles) {
+      counts[p.engine] = (counts[p.engine] || 0) + 1;
+    }
+    return counts;
+  }, [profiles]);
+
   const availableEngines = React.useMemo(() => {
     const list: { value: EngineKind; label: string }[] = [];
     if (catalog.some((m) => m.kind === "tts" && m.engine === "qwen" && m.installed && m.runtime_supported)) {
       list.push({ value: "qwen", label: "Qwen3-TTS" });
     }
-    if (catalog.some((m) => m.kind === "tts" && m.engine === "xtts" && m.installed && m.runtime_supported)) {
-      list.push({ value: "xtts", label: "XTTS v2" });
+    if (catalog.some((m) => m.kind === "tts" && m.engine === "chatterbox" && m.installed && m.runtime_supported)) {
+      const hasMulti = catalog.some(
+        (m) => m.id === "chatterbox-multilingual-gguf" && m.installed
+      );
+      list.push({
+        value: "chatterbox",
+        label: hasMulti ? "Chatterbox Multilingual" : "Chatterbox",
+      });
+    }
+    if (catalog.some((m) => m.kind === "tts" && m.engine === "cosyvoice3-tts" && m.installed && m.runtime_supported)) {
+      list.push({ value: "cosyvoice3-tts", label: "CosyVoice3" });
+    }
+    if (catalog.some((m) => m.kind === "tts" && m.engine === "indextts" && m.installed && m.runtime_supported)) {
+      list.push({ value: "indextts", label: "IndexTTS 1.5" });
     }
     if (catalog.some((m) => m.kind === "tts" && (m.engine === "f5-tts" || m.engine === "f5") && m.installed && m.runtime_supported)) {
       list.push({ value: "f5", label: "F5-TTS" });
+    }
+    if (catalog.some((m) => m.kind === "tts" && m.engine === "xtts" && m.installed && m.runtime_supported)) {
+      list.push({ value: "xtts", label: "XTTS v2" });
     }
     if (catalog.some((m) => m.kind === "tts" && (m.engine === "fish-audio" || m.engine === "fish") && m.installed && m.runtime_supported)) {
       list.push({ value: "fish", label: "Fish Speech 1.5" });
@@ -233,6 +311,23 @@ export const ProfilesView: React.FC<ProfilesViewProps> = ({
     }
   };
 
+  const handleTrim = async (p: VoiceProfile) => {
+    if (!baseUrl) return;
+    setTrimmingId(p.id);
+    setError(null);
+    try {
+      const updated = await trimProfileAudio(baseUrl, p.id, 12);
+      onProfilesChange(profiles.map((item) => (item.id === updated.id ? updated : item)));
+      if (editingId === p.id) {
+        setRefAudioPath(updated.ref_audio_path);
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setTrimmingId(null);
+    }
+  };
+
   const handleDelete = async (p: VoiceProfile) => {
     if (!baseUrl) return;
     setError(null);
@@ -248,13 +343,7 @@ export const ProfilesView: React.FC<ProfilesViewProps> = ({
 
   return (
     <div className="flex flex-col gap-3 pb-4">
-      <div className="flex items-center justify-between gap-2">
-        <div>
-          <h1 className="text-lg font-semibold leading-tight">{t("profiles.title")}</h1>
-          <p className="text-xs" style={{ color: "var(--text-secondary)" }}>
-            {t("profiles.subtitle")}
-          </p>
-        </div>
+      <div className="flex items-center justify-end gap-2">
         <BorderBeamButton onClick={openNew}>
           <Plus className="w-4 h-4" />
           {t("profiles.newProfile")}
@@ -314,11 +403,14 @@ export const ProfilesView: React.FC<ProfilesViewProps> = ({
               {availableEngines.length === 0 ? (
                 <option value="">{t("profiles.noCloneTtsInstalled")}</option>
               ) : (
-                availableEngines.map((eng) => (
-                  <option key={eng.value} value={eng.value}>
-                    {eng.label}
-                  </option>
-                ))
+                availableEngines.map((eng) => {
+                  const cnt = profileCountByEngine[eng.value] || 0;
+                  return (
+                    <option key={eng.value} value={eng.value}>
+                      {cnt > 0 ? `✓ ${eng.label} (${cnt})` : `${eng.label} (0)`}
+                    </option>
+                  );
+                })
               )}
             </select>
           </div>
@@ -331,6 +423,38 @@ export const ProfilesView: React.FC<ProfilesViewProps> = ({
               className="flex-1 rounded-xl border px-3 py-2 text-xs font-mono outline-none"
               style={{ backgroundColor: "var(--bg-input)", borderColor: "var(--border-glass)" }}
             />
+            {refAudioPath && baseUrl && (
+              <button
+                type="button"
+                onClick={() => {
+                  const url =
+                    editingId && editingId !== "new"
+                      ? getProfileAudioUrl(baseUrl, editingId, Date.now())
+                      : getPreviewAudioUrl(baseUrl, refAudioPath);
+                  togglePreview("editor", url);
+                }}
+                title={previewKey === "editor" ? t("profiles.stopPreview") : t("profiles.previewAudio")}
+                className="p-2 rounded-xl border hover:border-cyan-400/50 text-cyan-300"
+                style={{ borderColor: "var(--border-glass)", backgroundColor: "var(--bg-elevated)" }}
+              >
+                {previewKey === "editor" ? (
+                  <Pause className="w-3.5 h-3.5" />
+                ) : (
+                  <Play className="w-3.5 h-3.5" />
+                )}
+              </button>
+            )}
+            {refAudioPath && (
+              <button
+                type="button"
+                onClick={() => setRefAudioPath("")}
+                title={t("transcriber.clearAudio")}
+                className="p-2 rounded-xl border hover:border-rose-400/50 text-rose-300"
+                style={{ borderColor: "var(--border-glass)", backgroundColor: "var(--bg-elevated)" }}
+              >
+                <X className="w-3.5 h-3.5" />
+              </button>
+            )}
             <button
               type="button"
               onClick={pickAudio}
@@ -424,17 +548,25 @@ export const ProfilesView: React.FC<ProfilesViewProps> = ({
       <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
         {profiles.map((p) => {
           const active = p.id === selectedProfileId;
+          const dur = p.ref_duration_s || 0;
+          const isLongRef = dur > 15;
+          const cardPreviewKey = `card-${p.id}`;
           return (
             <GlassCard key={p.id} className="p-4 flex flex-col gap-2.5">
-              <div className="flex items-center justify-between gap-2">
-                <div className="flex items-center gap-2 min-w-0">
-                  <span className="font-semibold text-sm truncate">{p.name}</span>
-                  <span className="rounded-full px-2 py-0.5 text-[10px] font-mono border border-white/10">
+              <div className="flex items-start justify-between gap-2">
+                <div className="flex flex-wrap items-center gap-1.5 min-w-0">
+                  <span className="font-semibold text-sm shrink-0">{p.name}</span>
+                  <span className="rounded-full px-2 py-0.5 text-[10px] font-mono border border-white/10 whitespace-nowrap">
                     {p.engine} · {p.language}
                   </span>
+                  {dur > 0 && (
+                    <span className="rounded-full px-1.5 py-0.5 text-[10px] font-mono border border-white/10 opacity-70 whitespace-nowrap">
+                      {dur.toFixed(1)}s
+                    </span>
+                  )}
                 </div>
                 <span
-                  className="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-mono border shrink-0"
+                  className="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-mono border shrink-0 whitespace-nowrap"
                   style={{
                     borderColor: p.ready ? "rgba(16,185,129,0.4)" : "rgba(245,158,11,0.4)",
                     color: p.ready ? "#34d399" : "#fbbf24",
@@ -444,6 +576,34 @@ export const ProfilesView: React.FC<ProfilesViewProps> = ({
                   {p.ready ? t("profiles.ready") : t("profiles.notBuilt")}
                 </span>
               </div>
+
+              {isLongRef && (
+                <div className="rounded-xl border border-amber-400/35 bg-amber-500/10 px-2.5 py-1.5 text-[11px] text-amber-200 flex flex-wrap items-center justify-between gap-1.5">
+                  <span className="inline-flex items-center gap-1">
+                    <AlertTriangle className="w-3.5 h-3.5 shrink-0 text-amber-300" />
+                    {t("profiles.longAudioWarn").replace("{{sec}}", dur.toFixed(1))}
+                  </span>
+                  <button
+                    type="button"
+                    disabled={trimmingId === p.id}
+                    onClick={() => handleTrim(p)}
+                    className="inline-flex items-center gap-1 rounded-lg border border-amber-400/50 bg-amber-500/20 px-2 py-0.5 text-[10px] font-medium hover:bg-amber-500/30 disabled:opacity-50"
+                  >
+                    {trimmingId === p.id ? (
+                      <Loader2 className="w-3 h-3 animate-spin" />
+                    ) : (
+                      <Scissors className="w-3 h-3" />
+                    )}
+                    {t("profiles.trimBtn")}
+                  </button>
+                </div>
+              )}
+
+              {p.ref_trimmed && (
+                <div className="text-[10px] text-emerald-300/90 font-mono">
+                  {t("profiles.trimmedHint").replace("{{sec}}", dur.toFixed(1))}
+                </div>
+              )}
 
               <p className="text-xs line-clamp-2" style={{ color: "var(--text-secondary)" }}>
                 {p.ref_text || "—"}
@@ -461,6 +621,30 @@ export const ProfilesView: React.FC<ProfilesViewProps> = ({
                 >
                   {t("profiles.useInStudio")}
                 </button>
+                {p.ref_audio_path && baseUrl && (
+                  <button
+                    type="button"
+                    onClick={() =>
+                      togglePreview(cardPreviewKey, getProfileAudioUrl(baseUrl, p.id, p.updated_at))
+                    }
+                    title={
+                      previewKey === cardPreviewKey
+                        ? t("profiles.stopPreview")
+                        : t("profiles.previewAudio")
+                    }
+                    className={clsx(
+                      "inline-flex items-center justify-center rounded-xl border px-2 py-1 text-xs",
+                      previewKey === cardPreviewKey ? "border-cyan-400/60 text-cyan-300" : "",
+                    )}
+                    style={{ borderColor: "var(--border-glass)", backgroundColor: "var(--bg-elevated)" }}
+                  >
+                    {previewKey === cardPreviewKey ? (
+                      <Pause className="w-3 h-3" />
+                    ) : (
+                      <Play className="w-3 h-3" />
+                    )}
+                  </button>
+                )}
                 {!p.ready && p.engine === "qwen" && (
                   <button
                     type="button"

@@ -1,7 +1,7 @@
 {
   "app": {
     "name": "Speech Studio",
-    "phaseBadge": "v0.1.1"
+    "phaseBadge": "v0.2.0"
   },
   "nav": {
     "synthesize": "Synthesize",
@@ -34,6 +34,7 @@
     "inputLabel": "Text to Speak",
     "inputPlaceholder": "Type or paste text to synthesize with the selected voice...",
     "play": "Play",
+    "stop": "Stop",
     "save": "Save",
     "erase": "Erase",
     "exportWav": "Export WAV",
@@ -84,12 +85,18 @@
     "ready": "Ready",
     "notBuilt": "Not Extracted",
     "buildNow": "Extract Voice",
-    "cancel": "Cancel"
+    "cancel": "Cancel",
+    "previewAudio": "Play reference",
+    "stopPreview": "Stop preview",
+    "longAudioWarn": "Reference is {{sec}}s long. Best cloning quality/speed is 6-12s.",
+    "trimBtn": "Trim to 12s (keeps original)",
+    "trimmedHint": "Trimmed to {{sec}}s (original kept). Verify or re-transcribe the text."
   },
   "transcriber": {
     "title": "STT Transcriber",
     "subtitle": "Transcribe audio files with local Whisper or external API endpoints",
     "selectAudio": "Select Audio",
+    "clearAudio": "Clear audio",
     "audioPlaceholder": "Choose an audio file (.wav, .mp3, .m4a, .flac, .opus)...",
     "transcribe": "Transcribe",
     "transcribing": "Transcribing...",
@@ -128,6 +135,7 @@
     "unsupportedPlatform": "Live captions are not available on this system yet.",
     "pickerTitle": "Select Window or Audio Source",
     "chooseWindow": "Select Window",
+    "clearWindow": "Clear selected window",
     "searchWindows": "Search windows or apps...",
     "noPreview": "No window preview",
     "noSttInstalled": "No local STT model is installed yet. Open Models (+) to install Faster-Whisper."
@@ -215,7 +223,13 @@
     "removeLanguageConfirm": "Delete the installed files for this language?",
     "confirmRemoveLanguage": "Delete language",
     "postQuantHint": "Quantize after BF16 download (tooling later)",
-    "runtimeBinaryOnly": "Local binary (no HF download)"
+    "runtimeBinaryOnly": "Local binary (no HF download)",
+    "crispReady": "Ready",
+    "crispNotReady": "Not ready",
+    "readyFilterHint": "Show only CrispASR-compatible models by default",
+    "notReadyReason": "This model is not directly compatible with CrispASR (missing .gguf or unsupported architecture).",
+    "convertGgufOption": "Convert to GGUF locally using CrispASR script",
+    "hubEmpty": "No matching CrispASR-ready models found. Disable the Ready filter to view all results."
   },
   "tray": {
     "open": "Open Speech Studio",
@@ -249,6 +263,13 @@
   "settings": {
     "title": "Settings",
     "subtitle": "Language, visual theme, storage paths, and API endpoints",
+    "generalSection": "General & System",
+    "synthesisSection": "Split Long Text into Sections",
+    "chunkToggleHint": "Start Play faster on long texts by splitting into sentence-aware sections.",
+    "chunkCharsUnit": "chars",
+    "chunkShort": "Short ~180",
+    "chunkMedium": "Medium ~300",
+    "chunkLong": "Long ~500",
     "language": "Language",
     "appearance": "Appearance & Effects",
     "theme": "Mode",

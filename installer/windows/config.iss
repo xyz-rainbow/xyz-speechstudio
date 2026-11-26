@@ -1,5 +1,5 @@
 ; ==============================================================================
-;  XYZ-PRODUCTIONS - MODULAR INSTALLER TEMPLATE
+;  RAINBOW TECHNOLOGY - MODULAR INSTALLER TEMPLATE
 ;  Archivo de Configuración Global (config.iss)
 ; ==============================================================================
 ;  Modifica únicamente estas directivas para personalizar el instalador
@@ -9,17 +9,17 @@
 ; --- 1. DATOS DE LA APLICACIÓN ---
 #define MyAppName "Speech Studio"
 #ifndef MyAppVersion
-  #define MyAppVersion "0.1.1"
+  #define MyAppVersion "0.2.0"
 #endif
-#define MyAppPublisher "Rainbow Technology & XYZ-Productions"
+#define MyAppPublisher "Rainbow Technology"
 #define MyAppURL "https://github.com/xyz-rainbow/xyz-speechstudio"
 #define MyAppExeName "speech-studio.exe"
 #define MyAppId "{{7E2A9C41-5B18-4F0D-A6E3-9D4C1B8F02A7}"
 
 ; --- 2. RUTAS Y DIRECTORIOS ---
 ; Archivos de programa. No usa %LOCALAPPDATA%.
-#define MyDefaultDirName "{autopf}\XYZ-Productions\Speech Studio"
-#define MyDefaultGroupName "XYZ-Productions\Speech Studio"
+#define MyDefaultDirName "{autopf}\Rainbow Technology\Speech Studio"
+#define MyDefaultGroupName "Rainbow Technology\Speech Studio"
 #define OutputDirectory "..\Output"
 #define OutputBaseFilename "SpeechStudio_" + MyAppVersion + "_Setup"
 

@@ -1,5 +1,5 @@
 # Prepares the Speech Studio uv environments next to the installed app.
-# core, qwen, stt and xtts are created. xtts also installs PyTorch via uv.
+# core and unified pytts (torch + coqui-tts + f5-tts + fish-speech + onnx/espeak) are created.
 param(
     [Parameter(Mandatory = $true)]
     [string]$AppRoot
@@ -31,10 +31,10 @@ function Install-Env {
     Write-Host "[Speech Studio] Entorno $Name"
     & $Uv venv --python 3.12 $venv
     if ($LASTEXITCODE -ne 0) { throw "uv venv fallo para $Name" }
-    if ($Name -eq "xtts") {
-        Write-Host "[Speech Studio] PyTorch para xtts (--torch-backend=auto)"
-        & $Uv pip install --python $python torch torchaudio torchcodec --torch-backend=auto
-        if ($LASTEXITCODE -ne 0) { throw "uv pip install de torch fallo para xtts" }
+    if ($Name -eq "pytts") {
+        Write-Host "[Speech Studio] PyTorch para pytts (--torch-backend=auto)"
+        & $Uv pip install --python $python torch torchaudio --torch-backend=auto
+        if ($LASTEXITCODE -ne 0) { throw "uv pip install de torch fallo para pytts" }
     }
     & $Uv pip install --python $python -r $Requirements
     if ($LASTEXITCODE -ne 0) { throw "uv pip install fallo para $Name" }
@@ -50,9 +50,7 @@ Write-Host "[Speech Studio] uv: $uv"
 
 foreach ($pair in @(
     @{ Name = "core"; File = "requirements-core.txt" },
-    @{ Name = "qwen"; File = "requirements-qwen.txt" },
-    @{ Name = "stt"; File = "requirements-stt.txt" },
-    @{ Name = "xtts"; File = "requirements-xtts.txt" }
+    @{ Name = "pytts"; File = "requirements-pytts.txt" }
 )) {
     $req = Join-Path $here $pair.File
     if (-not (Test-Path -LiteralPath $req)) {
@@ -64,4 +62,4 @@ foreach ($pair in @(
 foreach ($dir in @("data", "data\models", "data\profiles", "data\outputs", "data\tmp")) {
     New-Item -ItemType Directory -Force -Path (Join-Path $AppRoot $dir) | Out-Null
 }
-Write-Host "[Speech Studio] Entornos core, qwen, stt y xtts listos en runtime\envs."
+Write-Host "[Speech Studio] Entornos core y pytts listos en runtime\envs."

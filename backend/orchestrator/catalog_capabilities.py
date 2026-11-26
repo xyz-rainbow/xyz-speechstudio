@@ -33,6 +33,30 @@ _ENGINE_DEFAULTS: dict[str, dict[str, Any]] = {
         "quant_policy": "gguf",
         "languages": ["en", "zh", "ja", "ko", "de", "fr", "ru", "pt", "es", "it"],
     },
+    "chatterbox": {
+        "install_mode": "shared_weights",
+        "voice_mode": "clone_profile",
+        "quant_policy": "gguf",
+        "languages": ["en", "es", "fr", "de", "it", "pt", "ja", "ko", "zh", "ru", "ar", "hi", "nl", "pl", "tr"],
+    },
+    "cosyvoice3-tts": {
+        "install_mode": "shared_weights",
+        "voice_mode": "clone_profile",
+        "quant_policy": "gguf",
+        "languages": ["en", "zh", "ja", "ko", "de", "fr", "ru", "es", "it"],
+    },
+    "orpheus": {
+        "install_mode": "shared_weights",
+        "voice_mode": "builtin_voices",
+        "quant_policy": "gguf",
+        "languages": ["en", "de"],
+    },
+    "indextts": {
+        "install_mode": "shared_weights",
+        "voice_mode": "clone_profile",
+        "quant_policy": "gguf",
+        "languages": ["zh", "en"],
+    },
     "xtts": {
         "install_mode": "shared_weights",
         "voice_mode": "clone_profile",
@@ -54,25 +78,25 @@ _ENGINE_DEFAULTS: dict[str, dict[str, Any]] = {
         "languages": ["en", "zh", "ja", "de", "fr", "es", "ko", "ar", "ru", "nl", "it", "pl", "pt"],
     },
     "kokoro": {
-        "install_mode": "voices_pack",
+        "install_mode": "shared_weights",
         "voice_mode": "builtin_voices",
         "quant_policy": "onnx",
         "languages": ["en", "es", "fr", "hi", "it", "ja", "pt", "zh"],
     },
     "piper": {
-        "install_mode": "voices_pack",
+        "install_mode": "shared_weights",
         "voice_mode": "builtin_voices",
         "quant_policy": "onnx",
-        "languages": [],
+        "languages": ["es", "en", "de", "fr", "it", "pt", "ru", "nl", "pl"],
     },
     "espeak": {
         "install_mode": "shared_weights",
         "voice_mode": "builtin_voices",
         "quant_policy": "binary",
-        "languages": [],
+        "languages": ["es", "en", "de", "fr", "it", "pt", "ru", "nl", "pl"],
     },
     "kitten": {
-        "install_mode": "voices_pack",
+        "install_mode": "shared_weights",
         "voice_mode": "builtin_voices",
         "quant_policy": "onnx",
         "languages": [

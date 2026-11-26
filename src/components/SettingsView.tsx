@@ -14,6 +14,7 @@ import {
   Palette,
   Plus,
   Server,
+  SlidersHorizontal,
   Terminal,
   Trash2,
   Zap,
@@ -287,29 +288,33 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
   const sttEndpoints = draft.external_endpoints.filter((e) => e.kind === "stt");
   const visibleEndpoints = activeEpTab === "tts" ? ttsEndpoints : sttEndpoints;
 
+  const chunkOn = draft.tts_chunk_enabled ?? true;
+  const chunkChars = draft.tts_chunk_max_chars ?? 300;
+  const CHUNK_PRESETS = [
+    { label: t("settings.chunkShort"), value: 180 },
+    { label: t("settings.chunkMedium"), value: 300 },
+    { label: t("settings.chunkLong"), value: 500 },
+  ];
+
   return (
     <div className="flex flex-col gap-3.5 pb-6">
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-lg font-semibold tracking-tight">{t("settings.title")}</h1>
-          <p className="text-xs" style={{ color: "var(--text-secondary)" }}>
-            {t("settings.subtitle")}
-          </p>
-        </div>
-        {savedFlag && (
+      {savedFlag && (
+        <div className="flex justify-end">
           <span className="inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-medium bg-emerald-500/20 text-emerald-300 border border-emerald-500/40">
             <Check className="w-3.5 h-3.5" />
             {t("settings.saved")}
           </span>
-        )}
-      </div>
+        </div>
+      )}
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-3.5">
+      <div className="flex flex-col gap-3.5">
+        {/* 1. GENERAL Y SISTEMA */}
         <GlassCard className="p-4 flex flex-col gap-3.5">
           <div className="flex items-center gap-2 text-sm font-semibold">
             <Globe className="w-4 h-4 text-cyan-400" />
-            <span>{t("settings.language")}</span>
+            <span>{t("settings.generalSection")}</span>
           </div>
+
           <div className="flex items-center justify-between gap-3">
             <label className="text-xs" style={{ color: "var(--text-secondary)" }}>
               {t("settings.language")}
@@ -395,8 +400,263 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
             </select>
           </div>
 
+          <div className="flex items-center justify-between gap-3">
+            <span className="text-xs" style={{ color: "var(--text-secondary)" }}>
+              {t("settings.notifications")}
+            </span>
+            <div className="flex items-center gap-2.5">
+              <button
+                type="button"
+                onClick={() =>
+                  sendWindowsToast("Speech Studio", "Windows Toast Notifications active!", 100)
+                }
+                className="rounded-xl border px-2.5 py-1 text-xs font-medium hover:border-purple-400/50"
+                style={{ borderColor: "var(--border-glass)", backgroundColor: "var(--bg-elevated)" }}
+              >
+                {t("settings.testToast")}
+              </button>
+              <input
+                type="checkbox"
+                checked={draft.notifications_enabled}
+                onChange={(e) => commit({ ...draft, notifications_enabled: e.target.checked })}
+                className="w-4 h-4 accent-purple-500"
+              />
+            </div>
+          </div>
+
           <div className="h-px bg-white/10" />
 
+          <div className="flex items-center gap-2 text-xs font-semibold">
+            <Keyboard className="w-3.5 h-3.5 text-cyan-400" />
+            <span>{t("settings.hotkeySection")}</span>
+          </div>
+          <span className="text-[11px]" style={{ color: "var(--text-muted)" }}>
+            {readSelectionSupported ? t("settings.hotkeyHint") : t("settings.hotkeyUnsupported")}
+          </span>
+          <div className="flex items-center justify-between gap-2">
+            <div
+              className={clsx(
+                "flex-1 rounded-xl border px-3 py-1.5 text-xs font-mono",
+                recordingHotkey && "border-cyan-400/70 animate-pulse"
+              )}
+              style={{
+                backgroundColor: "var(--bg-input)",
+                borderColor: recordingHotkey ? undefined : "var(--border-glass)",
+                color: draft.read_hotkey ? "var(--text-primary)" : "var(--text-muted)",
+                opacity: readSelectionSupported ? 1 : 0.5,
+              }}
+            >
+              {recordingHotkey
+                ? t("settings.hotkeyPressNow")
+                : draft.read_hotkey
+                  ? draft.read_hotkey
+                  : t("settings.hotkeyUnassigned")}
+            </div>
+            <button
+              type="button"
+              disabled={!readSelectionSupported}
+              onClick={() => {
+                setHotkeyError(null);
+                setRecordingHotkey((v) => !v);
+              }}
+              className="rounded-xl border px-3 py-1.5 text-xs font-medium hover:border-cyan-400/50 disabled:opacity-40"
+              style={{ borderColor: "var(--border-glass)", backgroundColor: "var(--bg-elevated)" }}
+            >
+              {recordingHotkey ? t("models.cancel") : t("settings.hotkeyRecord")}
+            </button>
+            <button
+              type="button"
+              disabled={!draft.read_hotkey}
+              onClick={clearHotkey}
+              className="inline-flex items-center gap-1 rounded-xl border px-3 py-1.5 text-xs font-medium disabled:opacity-40 hover:border-rose-400/50"
+              style={{ borderColor: "var(--border-glass)", backgroundColor: "var(--bg-elevated)" }}
+            >
+              <Trash2 className="w-3 h-3" />
+              {t("settings.clear")}
+            </button>
+          </div>
+          {hotkeyError && (
+            <span className="text-[11px] text-rose-300">
+              {t("settings.hotkeyError")}: {hotkeyError}
+            </span>
+          )}
+        </GlassCard>
+
+        {/* 2. RUTAS PRINCIPALES (outputs_dir primero) */}
+        <GlassCard className="p-4 flex flex-col gap-3.5">
+          <div className="flex items-center gap-2 text-sm font-semibold">
+            <FolderOpen className="w-4 h-4 text-cyan-400" />
+            <span>{t("settings.paths")}</span>
+          </div>
+
+          {([
+            { key: "outputs_dir", label: t("settings.outputsDir"), resolved: resolvedOutputsDir },
+            { key: "models_dir", label: t("settings.modelsDir"), resolved: resolvedModelsDir },
+          ] as const).map((row) => (
+            <div key={row.key} className="flex flex-col gap-1">
+              <span className="text-xs font-medium">{row.label}</span>
+              <div className="flex items-center gap-1.5">
+                <input
+                  readOnly
+                  value={draft[row.key] || t("settings.defaultPath")}
+                  className="flex-1 rounded-xl border px-2.5 py-1.5 text-xs font-mono outline-none"
+                  style={{
+                    backgroundColor: "var(--bg-input)",
+                    borderColor: "var(--border-glass)",
+                    color: "var(--text-primary)",
+                  }}
+                />
+                <button
+                  type="button"
+                  onClick={() => pickFolder(row.key)}
+                  className="rounded-xl border px-2.5 py-1.5 text-xs font-medium hover:border-cyan-400/50"
+                  style={{ borderColor: "var(--border-glass)", backgroundColor: "var(--bg-elevated)" }}
+                >
+                  {t("settings.selectPath")}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => commit({ ...draft, [row.key]: "" })}
+                  className="inline-flex items-center gap-1 rounded-xl border px-2.5 py-1.5 text-xs font-medium hover:border-rose-400/50"
+                  style={{ borderColor: "var(--border-glass)", backgroundColor: "var(--bg-elevated)" }}
+                >
+                  <Trash2 className="w-3 h-3" />
+                  {t("settings.clear")}
+                </button>
+              </div>
+              <span className="text-[10px] font-mono truncate" style={{ color: "var(--text-muted)" }}>
+                {t("settings.resolved")}: {row.resolved}
+              </span>
+            </div>
+          ))}
+        </GlassCard>
+
+        {/* 3. SÍNTESIS Y REPRODUCCIÓN */}
+        <GlassCard className="p-4 flex flex-col gap-3">
+          <div className="flex items-center justify-between gap-3">
+            <div className="flex items-center gap-2 text-sm font-semibold">
+              <SlidersHorizontal className="w-4 h-4 text-purple-400" />
+              <span>{t("settings.synthesisSection")}</span>
+            </div>
+
+            <button
+              type="button"
+              onClick={() => commit({ ...draft, tts_chunk_enabled: !chunkOn })}
+              className="relative flex items-center w-[88px] h-7 rounded-full p-0.5 border transition-colors shrink-0"
+              style={{
+                backgroundColor: "var(--bg-input)",
+                borderColor: chunkOn ? "rgba(16, 185, 129, 0.5)" : "rgba(244, 63, 94, 0.45)",
+              }}
+            >
+              <span
+                className={clsx(
+                  "absolute top-0.5 bottom-0.5 w-[41px] rounded-full transition-transform duration-200",
+                  chunkOn
+                    ? "translate-x-0 bg-emerald-500/25 border border-emerald-400/60"
+                    : "translate-x-[41px] bg-rose-500/25 border border-rose-400/60"
+                )}
+              />
+              <span
+                className={clsx(
+                  "relative z-10 w-1/2 text-center font-mono text-[11px] font-semibold",
+                  chunkOn ? "text-emerald-300" : "opacity-55"
+                )}
+              >
+                ON
+              </span>
+              <span
+                className={clsx(
+                  "relative z-10 w-1/2 text-center font-mono text-[11px] font-semibold",
+                  !chunkOn ? "text-rose-300" : "opacity-55"
+                )}
+              >
+                OFF
+              </span>
+            </button>
+          </div>
+
+          <div className="flex flex-col gap-2">
+            <span className="text-xs" style={{ color: "var(--text-secondary)" }}>
+              {t("settings.chunkToggleHint")}
+            </span>
+
+            <div className={clsx("flex flex-wrap items-center justify-between gap-2 transition-opacity", !chunkOn && "opacity-40 pointer-events-none")}>
+              <div className="flex items-center gap-2.5 flex-1 min-w-[240px]">
+                <input
+                  type="range"
+                  min={120}
+                  max={800}
+                  step={20}
+                  disabled={!chunkOn}
+                  value={chunkChars}
+                  onChange={(e) =>
+                    setDraft({ ...draft, tts_chunk_max_chars: Number(e.target.value) })
+                  }
+                  onMouseUp={() => commit(draft)}
+                  onTouchEnd={() => commit(draft)}
+                  className="flex-1 accent-cyan-400"
+                />
+                <span className="w-20 text-right text-xs font-mono shrink-0" style={{ color: "var(--text-primary)" }}>
+                  {chunkChars} {t("settings.chunkCharsUnit")}
+                </span>
+              </div>
+
+              <div className="flex items-center gap-1.5 shrink-0">
+                {CHUNK_PRESETS.map((preset) => {
+                  const selected = chunkChars === preset.value;
+                  return (
+                    <button
+                      key={preset.value}
+                      type="button"
+                      disabled={!chunkOn}
+                      onClick={() => commit({ ...draft, tts_chunk_max_chars: preset.value })}
+                      className={clsx(
+                        "rounded-full border px-2.5 py-0.5 text-[11px] font-medium transition-colors",
+                        selected
+                          ? "border-cyan-400/70 bg-cyan-500/20 text-cyan-200"
+                          : "border-white/10 opacity-75 hover:opacity-100"
+                      )}
+                    >
+                      {preset.label}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          </div>
+        </GlassCard>
+
+        {/* 4. SUBTÍTULOS EN VIVO */}
+        <GlassCard className="p-4 flex flex-col gap-3">
+          <div className="flex items-center gap-2 text-sm font-semibold">
+            <Bell className="w-4 h-4 text-purple-400" />
+            <span>{t("settings.subtitlesSection")}</span>
+          </div>
+
+          <div className="flex items-center justify-between gap-3">
+            <span className="text-xs" style={{ color: "var(--text-secondary)" }}>
+              {t("settings.maxHistory")}
+            </span>
+            <input
+              type="number"
+              min={5}
+              max={200}
+              value={draft.captions_max_history}
+              onChange={(e) =>
+                setDraft({
+                  ...draft,
+                  captions_max_history: Math.max(5, Math.min(200, Number(e.target.value) || 20)),
+                })
+              }
+              onBlur={() => commit(draft)}
+              className="w-20 rounded-xl border px-2.5 py-1 text-xs font-mono text-right outline-none"
+              style={{ backgroundColor: "var(--bg-input)", borderColor: "var(--border-glass)" }}
+            />
+          </div>
+        </GlassCard>
+
+        {/* 5. APARIENCIA Y EFECTOS */}
+        <GlassCard className="p-4 flex flex-col gap-3.5">
           <div className="flex items-center gap-2 text-sm font-semibold">
             <Palette className="w-4 h-4 text-purple-400" />
             <span>{t("settings.appearance")}</span>
@@ -474,165 +734,8 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
           </div>
         </GlassCard>
 
+        {/* 6. AVANZADO: SERVE LOCAL API ENDPOINT */}
         <GlassCard className="p-4 flex flex-col gap-3.5">
-          <div className="flex items-center gap-2 text-sm font-semibold">
-            <FolderOpen className="w-4 h-4 text-cyan-400" />
-            <span>{t("settings.paths")}</span>
-          </div>
-
-          {([
-            { key: "models_dir", label: t("settings.modelsDir"), resolved: resolvedModelsDir },
-            { key: "outputs_dir", label: t("settings.outputsDir"), resolved: resolvedOutputsDir },
-          ] as const).map((row) => (
-            <div key={row.key} className="flex flex-col gap-1">
-              <span className="text-xs font-medium">{row.label}</span>
-              <div className="flex items-center gap-1.5">
-                <input
-                  readOnly
-                  value={draft[row.key] || t("settings.defaultPath")}
-                  className="flex-1 rounded-xl border px-2.5 py-1.5 text-xs font-mono outline-none"
-                  style={{
-                    backgroundColor: "var(--bg-input)",
-                    borderColor: "var(--border-glass)",
-                    color: "var(--text-primary)",
-                  }}
-                />
-                <button
-                  type="button"
-                  onClick={() => pickFolder(row.key)}
-                  className="rounded-xl border px-2.5 py-1.5 text-xs font-medium hover:border-cyan-400/50"
-                  style={{ borderColor: "var(--border-glass)", backgroundColor: "var(--bg-elevated)" }}
-                >
-                  {t("settings.selectPath")}
-                </button>
-                <button
-                  type="button"
-                  onClick={() => commit({ ...draft, [row.key]: "" })}
-                  className="inline-flex items-center gap-1 rounded-xl border px-2.5 py-1.5 text-xs font-medium hover:border-rose-400/50"
-                  style={{ borderColor: "var(--border-glass)", backgroundColor: "var(--bg-elevated)" }}
-                >
-                  <Trash2 className="w-3 h-3" />
-                  {t("settings.clear")}
-                </button>
-              </div>
-              <span className="text-[10px] font-mono truncate" style={{ color: "var(--text-muted)" }}>
-                {t("settings.resolved")}: {row.resolved}
-              </span>
-            </div>
-          ))}
-
-          <div className="h-px bg-white/10" />
-
-          <div className="flex items-center gap-2 text-sm font-semibold">
-            <Bell className="w-4 h-4 text-purple-400" />
-            <span>{t("settings.subtitlesSection")}</span>
-          </div>
-
-          <div className="flex items-center justify-between gap-3">
-            <span className="text-xs" style={{ color: "var(--text-secondary)" }}>
-              {t("settings.maxHistory")}
-            </span>
-            <input
-              type="number"
-              min={5}
-              max={200}
-              value={draft.captions_max_history}
-              onChange={(e) =>
-                setDraft({
-                  ...draft,
-                  captions_max_history: Math.max(5, Math.min(200, Number(e.target.value) || 20)),
-                })
-              }
-              onBlur={() => commit(draft)}
-              className="w-20 rounded-xl border px-2.5 py-1 text-xs font-mono text-right outline-none"
-              style={{ backgroundColor: "var(--bg-input)", borderColor: "var(--border-glass)" }}
-            />
-          </div>
-
-          <div className="flex items-center justify-between gap-3">
-            <span className="text-xs" style={{ color: "var(--text-secondary)" }}>
-              {t("settings.notifications")}
-            </span>
-            <div className="flex items-center gap-2.5">
-              <button
-                type="button"
-                onClick={() =>
-                  sendWindowsToast("Speech Studio", "Windows Toast Notifications active!", 100)
-                }
-                className="rounded-xl border px-2.5 py-1 text-xs font-medium hover:border-purple-400/50"
-                style={{ borderColor: "var(--border-glass)", backgroundColor: "var(--bg-elevated)" }}
-              >
-                {t("settings.testToast")}
-              </button>
-              <input
-                type="checkbox"
-                checked={draft.notifications_enabled}
-                onChange={(e) => commit({ ...draft, notifications_enabled: e.target.checked })}
-                className="w-4 h-4 accent-purple-500"
-              />
-            </div>
-          </div>
-
-          <div className="h-px bg-white/10" />
-
-          <div className="flex items-center gap-2 text-sm font-semibold">
-            <Keyboard className="w-4 h-4 text-cyan-400" />
-            <span>{t("settings.hotkeySection")}</span>
-          </div>
-          <span className="text-[11px]" style={{ color: "var(--text-muted)" }}>
-            {readSelectionSupported ? t("settings.hotkeyHint") : t("settings.hotkeyUnsupported")}
-          </span>
-          <div className="flex items-center justify-between gap-2">
-            <div
-              className={clsx(
-                "flex-1 rounded-xl border px-3 py-1.5 text-xs font-mono",
-                recordingHotkey && "border-cyan-400/70 animate-pulse"
-              )}
-              style={{
-                backgroundColor: "var(--bg-input)",
-                borderColor: recordingHotkey ? undefined : "var(--border-glass)",
-                color: draft.read_hotkey ? "var(--text-primary)" : "var(--text-muted)",
-                opacity: readSelectionSupported ? 1 : 0.5,
-              }}
-            >
-              {recordingHotkey
-                ? t("settings.hotkeyPressNow")
-                : draft.read_hotkey
-                  ? draft.read_hotkey
-                  : t("settings.hotkeyUnassigned")}
-            </div>
-            <button
-              type="button"
-              disabled={!readSelectionSupported}
-              onClick={() => {
-                setHotkeyError(null);
-                setRecordingHotkey((v) => !v);
-              }}
-              className="rounded-xl border px-3 py-1.5 text-xs font-medium hover:border-cyan-400/50 disabled:opacity-40"
-              style={{ borderColor: "var(--border-glass)", backgroundColor: "var(--bg-elevated)" }}
-            >
-              {recordingHotkey ? t("models.cancel") : t("settings.hotkeyRecord")}
-            </button>
-            <button
-              type="button"
-              disabled={!draft.read_hotkey}
-              onClick={clearHotkey}
-              className="inline-flex items-center gap-1 rounded-xl border px-3 py-1.5 text-xs font-medium disabled:opacity-40 hover:border-rose-400/50"
-              style={{ borderColor: "var(--border-glass)", backgroundColor: "var(--bg-elevated)" }}
-            >
-              <Trash2 className="w-3 h-3" />
-              {t("settings.clear")}
-            </button>
-          </div>
-          {hotkeyError && (
-            <span className="text-[11px] text-rose-300">
-              {t("settings.hotkeyError")}: {hotkeyError}
-            </span>
-          )}
-        </GlassCard>
-
-        {/* SERVE LOCAL API ENDPOINT (Collapses when OFF) */}
-        <GlassCard className="p-4 flex flex-col gap-3.5 lg:col-span-2">
           <div className="flex items-center justify-between flex-wrap gap-3">
             <div className="flex items-center gap-2.5 text-sm font-semibold">
               <Server className={clsx("w-4 h-4", serveOn ? "text-emerald-400" : "text-rose-400")} />
@@ -886,7 +989,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
         </GlassCard>
 
         {/* EXTERNAL API CONNECTIONS (Single card, 2 big tabs TTS | STT + collapsible accordion) */}
-        <GlassCard className="p-4 flex flex-col gap-3.5 lg:col-span-2">
+        <GlassCard className="p-4 flex flex-col gap-3.5">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div className="flex items-center gap-2 text-sm font-semibold">
               <Globe className="w-4 h-4 text-cyan-400" />

@@ -88,8 +88,29 @@ def _load_audio_soundfile(audiopath, sampling_rate):
 
 def _patch_xtts_audio_loader() -> None:
     import TTS.tts.models.xtts as xtts_mod
+    import TTS.tts.layers.xtts.gpt_inference as gpt_inf_mod
 
     xtts_mod.load_audio = _load_audio_soundfile
+
+    # coqui-tts 0.28 calls past_key_values.get_seq_length(); transformers 4.46 passes tuples and 5.x passes `cache`.
+    orig_forward = gpt_inf_mod.GPT2InferenceModel.forward
+    if not getattr(orig_forward, "_ss_patched", False):
+        def _compat_forward(self, *f_args, **f_kwargs):
+            pkv = f_kwargs.get("past_key_values")
+            if pkv is None and f_kwargs.get("cache") is not None:
+                f_kwargs["past_key_values"] = f_kwargs["cache"]
+            elif isinstance(pkv, tuple):
+                class _TupleCache(tuple):
+                    def get_seq_length(self_cache, layer_idx: int = 0) -> int:
+                        try:
+                            return int(self_cache[layer_idx][0].shape[2])
+                        except Exception:
+                            return 0
+                f_kwargs["past_key_values"] = _TupleCache(pkv)
+            return orig_forward(self, *f_args, **f_kwargs)
+
+        _compat_forward._ss_patched = True  # type: ignore[attr-defined]
+        gpt_inf_mod.GPT2InferenceModel.forward = _compat_forward
 
 
 def _load_checkpoint(model_dir: Path):
@@ -97,16 +118,16 @@ def _load_checkpoint(model_dir: Path):
     from TTS.tts.configs.xtts_config import XttsConfig
     from TTS.tts.models.xtts import Xtts
 
-    _patch_xtts_audio_loader()
-    config = XttsConfig()
-    config.load_json(str(model_dir / "config.json"))
-    model = Xtts.init_from_config(config)
     use_cuda = args.device == "gpu" and torch.cuda.is_available()
     if args.device == "gpu" and not use_cuda:
         raise RuntimeError("XTTS was asked to use the GPU, but CUDA is not available.")
     if use_cuda:
         # Avoid Windows cuDNN DLL symbol mismatch ("Cannot load symbol cudnnGetVersion").
         torch.backends.cudnn.enabled = False
+    _patch_xtts_audio_loader()
+    config = XttsConfig()
+    config.load_json(str(model_dir / "config.json"))
+    model = Xtts.init_from_config(config)
     model.load_checkpoint(
         config,
         checkpoint_dir=str(model_dir),

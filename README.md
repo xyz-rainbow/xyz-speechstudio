@@ -74,10 +74,13 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\installer\setup-env.ps1 -A
 
 | Venv | Requirements | Used for |
 | --- | --- | --- |
-| `runtime\envs\core` | `installer/requirements-core.txt` | Orchestrator (`backend.orchestrator.main`) |
-| `runtime\envs\qwen` | `installer/requirements-qwen.txt` | Qwen TTS worker (`realtimetts-qwen-native`) |
+| `runtime\envs\core` | `installer/requirements-core.txt` | Orchestrator (`backend.orchestrator.main`) + native eSpeak NG CPU engine |
+| `runtime\envs\pytts` | `installer/requirements-pytts.txt` | Unified Python TTS venv for XTTS v2 (`coqui-tts==0.28.0`), F5-TTS Spanish (`f5-tts`), Fish Speech 1.5 (`fish-speech @ v1.5.1`), and KittenTTS 2 Mini (`onnxruntime` + `phonemizer`) |
+| `runtime\envs\qwen` | `installer/requirements-qwen.txt` | Legacy Qwen Python worker (`realtimetts-qwen-native`) |
 | `runtime\envs\stt` | `installer/requirements-stt.txt` | faster-whisper worker |
-| `runtime\envs\xtts` | `installer/requirements-xtts.txt` | Coqui XTTS v2 (`coqui-tts==0.28.0` and `six==1.17.0`). PyTorch, torchaudio, and torchcodec are installed first with `--torch-backend=auto`. |
+| `runtime\envs\xtts` | `installer/requirements-xtts.txt` | Standalone Coqui XTTS v2 fallback venv |
+
+Models that support both CrispASR C++ and Python (`Qwen3-TTS`, `F5-TTS`) expose a per-model **CrispASR | Python** toggle on their card in **Models**; CrispASR keeps models warm in VRAM via persistent `--server` and frees them immediately when clicking **Eject** or switching to a Python GPU worker. Models without a CrispASR backend (`XTTS v2`, `Fish Speech 1.5`, `KittenTTS 2 Mini`, `eSpeak NG`) run exclusively on their native/Python runtime.
 
 Download a Qwen3-TTS GGUF pair (talker + tokenizer) and a faster-whisper model from the in-app **Models** view, or place them in the configured models folder. Built-in Qwen builds come from [`Serveurperso/Qwen3-TTS-GGUF`](https://huggingface.co/Serveurperso/Qwen3-TTS-GGUF); Whisper builds come from the Systran `faster-whisper-*` repos. XTTS checkpoint weights are not in git (Coqui Public Model License). On this tree the weights are already on disk; a real synthesis may still be validating. A load failed once because `six` was missing, until `pip install six` (`six` is now pinned). Parakeet, Moonshine, and Fish Audio do not load.
 

@@ -7,7 +7,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-11-26
+
 ### Added
+
+- Persistent CrispASR `--server` VRAM manager (`crispasr.py`, `supervisor.py`, `main.py`) keeping C++ TTS models warm in VRAM across Play chunks & requests (`Eject` + mutual GPU eviction + `POST /api/tts/cancel` Stop action + `spoken_disclaimer=false` with `marking_attestation` + CLI `-l <lang>` propagation).
+- Real CPU formant **eSpeak NG** engine (`backend/orchestrator/espeak_engine.py`, `espeakng-loader` in `requirements-core.txt`), automatic GGUF v3 packing for all 54 **Kokoro** voices (`ef_dora`, `em_alex`, `em_santa`, EN US/UK, FR, DE, IT, PT, JA, ZH, HI), **Chatterbox Multilingual** catalog entry, and `KittenTTS 2 Mini` direct ONNX multilingual inference (`voices_<lang>.npz` + `vocab.json`).
+- Unified Python TTS environment (`.venvs/pytts` / `installer/requirements-pytts.txt`) verified with Coqui XTTS v2, F5-TTS Spanish (`F5TTS_Base` + automatic `<=11s` reference clip & transcript matching), Fish Speech 1.5 (`v1.5.1`), and KittenTTS 2 Mini, plus per-model `CrispASR | Python` runtime selector on dual-runtime cards in `ModelsView.tsx`.
+- Reference audio pipeline (`backend/orchestrator/audio_prep.py`): automatic 24 kHz mono conversion for cloning, inline Play/Pause reference audio preview, long-reference warning (>15s) with non-destructive **Trim to 12s** (`POST /api/profiles/{id}/trim`), engine profile counters `(0)/(1)` and automatic `Ready` status on all inline clone engines.
+- Synthesize Play UI polish: shared loading-bar / `<ChunkedAudioPlayer>` slot, red/rose animated **Stop** button cancelling backend generation, continuous breathing glow + 3-bar equalizer in `FloatingPlaybackIsland.tsx`, cleaner card titles without `(CrispASR)`/`(Legacy Python)`, and download toast notifications restricted to start (0%) and completion (100%).
+- Installer rebrand to **Rainbow Technology** (`Program Files\Rainbow Technology\Speech Studio`), hidden PowerShell setup window (`runhidden` + `-WindowStyle Hidden`), and unified `setup-env.ps1` bootstrap (`core` + `pytts`).
+- Sentence- and word-aware TTS section chunking (`backend/orchestrator/chunking.py`) with Settings toggle and numeric slider + compact presets (`180 / 300 / 500` chars), progressive background prefetching on Play, ephemeral `data/tmp/play_session/` temp cleanup, Smart Save concatenation into `outputs_dir`, custom Smoked Glass `ChunkedAudioPlayer.tsx` (timeline buffer, seek, volume/mute, cyclic speed `0.75x–3x`), and lime-green `FloatingPlaybackIsland.tsx` when navigating away from `Synthesize`.
+- Native CrispASR voice-cloning catalog models (`Chatterbox Turbo`, `CosyVoice3 0.5B`, `IndexTTS 1.5`, `Orpheus 3B`), Whisper/Canary/SenseVoice/Qwen3-TTS CrispASR routing (`crispasr.py`), `Ready` / `Not ready` Model Hub detection with default `Ready` filter and optional official CrispASR GGUF conversion hook, plus architecture research in `docs/crispasr-research.md`.
+- Explicit clear (`×`) buttons in `TranscriberView`, `ProfilesView`, and `SubtitlesView`, plus persistent tab state across navigation.
+
+### Changed
+
+- Fixed main window size at `880×580` (`resizable: false`, `maximizable: false`), removed redundant top tab title/subtitle headers, and reordered Settings (`General & System` → `Storage Paths` with `outputs_dir` first → `Split Text into Sections` → `Live Captions` → `Appearance` → `Advanced`).
+
+### Fixed
+
+- Fixed Live Captions (`list_audio_apps`) deadlock and app crash on Windows by moving window scanning onto `tauri::async_runtime::spawn_blocking`, skipping Speech Studio's own PID, and skipping hung windows via `IsHungAppWindow`.
 
 - Redesigned local model manager: `Models` shows only installed local models and active downloads with a unified `(+)` modal featuring three paginated tabs — **Featured** (one grouped card per family with inline variant & quantization selectors), **Explore Hub** (live Hugging Face search with file inspection), and **Import** (Hugging Face / ModelScope / direct URLs plus local folder or file import). Added Fish Audio to the catalog metadata.
 - Global `speechstudio` terminal CLI (`backend/cli/main.py`, `scripts/speechstudio.cmd`, `scripts/speechstudio`): connects to a running Speech Studio backend via `data/runtime.json` or starts a temporary headless orchestrator that cleans up on exit across Windows, Linux, and macOS (`play`, `status`/`inspect`, `models`, `profiles`, `transcribe`, `config`, `endpoints`, shorthands `--models`/`--status`/`--profiles`/`--config`/`--endpoints`, and `--json`).

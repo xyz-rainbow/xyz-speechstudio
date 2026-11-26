@@ -3,6 +3,8 @@ from __future__ import annotations
 import json
 import re
 import shutil
+import subprocess
+import sys
 import threading
 import time
 import uuid
@@ -15,7 +17,7 @@ from huggingface_hub import HfApi, hf_hub_url
 from pydantic import BaseModel, Field
 
 from .catalog_capabilities import ModelCapabilities, capabilities_from_spec
-from .config import AppSettings, resolved_models_dir
+from .config import DEFAULT_TMP_DIR, AppSettings, resolved_models_dir
 
 
 class QuantOption(BaseModel):
@@ -39,6 +41,8 @@ class CatalogModelEntry(BaseModel):
     repo_id: str
     description: str = ""
     runtime_supported: bool = True
+    available_runtimes: list[str] = Field(default_factory=list)
+    active_runtime: str = ""
     capabilities: ModelCapabilities = Field(default_factory=ModelCapabilities)
     quants: list[QuantOption] = Field(default_factory=list)
     installed: bool = False
@@ -80,6 +84,11 @@ class HfInspectResponse(BaseModel):
     suggested_name: str
     suggested_kind: Literal["tts", "stt"]
     files: list[HfInspectFile]
+    crispasr_ready: bool = False
+    crispasr_backend: Optional[str] = None
+    crispasr_reason: str = ""
+    can_convert_gguf: bool = False
+    convert_script: Optional[str] = None
 
 
 class HubModelSummary(BaseModel):
@@ -90,6 +99,9 @@ class HubModelSummary(BaseModel):
     likes: int = 0
     tags: list[str] = Field(default_factory=list)
     pipeline_tag: str = ""
+    crispasr_ready: bool = False
+    crispasr_backend: Optional[str] = None
+    crispasr_reason: str = ""
 
 
 class HubSearchResponse(BaseModel):
@@ -346,10 +358,9 @@ BUILTIN_MODELS: list[dict[str, Any]] = [
         "dir_names": ["f5-tts-spanish"],
         "description": (
             "Spanish fine-tune of F5-TTS (jpgallegoar; multi-accent ES data). "
-            "Not a single checkpoint for all languages — use v1 Base for EN, this for ES. "
-            "Catalog download; worker not wired yet."
+            "Runs on isolated Python F5 worker."
         ),
-        "runtime_supported": False,
+        "runtime_supported": True,
         "install_mode": "per_language_checkpoint",
         "voice_mode": "clone_profile",
         "quant_policy": "checkpoint",
@@ -507,6 +518,203 @@ BUILTIN_MODELS: list[dict[str, Any]] = [
         ],
     },
     {
+        "id": "chatterbox-multilingual-gguf",
+        "name": "Chatterbox Multilingual",
+        "kind": "tts",
+        "engine": "chatterbox",
+        "family_id": "chatterbox",
+        "family_name": "Chatterbox",
+        "variant_label": "Multilingual GGUF (Voice Clone)",
+        "repo_id": "cstr/chatterbox-GGUF",
+        "dir_names": ["chatterbox-multilingual-gguf", "chatterbox-gguf"],
+        "description": "Multilingual zero-shot voice cloning (Spanish, English, etc.) on CrispASR C++.",
+        "runtime_supported": True,
+        "install_mode": "shared_weights",
+        "voice_mode": "clone_profile",
+        "quant_policy": "gguf",
+        "languages": ["en", "es", "fr", "de", "it", "pt", "ja", "ko", "zh", "ru", "ar", "hi", "nl", "pl", "tr"],
+        "quants": [
+            {
+                "id": "q4_k",
+                "label": "GGUF Q4_K (T3 + S3Gen)",
+                "disk_mb": 650,
+                "vram_mib": 1600,
+                "files": ["chatterbox-v3-t3-q4_k.gguf", "chatterbox-v3-s3gen-q4_k.gguf"],
+                "recommended": True,
+            },
+            {
+                "id": "q8_0",
+                "label": "GGUF Q8_0 (T3 + S3Gen)",
+                "disk_mb": 1000,
+                "vram_mib": 2100,
+                "files": ["chatterbox-v3-t3-q8_0.gguf", "chatterbox-v3-s3gen-q8_0.gguf"],
+                "recommended": False,
+            },
+            {
+                "id": "f16",
+                "label": "GGUF F16 (T3 + S3Gen)",
+                "disk_mb": 1700,
+                "vram_mib": 2800,
+                "files": ["chatterbox-v3-t3-f16.gguf", "chatterbox-v3-s3gen-f16.gguf"],
+                "recommended": False,
+            },
+        ],
+    },
+    {
+        "id": "chatterbox-turbo-gguf",
+        "name": "Chatterbox Turbo",
+        "kind": "tts",
+        "engine": "chatterbox",
+        "family_id": "chatterbox",
+        "family_name": "Chatterbox",
+        "variant_label": "Turbo EN GGUF (Voice Clone)",
+        "repo_id": "cstr/chatterbox-turbo-GGUF",
+        "dir_names": ["chatterbox-turbo-gguf"],
+        "description": "Fast English flow-matching voice cloning running natively on CrispASR C++.",
+        "runtime_supported": True,
+        "install_mode": "shared_weights",
+        "voice_mode": "clone_profile",
+        "quant_policy": "gguf",
+        "languages": ["en"],
+        "quants": [
+            {
+                "id": "q4_k",
+                "label": "GGUF Q4_K (T3 + S3Gen)",
+                "disk_mb": 560,
+                "vram_mib": 1400,
+                "files": ["chatterbox-turbo-t3-q4_k.gguf", "chatterbox-turbo-s3gen-q4_k.gguf"],
+                "recommended": True,
+            },
+            {
+                "id": "f16",
+                "label": "GGUF F16 (T3 + S3Gen)",
+                "disk_mb": 1400,
+                "vram_mib": 2400,
+                "files": ["chatterbox-turbo-t3-f16.gguf", "chatterbox-turbo-s3gen-f16.gguf"],
+                "recommended": False,
+            },
+        ],
+    },
+    {
+        "id": "cosyvoice3-0.5b-gguf",
+        "name": "CosyVoice3 0.5B",
+        "kind": "tts",
+        "engine": "cosyvoice3-tts",
+        "family_id": "cosyvoice3",
+        "family_name": "CosyVoice3",
+        "variant_label": "0.5B GGUF (Cross-Lingual Clone)",
+        "repo_id": "cstr/cosyvoice3-0.5b-2512-GGUF",
+        "dir_names": ["cosyvoice3-0.5b-gguf"],
+        "description": "Cross-lingual zero-shot voice cloning running natively on CrispASR C++.",
+        "runtime_supported": True,
+        "install_mode": "shared_weights",
+        "voice_mode": "clone_profile",
+        "quant_policy": "gguf",
+        "languages": ["en", "zh", "ja", "ko", "de", "fr", "ru", "es", "it"],
+        "quants": [
+            {
+                "id": "q4_k",
+                "label": "GGUF Q4_K + Flow Q8_0",
+                "disk_mb": 1360,
+                "vram_mib": 1800,
+                "files": [
+                    "cosyvoice3-llm-q4_k.gguf",
+                    "cosyvoice3-flow-q8_0.gguf",
+                    "cosyvoice3-campplus-f16.gguf",
+                    "cosyvoice3-hift-f16.gguf",
+                    "cosyvoice3-s3tok-f16.gguf",
+                    "cosyvoice3-voices.gguf",
+                ],
+                "recommended": True,
+            },
+            {
+                "id": "f16",
+                "label": "GGUF F16 Full",
+                "disk_mb": 2250,
+                "vram_mib": 2800,
+                "files": [
+                    "cosyvoice3-llm-f16.gguf",
+                    "cosyvoice3-flow-f16.gguf",
+                    "cosyvoice3-campplus-f16.gguf",
+                    "cosyvoice3-hift-f16.gguf",
+                    "cosyvoice3-s3tok-f16.gguf",
+                    "cosyvoice3-voices.gguf",
+                ],
+                "recommended": False,
+            },
+        ],
+    },
+    {
+        "id": "indextts-1.5-gguf",
+        "name": "IndexTTS 1.5",
+        "kind": "tts",
+        "engine": "indextts",
+        "family_id": "indextts",
+        "family_name": "IndexTTS",
+        "variant_label": "1.5 GGUF (EN+zh Clone)",
+        "repo_id": "cstr/indextts-1.5-GGUF",
+        "dir_names": ["indextts-1.5-gguf"],
+        "description": "Zero-shot English & Chinese voice cloning on CrispASR C++ (GPT + BigVGAN).",
+        "runtime_supported": True,
+        "install_mode": "shared_weights",
+        "voice_mode": "clone_profile",
+        "quant_policy": "gguf",
+        "languages": ["en", "zh"],
+        "quants": [
+            {
+                "id": "q8_0",
+                "label": "GGUF Q8_0 + BigVGAN",
+                "disk_mb": 1050,
+                "vram_mib": 2100,
+                "files": ["indextts-gpt-q8_0.gguf", "indextts-bigvgan.gguf"],
+                "recommended": True,
+            },
+            {
+                "id": "q4_k",
+                "label": "GGUF Q4_K + BigVGAN",
+                "disk_mb": 720,
+                "vram_mib": 1600,
+                "files": ["indextts-gpt-q4_k.gguf", "indextts-bigvgan.gguf"],
+                "recommended": False,
+            },
+        ],
+    },
+    {
+        "id": "orpheus-3b-gguf",
+        "name": "Orpheus 3B",
+        "kind": "tts",
+        "engine": "orpheus",
+        "family_id": "orpheus",
+        "family_name": "Orpheus",
+        "variant_label": "3B Base GGUF (EN)",
+        "repo_id": "cstr/orpheus-3b-base-GGUF",
+        "dir_names": ["orpheus-3b-gguf"],
+        "description": "Expressive Llama-3.2-3B + SNAC 24kHz TTS running on CrispASR C++.",
+        "runtime_supported": True,
+        "install_mode": "shared_weights",
+        "voice_mode": "builtin_voices",
+        "quant_policy": "gguf",
+        "languages": ["en"],
+        "quants": [
+            {
+                "id": "q4_k",
+                "label": "GGUF Q4_K",
+                "disk_mb": 1950,
+                "vram_mib": 3200,
+                "files": ["orpheus-3b-base-q4_k.gguf"],
+                "recommended": True,
+            },
+            {
+                "id": "q8_0",
+                "label": "GGUF Q8_0",
+                "disk_mb": 3400,
+                "vram_mib": 4600,
+                "files": ["orpheus-3b-base-q8_0.gguf"],
+                "recommended": False,
+            },
+        ],
+    },
+    {
         "id": "kokoro-82m",
         "name": "Kokoro 82M",
         "kind": "tts",
@@ -516,9 +724,9 @@ BUILTIN_MODELS: list[dict[str, Any]] = [
         "variant_label": "82M ONNX",
         "repo_id": "onnx-community/Kokoro-82M-v1.0-ONNX",
         "dir_names": ["kokoro-82m"],
-        "description": "Fast multilingual TTS (StyleTTS2-derived ONNX). Voices installed per language pack.",
-        "runtime_supported": False,
-        "install_mode": "voices_pack",
+        "description": "Fast multilingual TTS (StyleTTS2-derived ONNX). All 54 voices resolved via CrispASR.",
+        "runtime_supported": True,
+        "install_mode": "shared_weights",
         "voice_mode": "builtin_voices",
         "quant_policy": "onnx",
         "languages": ["en", "es", "fr", "hi", "it", "ja", "pt", "zh"],
@@ -567,12 +775,12 @@ BUILTIN_MODELS: list[dict[str, Any]] = [
         "variant_label": "Community voices",
         "repo_id": "rhasspy/piper-voices",
         "dir_names": ["piper"],
-        "description": "Lightweight VITS voices. Install by language/quality (medium recommended).",
+        "description": "Lightweight VITS voices (CrispASR GGUF voices resolved per selected language).",
         "runtime_supported": False,
-        "install_mode": "voices_pack",
+        "install_mode": "shared_weights",
         "voice_mode": "builtin_voices",
         "quant_policy": "onnx",
-        "languages": ["en", "es", "de", "fr", "it", "pt", "ru", "zh", "ar", "nl", "pl"],
+        "languages": ["es", "en", "de", "fr", "it", "pt", "ru", "nl", "pl"],
         "quants": [
             {
                 "id": "medium",
@@ -622,12 +830,12 @@ BUILTIN_MODELS: list[dict[str, Any]] = [
         "direct_urls": {
             "espeak-ng.msi": "https://github.com/espeak-ng/espeak-ng/releases/download/1.52.0/espeak-ng.msi",
         },
-        "description": "Tiny formant TTS binary. Install once; languages come with the package.",
-        "runtime_supported": False,
+        "description": "Tiny formant CPU TTS runtime (no VRAM required).",
+        "runtime_supported": True,
         "install_mode": "shared_weights",
         "voice_mode": "builtin_voices",
         "quant_policy": "binary",
-        "languages": ["en", "es", "fr", "de", "it", "pt", "ja", "ko", "zh", "ru", "hi", "ar", "nl", "pl", "tr"],
+        "languages": ["es", "en", "de", "fr", "it", "pt", "ru", "nl", "pl"],
         "quants": [
             {
                 "id": "binary",
@@ -649,9 +857,9 @@ BUILTIN_MODELS: list[dict[str, Any]] = [
         "variant_label": "2 Mini",
         "repo_id": "KittenML/kitten-tts-2-mini",
         "dir_names": ["kitten-tts-2-mini"],
-        "description": "Compact ONNX TTS (16 langs). Install voice packs per language. 0.8/nano/pico excluded.",
-        "runtime_supported": False,
-        "install_mode": "voices_pack",
+        "description": "Compact ONNX TTS (16 langs). 0.8/nano/pico excluded.",
+        "runtime_supported": True,
+        "install_mode": "shared_weights",
         "voice_mode": "builtin_voices",
         "quant_policy": "onnx",
         "languages": [
@@ -1154,17 +1362,42 @@ def _runtime_supported_for_builtin(m: dict) -> bool:
     engine = (m.get("engine") or "").lower()
     mid = (m.get("id") or "").lower()
     try:
-        from .crispasr import is_available
+        from .crispasr import CRISPASR_READY_ENGINES, is_available
 
         if not is_available():
             return False
-        if engine in {"piper", "kokoro", "espeak", "f5", "f5-tts", "fish", "fish-audio", "kitten"}:
+        if engine in CRISPASR_READY_ENGINES or engine in {"fish", "fish-audio", "kitten"}:
             return True
         if engine == "onnx-asr" and ("parakeet" in mid or "moonshine" in mid):
             return True
     except Exception:
         return False
     return False
+
+
+def _runtimes_for_model(m: dict, settings: AppSettings) -> tuple[list[str], str]:
+    """Return honest (available_runtimes, active_runtime) without exposing CrispASR on unsupported models."""
+    engine = (m.get("engine") or "").strip().lower()
+    mid = (m.get("id") or "").strip().lower()
+    available: list[str] = []
+    if m.get("kind") == "tts":
+        if engine == "qwen":
+            available = ["crispasr", "python"]
+        elif engine in ("f5", "f5-tts"):
+            if "gguf" in mid:
+                available = ["crispasr"]
+            else:
+                available = ["python", "crispasr"]
+        elif engine in ("piper", "kokoro", "chatterbox", "chatterbox-turbo", "cosyvoice3-tts", "indextts", "orpheus"):
+            available = ["crispasr"]
+        elif engine in ("xtts", "fish-audio", "fish", "kitten"):
+            available = ["python"]
+        elif engine == "espeak":
+            available = []
+    default_rt = available[0] if available else ""
+    preferred = (settings.model_runtimes or {}).get(m["id"], "")
+    active = preferred if preferred in available else default_rt
+    return available, active
 
 
 def build_catalog(settings: AppSettings) -> list[CatalogModelEntry]:
@@ -1177,6 +1410,7 @@ def build_catalog(settings: AppSettings) -> list[CatalogModelEntry]:
         rec_q = next((q for q in quants if q.recommended), quants[0] if quants else None)
         active_q = next((q for q in quants if q.id == q_id), rec_q)
         caps = capabilities_from_spec(m)
+        avail_rt, active_rt = _runtimes_for_model(m, settings)
         entries.append(
             CatalogModelEntry(
                 id=m["id"],
@@ -1189,6 +1423,8 @@ def build_catalog(settings: AppSettings) -> list[CatalogModelEntry]:
                 repo_id=m["repo_id"],
                 description=m.get("description", ""),
                 runtime_supported=_runtime_supported_for_builtin(m),
+                available_runtimes=avail_rt,
+                active_runtime=active_rt,
                 capabilities=caps,
                 quants=quants,
                 installed=installed,
@@ -1213,30 +1449,44 @@ def build_catalog(settings: AppSettings) -> list[CatalogModelEntry]:
         disk_mb = _dir_size_mb(cdir) if installed else int(custom.get("disk_mb", 0))
         files = [str(f) for f in custom.get("files", [])]
         source = custom.get("source", "huggingface")
+        stored_backend = (custom.get("crispasr_backend") or "").strip().lower()
+        has_gguf = any(f.lower().endswith(".gguf") for f in files) or (
+            cdir.is_dir() and any(cdir.rglob("*.gguf"))
+        )
         is_ct2 = kind == "stt" and (
             any(Path(f).name == "model.bin" for f in files) or (cdir / "model.bin").is_file()
         )
-        is_gguf_qwen = kind == "tts" and (
-            any(f.lower().endswith(".gguf") for f in files) or any(cdir.glob("*.gguf"))
+        inferred_engine = stored_backend or (
+            "faster-whisper" if is_ct2 else ("qwen" if (kind == "tts" and has_gguf) else f"custom-{source}")
+        )
+        if inferred_engine == "qwen3-tts":
+            inferred_engine = "qwen"
+        elif inferred_engine == "qwen3":
+            inferred_engine = "qwen3-asr"
+        is_crispasr_ready = bool(stored_backend) or has_gguf
+        voice_mode = (
+            "clone_profile"
+            if kind == "tts" and inferred_engine in {"qwen", "f5", "f5-tts", "chatterbox", "cosyvoice3-tts", "orpheus", "indextts"}
+            else "builtin_voices"
         )
         entries.append(
             CatalogModelEntry(
                 id=cid,
                 name=custom.get("name", cid),
                 kind=kind,
-                engine="faster-whisper" if is_ct2 else ("qwen" if is_gguf_qwen else f"custom-{source}"),
+                engine=inferred_engine,
                 family_id=cid,
                 family_name=custom.get("name", cid),
                 variant_label=source,
                 repo_id=custom.get("repo_id", source),
                 description=f"{source}: {custom.get('repo_id', '')}",
-                runtime_supported=is_ct2 or is_gguf_qwen,
+                runtime_supported=is_ct2 or is_crispasr_ready,
                 capabilities=capabilities_from_spec(
                     {
-                        "engine": "faster-whisper" if is_ct2 else ("qwen" if is_gguf_qwen else f"custom-{source}"),
+                        "engine": inferred_engine,
                         "install_mode": "shared_weights",
-                        "voice_mode": "clone_profile" if is_gguf_qwen else "builtin_voices",
-                        "quant_policy": "gguf" if is_gguf_qwen else "checkpoint",
+                        "voice_mode": voice_mode,
+                        "quant_policy": "gguf" if has_gguf else "checkpoint",
                         "languages": [],
                     }
                 ),
@@ -1265,54 +1515,252 @@ def build_catalog(settings: AppSettings) -> list[CatalogModelEntry]:
     return entries
 
 
+_CRISPASR_CONVERTERS: dict[str, str] = {
+    "qwen3-tts": "models/convert-qwen3-tts-to-gguf.py",
+    "f5-tts": "models/convert-f5-tts-to-gguf.py",
+    "chatterbox": "models/convert-chatterbox-to-gguf.py",
+    "cosyvoice3-tts": "models/convert-cosyvoice3-to-gguf.py",
+    "orpheus": "models/convert-orpheus-to-gguf.py",
+    "indextts": "models/convert-indextts-to-gguf.py",
+    "kokoro": "models/convert-kokoro-to-gguf.py",
+    "piper": "models/convert-piper-to-gguf.py",
+    "bark": "models/convert-bark-to-gguf.py",
+    "dia": "models/convert-dia-to-gguf.py",
+    "zonos": "models/convert-zonos-to-gguf.py",
+    "csm": "models/convert-csm-to-gguf.py",
+    "parler-tts": "models/convert-parler-to-gguf.py",
+    "outetts": "models/convert-outetts-to-gguf.py",
+    "melotts": "models/convert-melotts-to-gguf.py",
+    "pocket-tts": "models/convert-pocket-tts-to-gguf.py",
+    "supertonic": "models/convert-supertonic3-to-gguf.py",
+    "vibevoice": "models/convert-vibevoice-to-gguf.py",
+    "parakeet": "models/convert-parakeet-to-gguf.py",
+    "moonshine": "models/convert-moonshine-to-gguf.py",
+    "canary": "models/convert-canary-to-gguf.py",
+    "sensevoice": "models/convert-sensevoice-to-gguf.py",
+    "granite": "models/convert-granite-speech-to-gguf.py",
+    "voxtral": "models/convert-voxtral-to-gguf.py",
+    "cohere": "models/convert-cohere-asr-to-gguf.py",
+    "funasr": "models/convert-funasr-to-gguf.py",
+    "paraformer": "models/convert-paraformer-to-gguf.py",
+    "wav2vec2": "models/convert-wav2vec2-to-gguf.py",
+    "qwen3": "models/convert-qwen3-asr-to-gguf.py",
+}
+
+_BACKEND_KEYWORDS: tuple[tuple[str, str], ...] = (
+    ("qwen3-tts", "qwen3-tts"),
+    ("qwen3_tts", "qwen3-tts"),
+    ("qwen3-asr", "qwen3"),
+    ("f5-tts", "f5-tts"),
+    ("f5_tts", "f5-tts"),
+    ("cosyvoice3", "cosyvoice3-tts"),
+    ("cosyvoice", "cosyvoice3-tts"),
+    ("chatterbox", "chatterbox"),
+    ("orpheus", "orpheus"),
+    ("indextts", "indextts"),
+    ("index-tts", "indextts"),
+    ("kokoro", "kokoro"),
+    ("piper", "piper"),
+    ("bark", "bark"),
+    ("dia-tts", "dia"),
+    ("nari-labs/dia", "dia"),
+    ("zonos", "zonos"),
+    ("sesame/csm", "csm"),
+    ("csm-1b", "csm"),
+    ("parler", "parler-tts"),
+    ("outetts", "outetts"),
+    ("melotts", "melotts"),
+    ("pocket-tts", "pocket-tts"),
+    ("supertonic", "supertonic"),
+    ("vibevoice", "vibevoice"),
+    ("parakeet", "parakeet"),
+    ("moonshine", "moonshine"),
+    ("canary", "canary"),
+    ("sensevoice", "sensevoice"),
+    ("granite", "granite"),
+    ("voxtral", "voxtral"),
+    ("cohere", "cohere"),
+    ("funasr", "funasr"),
+    ("paraformer", "paraformer"),
+    ("wav2vec2", "wav2vec2"),
+    ("whisper", "whisper"),
+)
+
+
+def _infer_crispasr_backend(
+    repo_id: str,
+    *,
+    tags: Optional[list[str]] = None,
+    files: Optional[list[str]] = None,
+    config_json: Optional[dict[str, Any]] = None,
+) -> Optional[str]:
+    haystack_parts = [repo_id.lower()]
+    if tags:
+        haystack_parts.extend(str(t).lower() for t in tags)
+    if files:
+        haystack_parts.extend(str(f).lower() for f in files[:30])
+    if config_json:
+        for key in ("model_type", "architectures"):
+            val = config_json.get(key)
+            if isinstance(val, str):
+                haystack_parts.append(val.lower())
+            elif isinstance(val, list):
+                haystack_parts.extend(str(x).lower() for x in val)
+    haystack = " ".join(haystack_parts)
+    for kw, backend in _BACKEND_KEYWORDS:
+        if kw in haystack:
+            return backend
+    return None
+
+
+def detect_crispasr_compatibility(
+    repo_id: str,
+    *,
+    files: Optional[list[str]] = None,
+    tags: Optional[list[str]] = None,
+    config_json: Optional[dict[str, Any]] = None,
+    inspect_files_known: bool = False,
+) -> dict[str, Any]:
+    from .crispasr import list_compiled_backends
+
+    compiled = list_compiled_backends()
+    backend = _infer_crispasr_backend(repo_id, tags=tags, files=files, config_json=config_json)
+    low_repo = repo_id.lower()
+    low_tags = {str(t).lower() for t in (tags or [])}
+    gguf_files = [f for f in (files or []) if f.lower().endswith(".gguf")]
+    has_gguf = bool(gguf_files) or ("gguf" in low_repo) or ("gguf" in low_tags)
+
+    if backend and backend in compiled:
+        if has_gguf:
+            return {
+                "crispasr_ready": True,
+                "crispasr_backend": backend,
+                "crispasr_reason": f"Ready · CrispASR ({backend})",
+                "can_convert_gguf": False,
+                "convert_script": None,
+            }
+        if not inspect_files_known and "auto-download" in compiled[backend] and backend in {
+            "kokoro",
+            "piper",
+            "parakeet",
+            "moonshine",
+            "chatterbox",
+            "cosyvoice3-tts",
+            "orpheus",
+            "indextts",
+        }:
+            return {
+                "crispasr_ready": True,
+                "crispasr_backend": backend,
+                "crispasr_reason": f"Ready · CrispASR ({backend})",
+                "can_convert_gguf": False,
+                "convert_script": None,
+            }
+        script = _CRISPASR_CONVERTERS.get(backend)
+        return {
+            "crispasr_ready": False,
+            "crispasr_backend": backend,
+            "crispasr_reason": (
+                f"Not ready: falta archivo .gguf para el backend CrispASR '{backend}'"
+                + (f" (conversión disponible vía {Path(script).name})." if script else ".")
+            ),
+            "can_convert_gguf": bool(script),
+            "convert_script": script,
+        }
+
+    if inspect_files_known and gguf_files:
+        return {
+            "crispasr_ready": True,
+            "crispasr_backend": backend,
+            "crispasr_reason": f"Ready · Archivo GGUF detectado ({gguf_files[0]})",
+            "can_convert_gguf": False,
+            "convert_script": None,
+        }
+
+    return {
+        "crispasr_ready": False,
+        "crispasr_backend": backend,
+        "crispasr_reason": (
+            "Not ready: arquitectura no implementada en CrispASR o sin archivos .gguf compatibles."
+        ),
+        "can_convert_gguf": False,
+        "convert_script": None,
+    }
+
+
 def search_hf_hub(
     kind: Literal["tts", "stt"],
     query: str = "",
     page: int = 1,
     page_size: int = 6,
+    ready_only: bool = True,
 ) -> HubSearchResponse:
     safe_page = max(1, page)
     safe_size = max(1, min(20, page_size))
     pipeline_tag = "text-to-speech" if kind == "tts" else "automatic-speech-recognition"
 
     api = HfApi()
-    limit = safe_page * safe_size + 1
-    models = list(
-        api.list_models(
+    raw_query = query.strip()
+    needed = safe_page * safe_size + 1
+
+    candidates: list[Any] = []
+    seen_ids: set[str] = set()
+
+    def _collect(search_text: Optional[str], limit: int) -> None:
+        for m in api.list_models(
             pipeline_tag=pipeline_tag,
-            search=query.strip() or None,
+            search=search_text or None,
             sort="downloads",
             limit=limit,
-        )
-    )
-    start = (safe_page - 1) * safe_size
-    page_items = models[start : start + safe_size]
-    has_more = len(models) > start + safe_size
+        ):
+            rid = getattr(m, "id", "") or ""
+            if rid and rid not in seen_ids:
+                seen_ids.add(rid)
+                candidates.append(m)
 
-    out: list[HubModelSummary] = []
-    for m in page_items:
+    if ready_only:
+        gguf_q = f"{raw_query} gguf".strip() if raw_query else "gguf"
+        _collect(gguf_q, max(needed * 3, 24))
+        if len(candidates) < needed and raw_query:
+            _collect(raw_query, max(needed * 3, 24))
+    else:
+        _collect(raw_query, max(needed * 2, 18))
+
+    annotated: list[HubModelSummary] = []
+    for m in candidates:
         rid = getattr(m, "id", "") or ""
         parts = rid.split("/", 1)
         author = parts[0] if len(parts) == 2 else ""
         short_name = parts[1] if len(parts) == 2 else rid
-        out.append(
+        tags = [str(t) for t in (getattr(m, "tags", None) or [])[:8]]
+        compat = detect_crispasr_compatibility(rid, tags=tags, inspect_files_known=False)
+        if ready_only and not compat["crispasr_ready"]:
+            continue
+        annotated.append(
             HubModelSummary(
                 repo_id=rid,
                 name=short_name,
                 author=author,
                 downloads=int(getattr(m, "downloads", 0) or 0),
                 likes=int(getattr(m, "likes", 0) or 0),
-                tags=[str(t) for t in (getattr(m, "tags", None) or [])[:6]],
+                tags=tags[:6],
                 pipeline_tag=str(getattr(m, "pipeline_tag", pipeline_tag) or pipeline_tag),
+                crispasr_ready=bool(compat["crispasr_ready"]),
+                crispasr_backend=compat["crispasr_backend"],
+                crispasr_reason=str(compat["crispasr_reason"]),
             )
         )
+
+    start = (safe_page - 1) * safe_size
+    page_items = annotated[start : start + safe_size]
+    has_more = len(annotated) > start + safe_size
     return HubSearchResponse(
         kind=kind,
-        query=query.strip(),
+        query=raw_query,
         page=safe_page,
         page_size=safe_size,
         has_more=has_more,
-        items=out,
+        items=page_items,
     )
 
 
@@ -1368,12 +1816,34 @@ def inspect_hf_repo(url_or_id: str) -> HfInspectResponse:
     is_tts = any(k in low_repo for k in ("tts", "xtts", "kokoro", "qwen3-tts", "bark", "f5", "fish"))
     suggested_kind: Literal["tts", "stt"] = "tts" if is_tts else "stt"
     suggested_name = repo_id.split("/")[-1].replace("-", " ")
+
+    config_json: Optional[dict[str, Any]] = None
+    all_names = [getattr(s, "rfilename", "") or "" for s in siblings]
+    if "config.json" in all_names:
+        try:
+            with httpx.Client(follow_redirects=True, timeout=6.0) as client:
+                r = client.get(hf_hub_url(repo_id=repo_id, filename="config.json"))
+                if r.status_code < 400:
+                    parsed = r.json()
+                    if isinstance(parsed, dict):
+                        config_json = parsed
+        except Exception:
+            pass
+
+    compat = detect_crispasr_compatibility(
+        repo_id,
+        files=all_names,
+        tags=[str(t) for t in (getattr(info, "tags", None) or [])],
+        config_json=config_json,
+        inspect_files_known=True,
+    )
     return HfInspectResponse(
         source="huggingface",
         repo_id=repo_id,
         suggested_name=suggested_name,
         suggested_kind=suggested_kind,
         files=files,
+        **compat,
     )
 
 
@@ -1414,12 +1884,18 @@ def _inspect_modelscope(url: str) -> HfInspectResponse:
             )
     low_repo = f"{owner}/{repo}".lower()
     is_tts = any(k in low_repo for k in ("tts", "xtts", "kokoro", "cosyvoice", "fish"))
+    compat = detect_crispasr_compatibility(
+        f"{owner}/{repo}",
+        files=[f.filename for f in files],
+        inspect_files_known=True,
+    )
     return HfInspectResponse(
         source="modelscope",
         repo_id=f"{owner}/{repo}",
         suggested_name=repo.replace("-", " "),
         suggested_kind="tts" if is_tts else "stt",
         files=files,
+        **compat,
     )
 
 
@@ -1438,6 +1914,7 @@ def _inspect_direct_url(url: str) -> HfInspectResponse:
 
     low = fname.lower()
     is_tts = any(k in clean.lower() for k in ("tts", "qwen", "xtts", "kokoro", "fish"))
+    compat = detect_crispasr_compatibility(clean, files=[fname], inspect_files_known=True)
     return HfInspectResponse(
         source="direct",
         repo_id=clean,
@@ -1452,6 +1929,7 @@ def _inspect_direct_url(url: str) -> HfInspectResponse:
                 download_url=clean,
             )
         ],
+        **compat,
     )
 
 
@@ -1654,6 +2132,9 @@ class DownloadManager:
         kind: Literal["tts", "stt"],
         selected_files: list[str],
         direct_urls: Optional[dict[str, str]] = None,
+        crispasr_backend: Optional[str] = None,
+        convert_to_gguf: bool = False,
+        convert_script: Optional[str] = None,
     ) -> DownloadJob:
         clean_id = _slugify(name or repo_id.split("/")[-1])
         models_root = resolved_models_dir(settings)
@@ -1669,6 +2150,7 @@ class DownloadManager:
                 "source": source,
                 "repo_id": repo_id,
                 "files": selected_files,
+                "crispasr_backend": crispasr_backend or "",
                 "disk_mb": 0,
                 "vram_mib": 1200 if kind == "tts" else 800,
             }
@@ -1683,8 +2165,9 @@ class DownloadManager:
             repo_id=repo_id,
             dest_dir=dest_dir,
             explicit_files=selected_files,
-            engine=f"custom-{source}",
+            engine=crispasr_backend or f"custom-{source}",
             direct_urls=direct_urls or {},
+            convert_script=convert_script if convert_to_gguf else None,
         )
 
     # Kept as an alias for older callers
@@ -1718,6 +2201,7 @@ class DownloadManager:
         explicit_files: list[str],
         engine: str,
         direct_urls: dict[str, str],
+        convert_script: Optional[str] = None,
     ) -> DownloadJob:
         with self._lock:
             for existing in self._jobs.values():
@@ -1740,7 +2224,7 @@ class DownloadManager:
 
         t = threading.Thread(
             target=self._run_job,
-            args=(job_id, repo_id, dest_dir, explicit_files, engine, quant, direct_urls, ev),
+            args=(job_id, repo_id, dest_dir, explicit_files, engine, quant, direct_urls, ev, convert_script),
             daemon=True,
         )
         t.start()
@@ -1756,6 +2240,7 @@ class DownloadManager:
         quant: str,
         direct_urls: dict[str, str],
         cancel_ev: threading.Event,
+        convert_script: Optional[str] = None,
     ) -> None:
         part_files: list[Path] = []
         last_milestone = 0
@@ -1766,6 +2251,15 @@ class DownloadManager:
                 job = self._jobs[job_id]
                 job.status = "downloading"
                 job_name = job.name
+
+            if self._notify_cb:
+                from .toasts import say
+
+                self._notify_cb(
+                    say("app"),
+                    say("download_started", name=job_name, quant=quant),
+                    0,
+                )
 
             dest_dir.mkdir(parents=True, exist_ok=True)
             size_map: dict[str, int] = {}
@@ -1842,22 +2336,6 @@ class DownloadManager:
                                     self._jobs[job_id].downloaded_bytes = downloaded_so_far
                                     self._jobs[job_id].progress = pct
 
-                                for ms in (25, 50, 75):
-                                    if pct >= ms and last_milestone < ms:
-                                        last_milestone = ms
-                                        if self._notify_cb:
-                                            from .toasts import say
-
-                                            self._notify_cb(
-                                                say("app"),
-                                                say(
-                                                    "download_progress",
-                                                    name=job_name,
-                                                    quant=quant,
-                                                ),
-                                                ms,
-                                            )
-
                     if part_path.exists():
                         part_path.replace(out_path)
 
@@ -1865,6 +2343,31 @@ class DownloadManager:
                 json.dumps({"repo_id": repo_id, "quant": quant, "files": target_files}, indent=2),
                 encoding="utf-8",
             )
+
+            if convert_script:
+                with self._lock:
+                    self._jobs[job_id].current_file = f"Converting ({Path(convert_script).name})..."
+                conv_dir = DEFAULT_TMP_DIR / "converters"
+                conv_dir.mkdir(parents=True, exist_ok=True)
+                script_path = conv_dir / Path(convert_script).name
+                raw_url = f"https://raw.githubusercontent.com/CrispStrobe/CrispASR/main/{convert_script.lstrip('/')}"
+                with httpx.Client(follow_redirects=True, timeout=30.0) as client:
+                    resp = client.get(raw_url)
+                    resp.raise_for_status()
+                    script_path.write_text(resp.text, encoding="utf-8")
+                gguf_out = dest_dir / f"{dest_dir.name}.gguf"
+                proc = subprocess.run(
+                    [sys.executable, str(script_path), str(dest_dir), "--outfile", str(gguf_out)],
+                    cwd=str(dest_dir),
+                    capture_output=True,
+                    text=True,
+                    timeout=1800.0,
+                )
+                if proc.returncode != 0 or not gguf_out.is_file():
+                    err_tail = (proc.stderr or proc.stdout or "").strip()[-600:]
+                    raise RuntimeError(
+                        f"GGUF conversion failed ({Path(convert_script).name}): {err_tail or 'missing converter dependencies (torch/gguf)'}"
+                    )
 
             with self._lock:
                 j = self._jobs[job_id]

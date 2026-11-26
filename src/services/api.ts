@@ -411,6 +411,41 @@ export async function deleteProfile(baseUrl: string, profileId: string): Promise
   await parseErrorOrJson(res);
 }
 
+export async function trimProfileAudio(
+  baseUrl: string,
+  profileId: string,
+  maxSeconds = 12
+): Promise<VoiceProfile> {
+  const res = await fetch(`${baseUrl}/api/profiles/${profileId}/trim`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ max_seconds: maxSeconds }),
+  });
+  const data = await parseErrorOrJson<{ profile: VoiceProfile }>(res);
+  return data.profile;
+}
+
+export function getProfileAudioUrl(baseUrl: string, profileId: string, cacheBust?: number): string {
+  return `${baseUrl}/api/profiles/${profileId}/audio${cacheBust ? `?v=${cacheBust}` : ""}`;
+}
+
+export function getPreviewAudioUrl(baseUrl: string, path: string): string {
+  return `${baseUrl}/api/audio/preview?path=${encodeURIComponent(path)}`;
+}
+
+export async function setModelRuntime(
+  baseUrl: string,
+  modelId: string,
+  runtime: "crispasr" | "python"
+): Promise<{ settings: AppSettings }> {
+  const res = await fetch(`${baseUrl}/api/models/${encodeURIComponent(modelId)}/runtime`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ runtime }),
+  });
+  return parseErrorOrJson<{ settings: AppSettings }>(res);
+}
+
 export async function fetchBuiltinVoices(
   baseUrl: string,
   modelId?: string,
@@ -424,6 +459,81 @@ export async function fetchBuiltinVoices(
   if (!res.ok) return [];
   const data = (await res.json()) as { voices?: { id: string; label: string }[] };
   return data.voices || [];
+}
+
+export interface PlaySessionStartResponse {
+  session_id: string;
+  chunks: string[];
+}
+
+export interface ChunkSynthResponse {
+  index: number;
+  audio_url: string;
+  duration_s: number;
+  sr: number;
+  elapsed_s: number;
+  rtf: number;
+}
+
+export interface SessionSaveResponse {
+  mode: "wav";
+  record: GenerationRecord;
+  saved_path: string;
+  audio_url: string;
+}
+
+export async function startPlaySession(
+  baseUrl: string,
+  payload: {
+    profile_id: string;
+    text: string;
+    language?: string;
+    voice?: string;
+    seed?: number;
+    force_stop_captions?: boolean;
+  }
+): Promise<PlaySessionStartResponse> {
+  const res = await fetch(`${baseUrl}/api/tts/session/start`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ ...payload, mode: "play" }),
+  });
+  return parseErrorOrJson<PlaySessionStartResponse>(res);
+}
+
+export async function synthesizeSessionChunk(
+  baseUrl: string,
+  sessionId: string,
+  index: number,
+  forceStopCaptions = false,
+  signal?: AbortSignal
+): Promise<ChunkSynthResponse> {
+  const q = forceStopCaptions ? "?force_stop_captions=true" : "";
+  const res = await fetch(`${baseUrl}/api/tts/session/${sessionId}/chunk/${index}${q}`, {
+    method: "POST",
+    signal,
+  });
+  return parseErrorOrJson<ChunkSynthResponse>(res);
+}
+
+export async function savePlaySession(
+  baseUrl: string,
+  sessionId: string,
+  forceStopCaptions = false
+): Promise<SessionSaveResponse> {
+  const q = forceStopCaptions ? "?force_stop_captions=true" : "";
+  const res = await fetch(`${baseUrl}/api/tts/session/${sessionId}/save${q}`, {
+    method: "POST",
+  });
+  return parseErrorOrJson<SessionSaveResponse>(res);
+}
+
+export async function clearPlaySession(baseUrl: string): Promise<void> {
+  await fetch(`${baseUrl}/api/tts/session/clear`, { method: "POST" }).catch(() => {});
+}
+
+export async function cancelTtsSynthesis(baseUrl: string): Promise<void> {
+  await fetch(`${baseUrl}/api/tts/cancel`, { method: "POST" }).catch(() => {});
 }
 
 export async function synthesizeTts(
@@ -584,13 +694,15 @@ export async function searchModelHub(
   kind: "tts" | "stt",
   query = "",
   page = 1,
-  pageSize = 6
+  pageSize = 6,
+  readyOnly = true
 ): Promise<HubSearchResponse> {
   const params = new URLSearchParams({
     kind,
     q: query,
     page: String(page),
     page_size: String(pageSize),
+    ready_only: readyOnly ? "true" : "false",
   });
   const res = await fetch(`${baseUrl}/api/models/hub/search?${params.toString()}`);
   return parseErrorOrJson<HubSearchResponse>(res);
@@ -614,6 +726,10 @@ export async function installModelFromUrl(
     kind: "tts" | "stt";
     files: string[];
     direct_urls: Record<string, string>;
+    crispasr_ready?: boolean;
+    crispasr_backend?: string | null;
+    convert_to_gguf?: boolean;
+    convert_script?: string | null;
   }
 ): Promise<DownloadJob> {
   const res = await fetch(`${baseUrl}/api/models/url/install`, {

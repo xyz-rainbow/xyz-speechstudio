@@ -70,6 +70,7 @@ def add_record(
     sr: int,
     elapsed_s: float,
     rtf: float,
+    saved_path: str = "",
 ) -> GenerationRecord:
     records = _read_all()
     rec = GenerationRecord(
@@ -79,7 +80,7 @@ def add_record(
         text=text,
         language=language,
         file_path=file_path,
-        saved_path="",
+        saved_path=saved_path,
         duration_s=duration_s,
         sr=sr,
         elapsed_s=elapsed_s,

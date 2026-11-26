@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { listen } from "@tauri-apps/api/event";
-import { AppWindow, Captions, ChevronDown, Monitor, RefreshCw } from "lucide-react";
+import { AppWindow, Captions, ChevronDown, Monitor, RefreshCw, X } from "lucide-react";
 import { clsx } from "clsx";
 import { BorderBeamButton } from "./BorderBeamButton";
 import { GlassCard } from "./GlassCard";
@@ -174,23 +174,16 @@ export const SubtitlesView: React.FC<SubtitlesViewProps> = ({
   return (
     <GlassCard className="p-5 flex flex-col gap-3">
       <div className="flex items-center justify-between flex-wrap gap-3">
-        <div>
-          <h1 className="text-lg font-semibold">{t("subtitles.title")}</h1>
-          <p className="text-xs" style={{ color: "var(--text-secondary)" }}>
-            {t("subtitles.subtitle")}
-          </p>
+        <div className="flex flex-wrap items-center gap-2">
+          <span className="text-xs" style={{ color: "var(--text-secondary)" }}>
+            {t("subtitles.activeStt")}
+          </span>
+          <span className="text-xs font-mono">{activeLabel}</span>
         </div>
         <BorderBeamButton onClick={() => toggleOverlayWindow()}>
           <Captions className="w-4 h-4" />
           {t("subtitles.overlay")}
         </BorderBeamButton>
-      </div>
-
-      <div className="flex flex-wrap items-center gap-2">
-        <span className="text-xs" style={{ color: "var(--text-secondary)" }}>
-          {t("subtitles.activeStt")}
-        </span>
-        <span className="text-xs font-mono">{activeLabel}</span>
       </div>
 
       {!liveCaptionsSupported && (
@@ -257,6 +250,19 @@ export const SubtitlesView: React.FC<SubtitlesViewProps> = ({
         >
           <RefreshCw className={clsx("w-3.5 h-3.5", loadingApps && "animate-spin")} />
         </button>
+
+        {selected && !running && (
+          <button
+            type="button"
+            onClick={() => setSelected("")}
+            disabled={!liveCaptionsSupported}
+            className="p-2.5 rounded-xl border hover:border-rose-400/50 text-rose-300"
+            style={{ borderColor: "var(--border-glass)" }}
+            title={t("subtitles.clearWindow")}
+          >
+            <X className="w-3.5 h-3.5" />
+          </button>
+        )}
 
         {running ? (
           <BorderBeamButton onClick={() => void stop()} disabled={busy || !liveCaptionsSupported}>

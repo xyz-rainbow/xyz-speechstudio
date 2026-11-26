@@ -1,0 +1,19 @@
+# Unified Python TTS environment (.venvs/pytts or runtime/envs/pytts)
+# Verified on Windows x64 + RTX 2060 with CUDA 13.2 wheels:
+# Install PyTorch first via `uv pip install --torch-backend=auto torch torchaudio`,
+# then install this file. Note pyarrow<19 + numpy<2 keeps f5-tts, coqui-tts 0.28,
+# and fish-speech v1.5.1 compatible in one venv.
+fastapi>=0.115.0
+uvicorn>=0.32.0
+pydantic>=2.9.0,<2.11.0
+numpy>=1.26.4,<2.0.0
+pyarrow>=15.0.0,<19.0.0
+six==1.17.0
+soundfile>=0.12.1
+onnxruntime>=1.19.0
+phonemizer>=3.3.0
+espeakng-loader>=0.2.4
+vector-quantize-pytorch>=1.17.0
+coqui-tts==0.28.0
+f5-tts>=1.1.22
+fish-speech @ git+https://github.com/fishaudio/fish-speech@v1.5.1

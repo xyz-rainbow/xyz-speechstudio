@@ -61,15 +61,19 @@ mod windows;
 const UNSUPPORTED: &str = "Live captions are not supported on this platform";
 
 #[tauri::command]
-pub fn list_audio_apps() -> Result<Vec<AudioApp>, String> {
-    #[cfg(windows)]
-    return windows::list_audio_apps();
-    #[cfg(target_os = "linux")]
-    return linux::list_audio_apps();
-    #[cfg(target_os = "macos")]
-    return macos::list_audio_apps();
-    #[cfg(not(any(windows, target_os = "linux", target_os = "macos")))]
-    Err(UNSUPPORTED.into())
+pub async fn list_audio_apps() -> Result<Vec<AudioApp>, String> {
+    tauri::async_runtime::spawn_blocking(|| {
+        #[cfg(windows)]
+        return windows::list_audio_apps();
+        #[cfg(target_os = "linux")]
+        return linux::list_audio_apps();
+        #[cfg(target_os = "macos")]
+        return macos::list_audio_apps();
+        #[cfg(not(any(windows, target_os = "linux", target_os = "macos")))]
+        Err(UNSUPPORTED.into())
+    })
+    .await
+    .map_err(|e| format!("Window scan task failed: {e}"))?
 }
 
 #[tauri::command]

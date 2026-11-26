@@ -156,8 +156,7 @@ export const UpdatesView: React.FC<UpdatesViewProps> = ({ baseUrl }) => {
   return (
     <GlassCard className="flex-1 min-h-0 p-5 flex flex-col gap-4 overflow-y-auto">
       <div className="flex flex-col gap-1">
-        <h1 className="text-lg font-semibold leading-tight">{t("update.title")}</h1>
-        <p className="text-xs" style={{ color: "var(--text-secondary)" }}>
+        <p className="text-xs font-medium" style={{ color: "var(--text-secondary)" }}>
           {available ? t("update.available") : info ? t("update.upToDate") : t("update.checking")}
         </p>
       </div>

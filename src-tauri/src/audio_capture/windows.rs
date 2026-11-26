@@ -43,9 +43,9 @@ use windows::Win32::System::Diagnostics::ToolHelp::{
 use windows::Win32::System::Variant::VT_BLOB;
 use windows::Win32::UI::WindowsAndMessaging::{
     DrawIconEx, EnumWindows, GetClassLongPtrW, GetClassNameW, GetWindowRect, GetWindowTextW,
-    GetWindowThreadProcessId, IsIconic, IsWindowVisible, SendMessageTimeoutW, DI_NORMAL,
-    GCLP_HICON, GCLP_HICONSM, HICON, ICON_BIG, ICON_SMALL, ICON_SMALL2, SMTO_ABORTIFHUNG,
-    WM_GETICON,
+    GetWindowThreadProcessId, IsHungAppWindow, IsIconic, IsWindowVisible, SendMessageTimeoutW,
+    DI_NORMAL, GCLP_HICON, GCLP_HICONSM, HICON, ICON_BIG, ICON_SMALL, ICON_SMALL2,
+    SMTO_ABORTIFHUNG, WM_GETICON,
 };
 
 const FRAME_SAMPLES: usize = 1600;
@@ -311,7 +311,7 @@ fn capture_window_thumbnail(hwnd_raw: isize) -> Option<String> {
     }
     let hwnd = HWND(hwnd_raw as *mut core::ffi::c_void);
     unsafe {
-        if IsWindowVisible(hwnd).0 == 0 || IsIconic(hwnd).0 != 0 {
+        if IsWindowVisible(hwnd).0 == 0 || IsIconic(hwnd).0 != 0 || IsHungAppWindow(hwnd).as_bool() {
             return None;
         }
         let mut rect = RECT::default();
@@ -487,12 +487,14 @@ fn list_audio_apps_inner() -> Result<Vec<AudioApp>, String> {
         }
         let _guard = CoGuard(coinit.is_ok());
 
+        let self_pid = std::process::id();
         let mut scan = WindowScan {
             tree: process_tree(),
             rows: Vec::new(),
         };
         EnumWindows(Some(enum_top_window), LPARAM(&mut scan as *mut WindowScan as isize))
             .map_err(|e| e.to_string())?;
+        scan.rows.retain(|row| row.pid != self_pid);
 
         // Collect active audio session root PIDs (best-effort)
         let mut audio_pids: HashSet<u32> = HashSet::new();
@@ -517,7 +519,10 @@ fn list_audio_apps_inner() -> Result<Vec<AudioApp>, String> {
                                     continue;
                                 };
                                 if pid != 0 {
-                                    audio_pids.insert(app_root(pid, &scan.tree));
+                                    let root = app_root(pid, &scan.tree);
+                                    if root != self_pid {
+                                        audio_pids.insert(root);
+                                    }
                                 }
                             }
                         }
@@ -600,9 +605,7 @@ fn list_audio_apps_inner() -> Result<Vec<AudioApp>, String> {
 }
 
 pub fn list_audio_apps() -> Result<Vec<AudioApp>, String> {
-    thread::spawn(list_audio_apps_inner)
-        .join()
-        .map_err(|_| "Window enumeration worker panicked".to_string())?
+    list_audio_apps_inner()
 }
 
 unsafe extern "system" fn handler_query(

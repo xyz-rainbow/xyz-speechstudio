@@ -14,11 +14,12 @@ import {
   Play,
   Save,
   Trash2,
-  Volume2,
 } from "lucide-react";
 import { clsx } from "clsx";
 import { useI18n } from "../i18n";
 import {
+  cancelTtsSynthesis,
+  clearPlaySession,
   deleteHistoryRecord,
   fetchBuiltinVoices,
   fetchModelsCatalog,
@@ -27,6 +28,9 @@ import {
   notify,
   revealInExplorer,
   saveHistoryAs,
+  savePlaySession,
+  startPlaySession,
+  synthesizeSessionChunk,
   synthesizeTts,
   uninstallLanguagePack,
 } from "../services/api";
@@ -38,6 +42,12 @@ import type {
 } from "../types";
 import { endpointProviderSubtitle } from "../utils/endpointPresets";
 import { BorderBeamButton } from "./BorderBeamButton";
+import {
+  ChunkedAudioPlayer,
+  type AudioChunkItem,
+  type ChunkedAudioPlayerHandle,
+  type PlaybackIslandState,
+} from "./ChunkedAudioPlayer";
 import { GlassCard } from "./GlassCard";
 
 interface TtsStudioViewProps {
@@ -57,6 +67,8 @@ interface TtsStudioViewProps {
   onOpenProfiles?: () => void;
   onCatalogChange?: (models: CatalogModelEntry[]) => void;
   onInstalledLanguagesChange?: (next: Record<string, string[]>) => void;
+  onPlaybackStateChange?: (state: PlaybackIslandState) => void;
+  playerHandleRef?: React.MutableRefObject<ChunkedAudioPlayerHandle | null>;
 }
 
 /** ISO code → legacy display label still expected by Qwen/XTTS synthesize. */
@@ -119,6 +131,8 @@ export const TtsStudioView: React.FC<TtsStudioViewProps> = ({
   onOpenProfiles,
   onCatalogChange,
   onInstalledLanguagesChange,
+  onPlaybackStateChange,
+  playerHandleRef,
 }) => {
   const { t } = useI18n();
   const [subView, setSubView] = useState<"editor" | "exported">("editor");
@@ -127,7 +141,11 @@ export const TtsStudioView: React.FC<TtsStudioViewProps> = ({
   const [busyMode, setBusyMode] = useState<"play" | "wav" | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [pendingForceMode, setPendingForceMode] = useState<"play" | "wav" | null>(null);
-  const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+  const [exportedPreviewUrl, setExportedPreviewUrl] = useState<string | null>(null);
+  const [exportedPlayNonce, setExportedPlayNonce] = useState(0);
+  const [playChunks, setPlayChunks] = useState<AudioChunkItem[]>([]);
+  const [isGeneratingSession, setIsGeneratingSession] = useState(false);
+  const [autoPlayNonce, setAutoPlayNonce] = useState(0);
   const [lastStats, setLastStats] = useState<{ dur: number; elapsed: number; rtf: number } | null>(
     null
   );
@@ -142,7 +160,17 @@ export const TtsStudioView: React.FC<TtsStudioViewProps> = ({
   const dropdownRef = useRef<HTMLDivElement | null>(null);
   const langMenuRef = useRef<HTMLDivElement | null>(null);
   const langDropdownRef = useRef<HTMLDivElement | null>(null);
-  const audioRef = useRef<HTMLAudioElement | null>(null);
+  const playerRef = useRef<ChunkedAudioPlayerHandle | null>(null);
+  const sessionIdRef = useRef<string | null>(null);
+  const sessionSigRef = useRef<string>("");
+  const prefetchAbortRef = useRef<AbortController | null>(null);
+  const prefetchPromiseRef = useRef<Promise<void> | null>(null);
+
+  useEffect(() => {
+    if (playerHandleRef) {
+      playerHandleRef.current = playerRef.current;
+    }
+  });
   const catalogTts = React.useMemo(
     () =>
       catalog.filter(
@@ -452,6 +480,19 @@ export const TtsStudioView: React.FC<TtsStudioViewProps> = ({
           ? !!activeLocal?.runtime_supported && availableLanguages.length > 0
           : false);
 
+  const buildSessionSignature = (targetText: string) =>
+    [
+      targetText.trim(),
+      settings.tts_source,
+      settings.active_tts_model,
+      settings.active_tts_endpoint_id,
+      selectedProfile?.id || "",
+      selectedBuiltinVoice,
+      language,
+      settings.tts_chunk_enabled ? "1" : "0",
+      String(settings.tts_chunk_max_chars),
+    ].join("||");
+
   const runSynth = async (
     mode: "play" | "wav",
     forceStopCaptions = false,
@@ -461,44 +502,165 @@ export const TtsStudioView: React.FC<TtsStudioViewProps> = ({
     if (isEndpointMode && !activeEp) return;
     if (!isEndpointMode && usesCloneProfiles && !selectedProfile) return;
     if (!isEndpointMode && usesBuiltinVoices && !activeLocal?.runtime_supported) return;
+
+    const targetText = textOverride ?? text;
     const myToken = ++synthTokenRef.current;
-    if (mode === "play") lastSpokenRef.current = (textOverride ?? text).trim();
+    const profileId = selectedProfile?.id || (usesBuiltinVoices ? "builtin" : "mario");
+    const voiceParam = usesBuiltinVoices && selectedBuiltinVoice ? selectedBuiltinVoice : undefined;
+    const sig = buildSessionSignature(targetText);
+
     setBusyMode(mode);
     setError(null);
     setPendingForceMode(null);
+
     try {
+      if (mode === "play") {
+        lastSpokenRef.current = targetText.trim();
+        prefetchAbortRef.current?.abort();
+        playerRef.current?.pause();
+        const abort = new AbortController();
+        prefetchAbortRef.current = abort;
+
+        const started = await startPlaySession(baseUrl, {
+          profile_id: profileId,
+          text: targetText,
+          language,
+          voice: voiceParam,
+          force_stop_captions: forceStopCaptions,
+        });
+        if (myToken !== synthTokenRef.current || abort.signal.aborted) return;
+
+        const initialChunks: AudioChunkItem[] = started.chunks.map((chunkText, idx) => ({
+          index: idx,
+          text: chunkText,
+        }));
+        sessionIdRef.current = started.session_id;
+        sessionSigRef.current = sig;
+        setPlayChunks(initialChunks);
+        setIsGeneratingSession(started.chunks.length > 1);
+
+        // Synthesize first chunk immediately so playback starts fast.
+        const firstRes = await synthesizeSessionChunk(
+          baseUrl,
+          started.session_id,
+          0,
+          forceStopCaptions,
+          abort.signal
+        );
+        if (myToken !== synthTokenRef.current || abort.signal.aborted) return;
+
+        setPlayChunks((prev) =>
+          prev.map((item) =>
+            item.index === 0
+              ? {
+                  ...item,
+                  audioUrl: `${baseUrl}${firstRes.audio_url}`,
+                  durationS: firstRes.duration_s,
+                }
+              : item
+          )
+        );
+        setLastStats({
+          dur: firstRes.duration_s,
+          elapsed: firstRes.elapsed_s,
+          rtf: firstRes.rtf,
+        });
+        setBusyMode(null);
+        setAutoPlayNonce((n) => n + 1);
+        void notify(notificationsEnabled, t("toast.title"), t("toast.playing"));
+
+        if (started.chunks.length > 1) {
+          const prefetchJob = (async () => {
+            let totalDur = firstRes.duration_s;
+            let totalElapsed = firstRes.elapsed_s;
+            for (let i = 1; i < started.chunks.length; i++) {
+              if (myToken !== synthTokenRef.current || abort.signal.aborted) return;
+              const chunkRes = await synthesizeSessionChunk(
+                baseUrl,
+                started.session_id,
+                i,
+                forceStopCaptions,
+                abort.signal
+              );
+              if (myToken !== synthTokenRef.current || abort.signal.aborted) return;
+              totalDur += chunkRes.duration_s;
+              totalElapsed += chunkRes.elapsed_s;
+              setPlayChunks((prev) =>
+                prev.map((item) =>
+                  item.index === i
+                    ? {
+                        ...item,
+                        audioUrl: `${baseUrl}${chunkRes.audio_url}`,
+                        durationS: chunkRes.duration_s,
+                      }
+                    : item
+                )
+              );
+              setLastStats({
+                dur: totalDur,
+                elapsed: totalElapsed,
+                rtf: totalDur > 0 ? totalElapsed / totalDur : 0,
+              });
+            }
+          })()
+            .catch(() => {
+              // Aborted or failed mid-prefetch.
+            })
+            .finally(() => {
+              if (myToken === synthTokenRef.current) {
+                setIsGeneratingSession(false);
+                onAfterGpuAction();
+              }
+            });
+          prefetchPromiseRef.current = prefetchJob;
+        } else {
+          setIsGeneratingSession(false);
+          onAfterGpuAction();
+        }
+        return;
+      }
+
+      // Smart Save ("wav"): reuse existing generated session chunks if signature matches;
+      // otherwise synthesize full text directly as a single file in outputs_dir.
+      if (sessionIdRef.current && sessionSigRef.current === sig) {
+        if (prefetchPromiseRef.current) {
+          await prefetchPromiseRef.current;
+        }
+        if (myToken !== synthTokenRef.current) return;
+        const saved = await savePlaySession(baseUrl, sessionIdRef.current, forceStopCaptions);
+        if (myToken !== synthTokenRef.current) return;
+        onHistoryChange([saved.record, ...history]);
+        setLastStats({
+          dur: saved.record.duration_s,
+          elapsed: saved.record.elapsed_s,
+          rtf: saved.record.rtf,
+        });
+        void notify(notificationsEnabled, t("toast.title"), t("toast.saved"));
+        onAfterGpuAction();
+        return;
+      }
+
       const res = await synthesizeTts(baseUrl, {
-        profile_id: selectedProfile?.id || (usesBuiltinVoices ? "builtin" : "mario"),
-        text: textOverride ?? text,
+        profile_id: profileId,
+        text: targetText,
         language,
-        voice: usesBuiltinVoices && selectedBuiltinVoice ? selectedBuiltinVoice : undefined,
-        mode,
+        voice: voiceParam,
+        mode: "wav",
         force_stop_captions: forceStopCaptions,
       });
       if (myToken !== synthTokenRef.current) return;
-      const fullAudioUrl = `${baseUrl}${res.audio_url}`;
-      setPreviewUrl(fullAudioUrl);
-
-      if (mode === "wav" && res.record) {
+      if (res.record) {
         onHistoryChange([res.record, ...history]);
         setLastStats({
           dur: res.record.duration_s,
           elapsed: res.record.elapsed_s,
           rtf: res.record.rtf,
         });
-      } else {
-        void notify(notificationsEnabled, t("toast.title"), t("toast.playing"));
-        setLastStats({
-          dur: res.duration_s ?? 0,
-          elapsed: res.elapsed_s ?? 0,
-          rtf: res.rtf ?? 0,
-        });
-        setTimeout(() => {
-          audioRef.current?.play().catch(() => {});
-        }, 60);
       }
+      void notify(notificationsEnabled, t("toast.title"), t("toast.saved"));
       onAfterGpuAction();
     } catch (err) {
+      if (err instanceof DOMException && err.name === "AbortError") return;
       if (err instanceof LiveCaptionsConflictError) {
         setPendingForceMode(mode);
       } else {
@@ -515,18 +677,16 @@ export const TtsStudioView: React.FC<TtsStudioViewProps> = ({
   useEffect(() => {
     if (!incomingSpeak) return;
     const incoming = incomingSpeak.text.trim();
-    const audio = audioRef.current;
-    const isPlaying = !!audio && !audio.paused && !audio.ended;
-    const isPaused =
-      !!audio && audio.paused && !audio.ended && audio.currentTime > 0 && !!previewUrl;
+    const isPlaying = playerRef.current?.isPlaying() ?? false;
+    const isPaused = playerRef.current?.isPausedMidway() ?? false;
     const sameText = incoming === "" || incoming === lastSpokenRef.current;
 
     if (sameText && isPlaying) {
-      audio!.pause();
+      playerRef.current?.pause();
       return;
     }
     if (sameText && isPaused) {
-      audio!.play().catch(() => {});
+      playerRef.current?.togglePlay();
       void notify(notificationsEnabled, t("toast.title"), t("toast.playing"));
       return;
     }
@@ -537,7 +697,7 @@ export const TtsStudioView: React.FC<TtsStudioViewProps> = ({
       return;
     }
 
-    audio?.pause();
+    playerRef.current?.pause();
     void notify(notificationsEnabled, t("toast.title"), t("hotkey.processing"));
     setSubView("editor");
     setText(incoming);
@@ -593,14 +753,12 @@ export const TtsStudioView: React.FC<TtsStudioViewProps> = ({
             </div>
           </div>
 
-          {previewUrl && (
-            <div
-              className="flex items-center gap-2 rounded-xl border px-3 py-1.5 shrink-0"
-              style={{ backgroundColor: "var(--bg-input)", borderColor: "var(--border-glass)" }}
-            >
-              <Volume2 className="w-4 h-4 text-cyan-400 shrink-0" />
-              <audio ref={audioRef} controls src={previewUrl} className="w-full h-8" />
-            </div>
+          {exportedPreviewUrl && (
+            <ChunkedAudioPlayer
+              chunks={[]}
+              singleUrl={exportedPreviewUrl}
+              autoPlayNonce={exportedPlayNonce}
+            />
           )}
 
           <div className="flex-1 min-h-0 overflow-y-auto pr-1 flex flex-col gap-2">
@@ -648,8 +806,8 @@ export const TtsStudioView: React.FC<TtsStudioViewProps> = ({
                       <button
                         type="button"
                         onClick={() => {
-                          setPreviewUrl(url);
-                          setTimeout(() => audioRef.current?.play().catch(() => {}), 50);
+                          setExportedPreviewUrl(url);
+                          setExportedPlayNonce((n) => n + 1);
                           void notify(notificationsEnabled, t("toast.title"), t("toast.playing"));
                         }}
                         className="inline-flex items-center gap-1 rounded-xl border px-2.5 py-1 text-xs hover:border-cyan-400/50"
@@ -699,13 +857,7 @@ export const TtsStudioView: React.FC<TtsStudioViewProps> = ({
   return (
     <div className="flex-1 min-h-0 flex flex-col gap-2.5">
       <GlassCard className="flex-1 min-h-0 p-4 flex flex-col gap-2.5">
-        <div className="flex flex-wrap items-center justify-between gap-2 shrink-0">
-          <div>
-            <h1 className="text-lg font-semibold leading-tight">{t("synthesize.title")}</h1>
-            <p className="text-xs" style={{ color: "var(--text-secondary)" }}>
-              {t("synthesize.subtitle")}
-            </p>
-          </div>
+        <div className="flex flex-wrap items-center justify-end gap-2 shrink-0">
           <div className="flex flex-wrap items-center gap-2">
             {/* Unified Glass Dropdown: Local + Externo */}
             <div className="relative" ref={menuRef}>
@@ -1062,40 +1214,61 @@ export const TtsStudioView: React.FC<TtsStudioViewProps> = ({
           </div>
         )}
 
-        {busyMode && (
-          <div className="flex flex-col gap-1 shrink-0">
-            <div className="h-1.5 w-full rounded-full overflow-hidden bg-white/10">
-              <div className="h-full w-2/3 rounded-full bg-gradient-to-r from-purple-500 via-cyan-400 to-purple-500 animate-pulse" />
-            </div>
-            <span className="text-[11px]" style={{ color: "var(--text-secondary)" }}>
-              {t("synthesize.generating")}
-            </span>
-          </div>
-        )}
-
-        {previewUrl && (
-          <div
-            className="flex items-center gap-2 rounded-xl border px-3 py-1 shrink-0"
-            style={{ backgroundColor: "var(--bg-input)", borderColor: "var(--border-glass)" }}
-          >
-            <Volume2 className="w-4 h-4 text-cyan-400 shrink-0" />
-            <audio ref={audioRef} controls src={previewUrl} className="w-full h-8" />
-          </div>
-        )}
+        {/* Single shared status/player slot: shows loading bar until first audio chunk is ready, then swaps in ChunkedAudioPlayer */}
+        {(() => {
+          const hasReadyChunk = playChunks.some((c) => Boolean(c.audioUrl));
+          if (busyMode && !hasReadyChunk) {
+            return (
+              <div className="flex flex-col gap-1 shrink-0 py-1">
+                <div className="h-1.5 w-full rounded-full overflow-hidden bg-white/10">
+                  <div className="h-full w-2/3 rounded-full bg-gradient-to-r from-purple-500 via-cyan-400 to-purple-500 animate-pulse" />
+                </div>
+                <span className="text-[11px]" style={{ color: "var(--text-secondary)" }}>
+                  {t("synthesize.generating")}
+                </span>
+              </div>
+            );
+          }
+          if (playChunks.length > 0 && hasReadyChunk) {
+            return (
+              <ChunkedAudioPlayer
+                ref={playerRef}
+                chunks={playChunks}
+                isGenerating={isGeneratingSession}
+                autoPlayNonce={autoPlayNonce}
+                onPlaybackChange={onPlaybackStateChange}
+              />
+            );
+          }
+          return null;
+        })()}
 
         <div className="flex flex-wrap items-center justify-between gap-3 shrink-0 pt-0.5">
           <div className="flex items-center gap-2">
-            <BorderBeamButton
-              disabled={!canSynthesize}
-              onClick={() => runSynth("play")}
-            >
-              {busyMode === "play" ? (
+            {busyMode === "play" || isGeneratingSession ? (
+              <BorderBeamButton
+                variant="rose"
+                onClick={() => {
+                  synthTokenRef.current++;
+                  prefetchAbortRef.current?.abort();
+                  playerRef.current?.pause();
+                  setBusyMode(null);
+                  setIsGeneratingSession(false);
+                  if (baseUrl) void cancelTtsSynthesis(baseUrl);
+                }}
+              >
                 <Loader2 className="w-4 h-4 animate-spin" />
-              ) : (
+                {t("synthesize.stop")}
+              </BorderBeamButton>
+            ) : (
+              <BorderBeamButton
+                disabled={!canSynthesize}
+                onClick={() => runSynth("play")}
+              >
                 <Play className="w-4 h-4" />
-              )}
-              {t("synthesize.play")}
-            </BorderBeamButton>
+                {t("synthesize.play")}
+              </BorderBeamButton>
+            )}
 
             <BorderBeamButton
               variant="emerald"
@@ -1113,8 +1286,19 @@ export const TtsStudioView: React.FC<TtsStudioViewProps> = ({
 
           <button
             type="button"
-            disabled={!text.length || !!busyMode}
-            onClick={() => setText("")}
+            disabled={(!text.length && playChunks.length === 0) || !!busyMode}
+            onClick={() => {
+              synthTokenRef.current++;
+              prefetchAbortRef.current?.abort();
+              playerRef.current?.pause();
+              setText("");
+              setPlayChunks([]);
+              setIsGeneratingSession(false);
+              setLastStats(null);
+              sessionIdRef.current = null;
+              sessionSigRef.current = "";
+              if (baseUrl) void clearPlaySession(baseUrl);
+            }}
             className="ml-auto mr-2 inline-flex items-center gap-1.5 rounded-full border px-3.5 py-2 text-sm font-medium transition-colors disabled:opacity-40 hover:border-rose-400/50"
             style={{
               backgroundColor: "var(--bg-surface-strong)",

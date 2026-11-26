@@ -181,7 +181,7 @@ unsafe fn string_propvariant(
     use windows::Win32::System::Variant::VT_LPWSTR;
 
     // PropVariantClear() frees VT_LPWSTR via CoTaskMemFree; allocate on the COM heap.
-    let byte_len = utf16_nul.len() * std::mem::size_of::<u16>();
+    let byte_len = std::mem::size_of_val(utf16_nul);
     let buf = CoTaskMemAlloc(byte_len) as *mut u16;
     if buf.is_null() {
         return Err(Error::from(E_OUTOFMEMORY));

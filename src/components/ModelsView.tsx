@@ -27,6 +27,7 @@ import {
   loadXttsWorker,
   notify,
   removeInstalledModel,
+  setModelRuntime,
   testExternalEndpoint,
 } from "../services/api";
 import type {
@@ -180,7 +181,18 @@ export const ModelsView: React.FC<ModelsViewProps> = ({
   const qwenWorker = workers?.workers?.qwen;
   const sttWorker = workers?.workers?.stt;
   const xttsWorker = workers?.workers?.xtts;
-  const ttsRunning = !!(qwenWorker?.running || xttsWorker?.running);
+  const f5Worker = workers?.workers?.f5;
+  const fishWorker = workers?.workers?.fish;
+  const kittenWorker = workers?.workers?.kitten;
+  const crispasrWorker = workers?.workers?.crispasr;
+  const ttsRunning = !!(
+    qwenWorker?.running ||
+    xttsWorker?.running ||
+    f5Worker?.running ||
+    fishWorker?.running ||
+    kittenWorker?.running ||
+    crispasrWorker?.running
+  );
   const sttRunning = !!sttWorker?.running;
 
   const activeJobFor = (modelId: string): DownloadJob | undefined =>
@@ -480,20 +492,44 @@ export const ModelsView: React.FC<ModelsViewProps> = ({
         <div className="flex gap-3 overflow-x-auto pb-2">
           {!isEndpoint
             ? visibleLocalCards.map((card) => {
-                const ttsWorker =
-                  card.engine === "xtts" ? xttsWorker : card.engine === "qwen" ? qwenWorker : undefined;
+                const pyWorker =
+                  card.engine === "xtts"
+                    ? xttsWorker
+                    : card.engine === "qwen"
+                      ? qwenWorker
+                      : card.engine === "f5" || card.engine === "f5-tts"
+                        ? f5Worker
+                        : card.engine === "fish" || card.engine === "fish-audio"
+                          ? fishWorker
+                          : card.engine === "kitten"
+                            ? kittenWorker
+                            : undefined;
+                const crispLoaded =
+                  !!crispasrWorker?.running &&
+                  (crispasrWorker.model_id === card.engine ||
+                    (card.engine === "f5-tts" && crispasrWorker.model_id === "f5") ||
+                    (card.engine === "chatterbox" &&
+                      (crispasrWorker.model_id === "chatterbox" ||
+                        crispasrWorker.model_id === "chatterbox-turbo")));
+                const pyLoaded =
+                  !!pyWorker?.running &&
+                  (pyWorker.model_id === card.id || !!pyWorker.model_id?.startsWith(`${card.id}-`));
                 const isLoaded =
                   card.kind === "tts"
-                    ? !!ttsWorker?.running &&
-                      (ttsWorker.model_id === card.id ||
-                        !!ttsWorker.model_id?.startsWith(`${card.id}-`))
+                    ? crispLoaded || pyLoaded
                     : !!sttWorker?.running && sttWorker.model_id === card.id;
                 const isSelected =
                   card.kind === "tts"
                     ? settings.active_tts_model === card.id
                     : settings.active_stt_model === card.id;
                 const activeJob = activeJobFor(card.id);
-                const singleFamily = card.kind === "tts" ? card.engine : "stt";
+                const singleFamily =
+                  card.kind === "tts"
+                    ? crispLoaded
+                      ? "crispasr"
+                      : card.engine
+                    : "stt";
+                const runtimes = card.available_runtimes ?? [];
 
                 return (
                   <div
@@ -530,6 +566,43 @@ export const ModelsView: React.FC<ModelsViewProps> = ({
                         </span>
                       )}
                     </div>
+
+                    {runtimes.length > 1 && (
+                      <div className="flex items-center gap-1 pt-0.5">
+                        {runtimes.map((rt) => {
+                          const activeRt = (card.active_runtime || runtimes[0]) === rt;
+                          const label = rt === "crispasr" ? "CrispASR" : "Python";
+                          return (
+                            <button
+                              key={rt}
+                              type="button"
+                              onClick={async () => {
+                                if (!baseUrl || activeRt) return;
+                                try {
+                                  const res = await setModelRuntime(
+                                    baseUrl,
+                                    card.id,
+                                    rt as "crispasr" | "python",
+                                  );
+                                  await onSaveSettings(res.settings);
+                                  await refreshCatalog();
+                                } catch (err) {
+                                  setError(err instanceof Error ? err.message : String(err));
+                                }
+                              }}
+                              className={clsx(
+                                "rounded-full px-2 py-0.5 text-[10px] font-mono border transition-colors",
+                                activeRt
+                                  ? "border-cyan-400/60 bg-cyan-500/20 text-cyan-200"
+                                  : "border-white/10 opacity-65 hover:opacity-100",
+                              )}
+                            >
+                              {label}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    )}
 
                     {activeJob ? (
                       <div className="mt-auto flex flex-col gap-1.5 pt-1">

@@ -8,6 +8,7 @@ import {
   FileAudio,
   Loader2,
   Sparkles,
+  X,
 } from "lucide-react";
 import { clsx } from "clsx";
 import { useI18n } from "../i18n";
@@ -190,14 +191,7 @@ export const TranscriberView: React.FC<TranscriberViewProps> = ({
   return (
     <div className="flex-1 min-h-0 flex flex-col">
       <GlassCard className="flex-1 min-h-0 p-4 flex flex-col gap-2.5 overflow-hidden">
-        <div className="flex flex-wrap items-center justify-between gap-2 shrink-0">
-          <div>
-            <h1 className="text-lg font-semibold leading-tight">{t("transcriber.title")}</h1>
-            <p className="text-xs" style={{ color: "var(--text-secondary)" }}>
-              {t("transcriber.subtitle")}
-            </p>
-          </div>
-
+        <div className="flex flex-wrap items-center justify-end gap-2 shrink-0">
           <div className="relative" ref={menuRef}>
             <button
               type="button"
@@ -325,6 +319,18 @@ export const TranscriberView: React.FC<TranscriberViewProps> = ({
             className="flex-1 min-w-[200px] rounded-xl border px-3 py-1.5 text-xs font-mono outline-none"
             style={{ backgroundColor: "var(--bg-input)", borderColor: "var(--border-glass)" }}
           />
+          {audioPath && (
+            <button
+              type="button"
+              disabled={busy}
+              onClick={() => setAudioPath("")}
+              title={t("transcriber.clearAudio")}
+              className="p-1.5 rounded-xl border hover:border-rose-400/50 text-rose-300 disabled:opacity-40"
+              style={{ borderColor: "var(--border-glass)", backgroundColor: "var(--bg-elevated)" }}
+            >
+              <X className="w-3.5 h-3.5" />
+            </button>
+          )}
           <button
             type="button"
             onClick={pickAudio}

@@ -1,7 +1,9 @@
 import { Component, type ReactNode, useCallback, useEffect, useRef, useState } from "react";
 import { listen } from "@tauri-apps/api/event";
 import { AsciiAmbientPool } from "./components/AsciiAmbientPool";
+import type { ChunkedAudioPlayerHandle, PlaybackIslandState } from "./components/ChunkedAudioPlayer";
 import { CloseConfirmModal } from "./components/CloseConfirmModal";
+import { FloatingPlaybackIsland } from "./components/FloatingPlaybackIsland";
 import { ModelsView } from "./components/ModelsView";
 import { ProfilesView } from "./components/ProfilesView";
 import { SettingsView } from "./components/SettingsView";
@@ -68,6 +70,8 @@ const DEFAULT_SETTINGS: AppSettings = {
   api_bearer_token: "",
   read_hotkey: "",
   close_behavior: "ask",
+  tts_chunk_enabled: true,
+  tts_chunk_max_chars: 300,
   external_endpoints: [],
   capabilities_v1: true,
   installed_languages: {},
@@ -100,6 +104,15 @@ function MainStudio() {
   });
   const [workers, setWorkers] = useState<WorkersSnapshot | null>(null);
   const [catalog, setCatalog] = useState<CatalogModelEntry[]>([]);
+  const ttsPlayerRef = useRef<ChunkedAudioPlayerHandle | null>(null);
+  const [islandState, setIslandState] = useState<PlaybackIslandState>({
+    active: false,
+    isPlaying: false,
+    isGenerating: false,
+    progressPct: 0,
+    timeLabel: "0:00 / 0:00",
+    chunkLabel: "",
+  });
 
   useEffect(() => {
     document.body.classList.remove("app-overlay");
@@ -288,6 +301,12 @@ function MainStudio() {
 
   return (
     <div className="relative w-screen h-screen overflow-hidden flex p-2.5 gap-2.5">
+      <FloatingPlaybackIsland
+        visible={activeTab !== "synthesize"}
+        state={islandState}
+        onTogglePlay={() => ttsPlayerRef.current?.togglePlay()}
+        onOpenSynthesize={() => setActiveTab("synthesize")}
+      />
       <AsciiAmbientPool
         enabled={settings.ascii_fx_enabled}
         opacity={settings.ascii_fx_opacity}
@@ -346,10 +365,12 @@ function MainStudio() {
               onInstalledLanguagesChange={(next) =>
                 void handleSaveSettings({ ...settings, installed_languages: next })
               }
+              onPlaybackStateChange={setIslandState}
+              playerHandleRef={ttsPlayerRef}
             />
           </div>
 
-          {activeTab === "profiles" && (
+          <div className={activeTab === "profiles" ? "flex-1 min-h-0 flex flex-col overflow-y-auto" : "hidden"}>
             <ProfilesView
               baseUrl={backend.base_url}
               catalog={catalog}
@@ -364,9 +385,9 @@ function MainStudio() {
               onAfterGpuAction={refreshSystem}
               notificationsEnabled={settings.notifications_enabled}
             />
-          )}
+          </div>
 
-          {activeTab === "transcriber" && (
+          <div className={activeTab === "transcriber" ? "flex-1 min-h-0 flex flex-col" : "hidden"}>
             <TranscriberView
               baseUrl={backend.base_url}
               catalog={catalog}
@@ -374,18 +395,18 @@ function MainStudio() {
               onSaveSettings={handleSaveSettings}
               onAfterGpuAction={refreshSystem}
             />
-          )}
+          </div>
 
-          {activeTab === "subtitles" && (
+          <div className={activeTab === "subtitles" ? "flex-1 min-h-0 flex flex-col overflow-y-auto" : "hidden"}>
             <SubtitlesView
               baseUrl={backend.base_url}
               settings={settings}
               onAfterGpuAction={refreshSystem}
               liveCaptionsSupported={backend.live_captions_supported}
             />
-          )}
+          </div>
 
-          {activeTab === "models" && (
+          <div className={activeTab === "models" ? "flex-1 min-h-0 flex flex-col overflow-y-auto" : "hidden"}>
             <ModelsView
               baseUrl={backend.base_url}
               settings={settings}
@@ -396,9 +417,9 @@ function MainStudio() {
               onCatalogChange={setCatalog}
               onAfterGpuAction={refreshSystem}
             />
-          )}
+          </div>
 
-          {activeTab === "settings" && (
+          <div className={activeTab === "settings" ? "flex-1 min-h-0 flex flex-col overflow-y-auto" : "hidden"}>
             <SettingsView
               settings={settings}
               resolvedModelsDir={resolvedModelsDir}
@@ -409,7 +430,7 @@ function MainStudio() {
               readSelectionSupported={backend.read_selection_supported}
               onSave={handleSaveSettings}
             />
-          )}
+          </div>
 
           {activeTab === "updates" && <UpdatesView baseUrl={backend.base_url} />}
         </main>

@@ -2,14 +2,19 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import hashlib
 import json
 import os
 import re
+import shutil
 import socket
 import subprocess
 import sys
+import tempfile
+import threading
 import time
 import uuid
+import wave
 from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Literal, Optional
@@ -21,7 +26,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse, Response
 from pydantic import BaseModel
 
-from . import downloader, external_providers, history, profiles, updates
+from . import chunking, downloader, external_providers, history, profiles, updates
 from .config import (
     APP_ROOT,
     DEFAULT_PROFILES_DIR,
@@ -79,6 +84,10 @@ class UrlInstallRequest(BaseModel):
     kind: Literal["tts", "stt"] = "stt"
     files: list[str]
     direct_urls: dict[str, str] = {}
+    crispasr_ready: bool = False
+    crispasr_backend: Optional[str] = None
+    convert_to_gguf: bool = False
+    convert_script: Optional[str] = None
 
 
 class LocalImportRequest(BaseModel):
@@ -96,7 +105,17 @@ class LoadSttRequest(BaseModel):
 class CreateProfileRequest(BaseModel):
     name: str
     language: str = "Spanish"
-    engine: Literal["qwen", "xtts"] = "qwen"
+    engine: Literal[
+        "qwen",
+        "xtts",
+        "f5",
+        "fish",
+        "chatterbox",
+        "chatterbox-turbo",
+        "cosyvoice3-tts",
+        "orpheus",
+        "indextts",
+    ] = "qwen"
     ref_audio_path: str = ""
     ref_text: str = ""
     build_voice: bool = True
@@ -106,11 +125,31 @@ class CreateProfileRequest(BaseModel):
 class UpdateProfileRequest(BaseModel):
     name: Optional[str] = None
     language: Optional[str] = None
-    engine: Optional[Literal["qwen", "xtts"]] = None
+    engine: Optional[
+        Literal[
+            "qwen",
+            "xtts",
+            "f5",
+            "fish",
+            "chatterbox",
+            "chatterbox-turbo",
+            "cosyvoice3-tts",
+            "orpheus",
+            "indextts",
+        ]
+    ] = None
     ref_audio_path: Optional[str] = None
     ref_text: Optional[str] = None
     rebuild_voice: bool = False
     force_stop_captions: bool = False
+
+
+class TrimProfileRequest(BaseModel):
+    max_seconds: float = 12.0
+
+
+class ModelRuntimeRequest(BaseModel):
+    runtime: Literal["crispasr", "python"]
 
 
 class SynthesizeRequest(BaseModel):
@@ -519,6 +558,34 @@ def build_qwen_profile(prof: profiles.VoiceProfile, force_stop_captions: bool = 
     return updated
 
 
+PLAY_SESSION_DIR = DEFAULT_TMP_DIR / "play_session"
+_play_sessions_lock = threading.Lock()
+_play_sessions: dict[str, dict] = {}
+
+
+def cleanup_play_session() -> None:
+    """Delete ephemeral TTS play-session fragments and legacy preview files."""
+    with _play_sessions_lock:
+        _play_sessions.clear()
+    if PLAY_SESSION_DIR.exists():
+        for item in PLAY_SESSION_DIR.iterdir():
+            try:
+                if item.is_dir():
+                    shutil.rmtree(item, ignore_errors=True)
+                else:
+                    item.unlink(missing_ok=True)
+            except Exception:
+                pass
+    else:
+        PLAY_SESSION_DIR.mkdir(parents=True, exist_ok=True)
+    if DEFAULT_TMP_DIR.exists():
+        for old in DEFAULT_TMP_DIR.glob("preview_*.wav"):
+            try:
+                old.unlink(missing_ok=True)
+            except Exception:
+                pass
+
+
 def _cleanup_tmp_previews(max_keep: int = 10) -> None:
     DEFAULT_TMP_DIR.mkdir(parents=True, exist_ok=True)
     files = sorted(DEFAULT_TMP_DIR.glob("preview_*.wav"), key=lambda p: p.stat().st_mtime, reverse=True)
@@ -532,6 +599,7 @@ def _cleanup_tmp_previews(max_keep: int = 10) -> None:
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     load_settings()
+    cleanup_play_session()
     try:
         RUNTIME_JSON_PATH.parent.mkdir(parents=True, exist_ok=True)
         RUNTIME_JSON_PATH.write_text(
@@ -549,6 +617,7 @@ async def lifespan(app: FastAPI):
         pass
     print(json.dumps({"port": runtime_info["port"], "pid": runtime_info["pid"]}), flush=True)
     yield
+    cleanup_play_session()
     try:
         if RUNTIME_JSON_PATH.is_file():
             cur = json.loads(RUNTIME_JSON_PATH.read_text(encoding="utf-8"))
@@ -715,9 +784,16 @@ def search_models_hub(
     q: str = "",
     page: int = 1,
     page_size: int = 6,
+    ready_only: bool = True,
 ):
     try:
-        return downloader.search_hf_hub(kind=kind, query=q, page=page, page_size=page_size).model_dump()
+        return downloader.search_hf_hub(
+            kind=kind,
+            query=q,
+            page=page,
+            page_size=page_size,
+            ready_only=ready_only,
+        ).model_dump()
     except Exception as exc:
         raise HTTPException(status_code=502, detail=f"Hub search failed: {exc}")
 
@@ -734,6 +810,15 @@ def inspect_url_model(req: HfInspectRequest):
 def install_url_model(req: UrlInstallRequest):
     if not req.files:
         raise HTTPException(status_code=400, detail="Select at least one model file to download.")
+    has_gguf = any(f.lower().endswith(".gguf") for f in req.files)
+    if not req.crispasr_ready and not has_gguf and not (req.convert_to_gguf and req.convert_script):
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                "Este modelo no es compatible directamente con CrispASR (falta un archivo .gguf o "
+                "una arquitectura soportada). Activa la conversión GGUF si está disponible o elige un modelo Ready."
+            ),
+        )
     s = load_settings()
     job = download_manager.start_url_download(
         s,
@@ -743,6 +828,9 @@ def install_url_model(req: UrlInstallRequest):
         kind=req.kind,
         selected_files=req.files,
         direct_urls=req.direct_urls,
+        crispasr_backend=req.crispasr_backend,
+        convert_to_gguf=req.convert_to_gguf,
+        convert_script=req.convert_script,
     )
     return {"job": job.model_dump()}
 
@@ -863,6 +951,24 @@ def uninstall_language_pack(req: UninstallLanguageRequest):
     return {"ok": True, "deleted": deleted, "installed_languages": s.installed_languages}
 
 
+@app.post("/api/models/{model_id}/runtime")
+def set_model_runtime(model_id: str, req: ModelRuntimeRequest):
+    s = load_settings()
+    entry = next((m for m in downloader.build_catalog(s) if m.id == model_id), None)
+    if entry is None:
+        raise HTTPException(status_code=404, detail=f"Model not found: {model_id}")
+    if req.runtime not in entry.available_runtimes:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Runtime '{req.runtime}' is not available for {model_id} (allowed: {entry.available_runtimes})",
+        )
+    runtimes = dict(s.model_runtimes)
+    runtimes[model_id] = req.runtime
+    s.model_runtimes = runtimes
+    saved = save_settings(s)
+    return {"model_id": model_id, "runtime": req.runtime, "settings": saved.model_dump()}
+
+
 @app.post("/api/workers/xtts/load")
 def load_xtts_worker(req: LoadQwenRequest):
     ensure_xtts_loaded(
@@ -886,7 +992,7 @@ def load_stt_worker(req: LoadSttRequest):
 @app.post("/api/workers/eject_group/{group}")
 def eject_worker_group(group: str):
     if group == "tts":
-        targets = ("qwen", "xtts")
+        targets = ("qwen", "xtts", "f5", "fish", "kitten", "crispasr")
     elif group == "stt":
         targets = ("stt",)
     else:
@@ -899,7 +1005,7 @@ def eject_worker_group(group: str):
 
 @app.post("/api/workers/{family}/eject")
 def eject_worker(family: str):
-    if family not in ("qwen", "stt", "xtts"):
+    if family not in ("qwen", "stt", "xtts", "f5", "fish", "kitten", "crispasr"):
         raise HTTPException(status_code=404, detail=f"Unknown worker family: {family}")
     stopped = supervisor.eject(family)
     if family == "stt" and stopped:
@@ -997,7 +1103,7 @@ def build_profile_route(profile_id: str, force_stop_captions: bool = False):
     prof = profiles.get_profile(profile_id)
     if prof is None:
         raise HTTPException(status_code=404, detail="Profile not found.")
-    if prof.engine in ("xtts", "f5", "f5-tts", "fish", "fish-audio"):
+    if prof.engine in ("xtts", "f5", "f5-tts", "fish", "fish-audio", "chatterbox", "chatterbox-turbo", "cosyvoice3-tts", "indextts", "orpheus"):
         if not prof.ref_audio_path or not Path(prof.ref_audio_path).exists():
             raise HTTPException(status_code=400, detail="Profile needs a valid reference audio file.")
         updated = profiles.update_profile(prof.id, ready=True)
@@ -1005,6 +1111,41 @@ def build_profile_route(profile_id: str, force_stop_captions: bool = False):
         return {"profile": updated.model_dump()}
     updated = build_qwen_profile(prof, force_stop_captions=force_stop_captions)
     return {"profile": updated.model_dump()}
+
+
+@app.post("/api/profiles/{profile_id}/trim")
+def trim_profile_route(profile_id: str, req: TrimProfileRequest):
+    max_s = max(3.0, min(30.0, float(req.max_seconds or 12.0)))
+    updated = profiles.trim_profile_audio(profile_id, max_seconds=max_s)
+    if updated is None:
+        raise HTTPException(status_code=404, detail="Profile or reference audio not found.")
+    return {"profile": updated.model_dump()}
+
+
+@app.get("/api/profiles/{profile_id}/audio")
+def get_profile_audio(profile_id: str):
+    prof = profiles.get_profile(profile_id)
+    if prof is None:
+        raise HTTPException(status_code=404, detail="Profile not found.")
+    cand = prof.ref_24k_path or prof.ref_audio_path
+    if not cand or not Path(cand).is_file():
+        cand = prof.ref_audio_path
+    if not cand or not Path(cand).is_file():
+        raise HTTPException(status_code=404, detail="Reference audio file missing.")
+    return FileResponse(Path(cand), media_type="audio/wav", filename=Path(cand).name)
+
+
+@app.get("/api/audio/preview")
+def preview_local_audio(path: str):
+    raw = (path or "").strip()
+    if not raw:
+        raise HTTPException(status_code=400, detail="Audio path is required.")
+    fp = Path(raw)
+    allowed_exts = {".wav", ".mp3", ".m4a", ".flac", ".ogg", ".opus", ".aac"}
+    if not fp.is_file() or fp.suffix.lower() not in allowed_exts:
+        raise HTTPException(status_code=404, detail="Audio file not found or unsupported format.")
+    media = "audio/wav" if fp.suffix.lower() == ".wav" else "application/octet-stream"
+    return FileResponse(fp, media_type=media, filename=fp.name)
 
 
 @app.delete("/api/profiles/{profile_id}")
@@ -1032,32 +1173,154 @@ def _active_tts_catalog_entry(settings) -> Optional[downloader.CatalogModelEntry
 
 def _run_crispasr_tts(
     *,
-    entry: downloader.CatalogModelEntry,
+    entry: Optional[downloader.CatalogModelEntry],
+    engine: str,
+    speaker_name: str,
     text: str,
     lang: str,
     out_path: Path,
     voice: Optional[str] = None,
+    ref_audio: Optional[Path] = None,
+    ref_text: Optional[str] = None,
     device: str = "gpu",
+    force_stop_captions: bool = False,
 ) -> tuple[dict, str]:
-    from . import crispasr
+    from . import audio_prep, crispasr
 
-    model_dir = Path(entry.install_dir) if entry.install_dir else None
+    model_dir = Path(entry.install_dir) if (entry and entry.install_dir) else None
     dev = "cpu" if device == "cpu" else "gpu"
+    if dev == "gpu":
+        total_mib, free_mib = query_nvidia_vram()
+        vram_est = entry.vram_mib if entry and entry.vram_mib > 0 else 1500
+        supervisor.ensure_vram_or_evict(
+            target_family="crispasr",
+            device="gpu",
+            vram_est_mib=vram_est,
+            free_vram_mib=free_mib,
+            total_vram_mib=total_mib,
+            force_stop_captions=force_stop_captions,
+        )
+
+    prepped_ref = ref_audio
+    if ref_audio is not None and ref_audio.is_file():
+        dst_24k = ref_audio.with_name(f"{ref_audio.stem}_24k.wav")
+        if ref_audio.name in ("ref_24k.wav", "ref_trim_24k.wav"):
+            dst_24k = ref_audio
+        try:
+            prepped_ref, _ = audio_prep.ensure_ref_24k(ref_audio, dst=dst_24k)
+        except Exception:
+            prepped_ref = ref_audio
+
     try:
         res = crispasr.synthesize_tts(
-            engine=entry.engine,
+            engine=engine,
             text=text,
             out_path=out_path,
             language=lang,
             model_dir=model_dir,
             voice=voice,
+            ref_audio=prepped_ref,
+            ref_text=ref_text,
             device=dev,
         )
+    except InterruptedError as exc:
+        raise HTTPException(status_code=499, detail=str(exc))
     except FileNotFoundError as exc:
         raise HTTPException(status_code=503, detail=str(exc))
     except Exception as exc:
         raise HTTPException(status_code=500, detail=f"CrispASR synthesis failed: {exc}")
-    return res, entry.name
+    return res, speaker_name
+
+
+def _call_tts_worker(
+    load_fn,
+    payload: dict,
+    label: str,
+    timeout_s: float = 240.0,
+) -> dict:
+    try:
+        handle = load_fn()
+        with httpx.Client(timeout=timeout_s) as client:
+            resp = client.post(f"http://127.0.0.1:{handle.port}/synthesize", json=payload)
+    except (HTTPException, LiveCaptionsProtectedError, InsufficientVramError):
+        raise
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=503, detail=f"{label}: {exc}")
+    except subprocess.SubprocessError as exc:
+        raise HTTPException(status_code=503, detail=f"{label} environment setup failed: {exc}")
+    except (httpx.HTTPError, TimeoutError, RuntimeError, OSError) as exc:
+        raise HTTPException(status_code=500, detail=f"{label} failed: {exc}")
+
+    if resp.status_code >= 400:
+        detail = resp.text
+        try:
+            err_json = resp.json()
+            if isinstance(err_json, dict) and err_json.get("detail"):
+                detail = str(err_json["detail"])
+        except Exception:
+            pass
+        status = resp.status_code if 400 <= resp.status_code < 500 else 500
+        raise HTTPException(status_code=status, detail=f"{label} failed: {detail}")
+    return resp.json()
+
+
+def _prepare_f5_ref(ref_path: Path, ref_text: str, lang: str, settings: AppSettings) -> tuple[Path, str]:
+    """Keep F5 reference audio <= 12s with a matched transcript so duration scaling stays accurate."""
+    from . import audio_prep, crispasr
+
+    info = audio_prep.probe_audio_info(ref_path)
+    duration = float(info.get("duration_s") or 0.0)
+    if duration <= 12.2 or duration <= 0.0:
+        return ref_path, ref_text
+
+    stat = ref_path.stat()
+    max_s = 11.0
+    key = hashlib.sha1(f"{ref_path.absolute()}|{stat.st_mtime_ns}|{lang}".encode("utf-8")).hexdigest()[:12]
+    clip_dir = Path(tempfile.gettempdir()) / "ss_f5_clips"
+    clip_dir.mkdir(parents=True, exist_ok=True)
+    clip_wav = clip_dir / f"{key}_11s.wav"
+    clip_txt = clip_dir / f"{key}_11s.txt"
+
+    clip_wav, _ = audio_prep.ensure_ref_24k(ref_path, dst=clip_wav, max_seconds=max_s)
+    if clip_txt.is_file():
+        cached_txt = clip_txt.read_text(encoding="utf-8").strip()
+        if cached_txt:
+            return clip_wav, cached_txt
+
+    matched_text = ""
+    try:
+        parakeet_entry = next(
+            (
+                m
+                for m in downloader.build_catalog(settings)
+                if m.kind == "stt" and m.installed and m.install_dir and "parakeet" in m.id.lower()
+            ),
+            None,
+        )
+        if parakeet_entry and parakeet_entry.install_dir:
+            res = crispasr.transcribe_stt(
+                model_id=parakeet_entry.id,
+                audio_path=clip_wav,
+                model_dir=Path(parakeet_entry.install_dir),
+                language=crispasr.language_code(lang),
+                device="gpu" if settings.stt_device != "cpu" else "cpu",
+                app_root=APP_ROOT,
+            )
+            matched_text = (res.get("text") or "").strip()
+    except Exception:
+        matched_text = ""
+
+    if not matched_text and ref_text.strip():
+        target_chars = max(16, int(len(ref_text.strip()) * (max_s / duration)))
+        cut = ref_text.strip()[:target_chars]
+        last_sp = cut.rfind(" ")
+        if last_sp > 8:
+            cut = cut[:last_sp]
+        matched_text = cut.rstrip(" ,;:") + "."
+
+    if matched_text:
+        clip_txt.write_text(matched_text, encoding="utf-8")
+    return clip_wav, matched_text
 
 
 def _run_tts(
@@ -1082,98 +1345,115 @@ def _run_tts(
     from . import crispasr
 
     entry = _active_tts_catalog_entry(settings)
-    # Prefer CrispASR for builtin-voice engines / F5 GGUF; keep clone profiles on Python workers.
+    tts_dev = "cpu" if settings.tts_device == "cpu" else "gpu"
     if entry is not None:
+        if entry.engine == "espeak":
+            from . import espeak_engine
+
+            try:
+                res = espeak_engine.synthesize_tts(
+                    text=text,
+                    out_path=out_path,
+                    language=lang,
+                    voice=voice,
+                )
+                return res, entry.name
+            except Exception as exc:
+                raise HTTPException(status_code=500, detail=f"eSpeak NG failed: {exc}")
+
         model_dir = Path(entry.install_dir) if entry.install_dir else None
         voice_mode = entry.capabilities.voice_mode if entry.capabilities else "clone_profile"
-        tts_dev = "cpu" if settings.tts_device == "cpu" else "gpu"
-        if crispasr.supports_engine(entry.engine, model_dir=model_dir, device=tts_dev) and (
-            voice_mode == "builtin_voices"
-            or (entry.engine in ("f5", "f5-tts") and "gguf" in entry.id.lower())
-        ):
-            return _run_crispasr_tts(
-                entry=entry,
-                text=text,
-                lang=lang,
-                out_path=out_path,
-                voice=voice,
-                device=tts_dev,
-            )
-        if entry.engine == "kitten":
-            handle = ensure_kitten_loaded(model_id=entry.id, force_stop_captions=force_stop_captions)
-            with httpx.Client(timeout=180.0) as client:
-                resp = client.post(
-                    f"http://127.0.0.1:{handle.port}/synthesize",
-                    json={"text": text, "lang": lang, "voice": voice, "out_path": str(out_path)},
+        prefer_crispasr = (entry.active_runtime or "crispasr") != "python"
+        if prefer_crispasr and crispasr.supports_engine(entry.engine, model_dir=model_dir, device=tts_dev):
+            if voice_mode == "builtin_voices" or (
+                entry.engine in ("f5", "f5-tts") and "gguf" in entry.id.lower() and prof is None
+            ):
+                return _run_crispasr_tts(
+                    entry=entry,
+                    engine=entry.engine,
+                    speaker_name=entry.name,
+                    text=text,
+                    lang=lang,
+                    out_path=out_path,
+                    voice=voice,
+                    device=tts_dev,
+                    force_stop_captions=force_stop_captions,
                 )
-                if resp.status_code >= 400:
-                    raise HTTPException(status_code=500, detail=f"KittenTTS synthesis failed: {resp.text}")
-                return resp.json(), entry.name
+            if prof is not None and prof.ref_audio_path and Path(prof.ref_audio_path).exists():
+                ref_p = Path(prof.ref_24k_path) if prof.ref_24k_path and Path(prof.ref_24k_path).is_file() else Path(prof.ref_audio_path)
+                ref_text_eff = prof.ref_text
+                if entry.engine in ("f5", "f5-tts"):
+                    ref_p, ref_text_eff = _prepare_f5_ref(ref_p, ref_text_eff, lang, settings)
+                return _run_crispasr_tts(
+                    entry=entry,
+                    engine=entry.engine,
+                    speaker_name=prof.name,
+                    text=text,
+                    lang=lang,
+                    out_path=out_path,
+                    ref_audio=ref_p,
+                    ref_text=ref_text_eff,
+                    device=tts_dev,
+                    force_stop_captions=force_stop_captions,
+                )
+        if entry.engine == "kitten":
+            res = _call_tts_worker(
+                lambda: ensure_kitten_loaded(model_id=entry.id, force_stop_captions=force_stop_captions),
+                {"text": text, "lang": lang, "voice": voice, "out_path": str(out_path)},
+                "KittenTTS",
+                timeout_s=180.0,
+            )
+            return res, entry.name
 
     if prof is None:
         raise HTTPException(status_code=404, detail="Voice profile not found.")
     if prof.engine == "xtts":
         if not prof.ref_audio_path or not Path(prof.ref_audio_path).exists():
             raise HTTPException(status_code=400, detail="Profile needs a valid reference audio file.")
-        handle = ensure_xtts_loaded(force_stop_captions=force_stop_captions)
-        with httpx.Client(timeout=240.0) as client:
-            resp = client.post(
-                f"http://127.0.0.1:{handle.port}/synthesize",
-                json={
-                    "text": text,
-                    "lang": lang,
-                    "speaker_wav": prof.ref_audio_path,
-                    "out_path": str(out_path),
-                },
-            )
-            if resp.status_code >= 400:
-                detail = resp.text
-                try:
-                    payload = resp.json()
-                    if isinstance(payload, dict) and payload.get("detail"):
-                        detail = str(payload["detail"])
-                except Exception:
-                    pass
-                status = resp.status_code if 400 <= resp.status_code < 500 else 500
-                raise HTTPException(status_code=status, detail=f"Synthesis failed: {detail}")
-            return resp.json(), prof.name
+        res = _call_tts_worker(
+            lambda: ensure_xtts_loaded(force_stop_captions=force_stop_captions),
+            {
+                "text": text,
+                "lang": lang,
+                "speaker_wav": prof.ref_audio_path,
+                "out_path": str(out_path),
+            },
+            "XTTS v2",
+        )
+        return res, prof.name
     if prof.engine in ("f5", "f5-tts"):
         if not prof.ref_audio_path or not Path(prof.ref_audio_path).exists():
             raise HTTPException(status_code=400, detail="Profile needs a valid reference audio file.")
-        handle = ensure_f5_loaded(force_stop_captions=force_stop_captions)
-        with httpx.Client(timeout=240.0) as client:
-            resp = client.post(
-                f"http://127.0.0.1:{handle.port}/synthesize",
-                json={
-                    "text": text,
-                    "lang": lang,
-                    "speaker_wav": prof.ref_audio_path,
-                    "ref_text": prof.ref_text,
-                    "out_path": str(out_path),
-                    "seed": seed,
-                },
-            )
-            if resp.status_code >= 400:
-                raise HTTPException(status_code=500, detail=f"F5-TTS synthesis failed: {resp.text}")
-            return resp.json(), prof.name
+        raw_ref = Path(prof.ref_24k_path) if prof.ref_24k_path and Path(prof.ref_24k_path).is_file() else Path(prof.ref_audio_path)
+        clip_ref, matched_ref_text = _prepare_f5_ref(raw_ref, prof.ref_text or "", lang, settings)
+        res = _call_tts_worker(
+            lambda: ensure_f5_loaded(force_stop_captions=force_stop_captions),
+            {
+                "text": text,
+                "lang": lang,
+                "speaker_wav": str(clip_ref),
+                "ref_text": matched_ref_text,
+                "out_path": str(out_path),
+                "seed": seed,
+            },
+            "F5-TTS",
+        )
+        return res, prof.name
     if prof.engine in ("fish", "fish-audio"):
         if not prof.ref_audio_path or not Path(prof.ref_audio_path).exists():
             raise HTTPException(status_code=400, detail="Profile needs a valid reference audio file.")
-        handle = ensure_fish_loaded(force_stop_captions=force_stop_captions)
-        with httpx.Client(timeout=240.0) as client:
-            resp = client.post(
-                f"http://127.0.0.1:{handle.port}/synthesize",
-                json={
-                    "text": text,
-                    "lang": lang,
-                    "speaker_wav": prof.ref_audio_path,
-                    "ref_text": prof.ref_text,
-                    "out_path": str(out_path),
-                },
-            )
-            if resp.status_code >= 400:
-                raise HTTPException(status_code=500, detail=f"Fish synthesis failed: {resp.text}")
-            return resp.json(), prof.name
+        res = _call_tts_worker(
+            lambda: ensure_fish_loaded(force_stop_captions=force_stop_captions),
+            {
+                "text": text,
+                "lang": lang,
+                "speaker_wav": prof.ref_audio_path,
+                "ref_text": prof.ref_text,
+                "out_path": str(out_path),
+            },
+            "Fish Speech 1.5",
+        )
+        return res, prof.name
     if prof.engine != "qwen":
         raise HTTPException(status_code=501, detail=f"Engine '{prof.engine}' is not connected.")
     if not prof.ready:
@@ -1207,10 +1487,16 @@ def list_tts_builtin_voices(model_id: Optional[str] = None, language: Optional[s
     entry = _active_tts_catalog_entry(s)
     if entry is None:
         return {"voices": []}
-    if entry.engine == "kitten":
-        from backend.workers.kitten_worker import DEFAULT_VOICES
+    if entry.engine == "espeak":
+        from . import espeak_engine
 
-        return {"voices": [{"id": v, "label": v} for v in DEFAULT_VOICES]}
+        return {"voices": espeak_engine.list_voices(language=language)}
+    if entry.engine == "kitten":
+        from backend.workers.kitten_worker import VOICES_BY_LANG, _lang_iso
+
+        iso = _lang_iso(language or "Spanish")
+        items = VOICES_BY_LANG.get(iso) or VOICES_BY_LANG["en"]
+        return {"voices": [{"id": v, "label": f"{v.capitalize()} ({iso})"} for v in items]}
     model_dir = Path(entry.install_dir) if entry.install_dir else None
     return {
         "voices": crispasr.list_builtin_voices(
@@ -1219,8 +1505,7 @@ def list_tts_builtin_voices(model_id: Optional[str] = None, language: Optional[s
     }
 
 
-@app.post("/api/tts/synthesize")
-def tts_synthesize(req: SynthesizeRequest):
+def _resolve_tts_context(req: SynthesizeRequest):
     text = req.text.strip()
     if not text:
         raise HTTPException(status_code=400, detail="Input text is empty.")
@@ -1231,7 +1516,7 @@ def tts_synthesize(req: SynthesizeRequest):
     entry = _active_tts_catalog_entry(settings) if settings.tts_source == "local" else None
     model_dir = Path(entry.install_dir) if entry and entry.install_dir else None
     builtin_ok = entry is not None and (
-        entry.engine == "kitten"
+        entry.engine in ("kitten", "espeak")
         or (
             crispasr.supports_engine(entry.engine, model_dir=model_dir)
             and (
@@ -1246,6 +1531,248 @@ def tts_synthesize(req: SynthesizeRequest):
     lang = (req.language or (prof.language if prof else "Spanish") or "Spanish").strip()
     if lang.lower() == "auto":
         lang = "Spanish"
+    return text, settings, prof, lang
+
+
+def _concat_wav_files(chunk_paths: list[Path], out_path: Path) -> tuple[float, int]:
+    """Concatenate PCM WAV chunks into a single WAV file and return (duration_s, sr)."""
+    if not chunk_paths:
+        raise HTTPException(status_code=400, detail="No generated chunks to save.")
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    total_frames = 0
+    params = None
+    with wave.open(str(out_path), "wb") as dst:
+        for path in chunk_paths:
+            with wave.open(str(path), "rb") as src:
+                cur_params = (src.getnchannels(), src.getsampwidth(), src.getframerate())
+                if params is None:
+                    params = cur_params
+                    dst.setnchannels(params[0])
+                    dst.setsampwidth(params[1])
+                    dst.setframerate(params[2])
+                elif cur_params != params:
+                    raise HTTPException(
+                        status_code=500,
+                        detail=f"Chunk WAV format mismatch: {cur_params} != {params}",
+                    )
+                frames = src.readframes(src.getnframes())
+                dst.writeframes(frames)
+                total_frames += src.getnframes()
+    sr = params[2] if params else 24000
+    return (total_frames / float(sr)) if sr > 0 else 0.0, sr
+
+
+class TtsPlanRequest(BaseModel):
+    text: str
+    max_chars: Optional[int] = None
+    enabled: Optional[bool] = None
+
+
+@app.post("/api/tts/plan")
+def tts_plan(req: TtsPlanRequest):
+    settings = load_settings()
+    enabled = settings.tts_chunk_enabled if req.enabled is None else req.enabled
+    max_chars = req.max_chars or settings.tts_chunk_max_chars
+    cleaned = req.text.strip()
+    if not cleaned:
+        return {"chunks": []}
+    chunks = chunking.split_text_into_chunks(cleaned, max_chars) if enabled else [cleaned]
+    return {"chunks": chunks}
+
+
+@app.post("/api/tts/session/start")
+def tts_session_start(req: SynthesizeRequest):
+    text, settings, prof, lang = _resolve_tts_context(req)
+    cleanup_play_session()
+    PLAY_SESSION_DIR.mkdir(parents=True, exist_ok=True)
+    chunks = (
+        chunking.split_text_into_chunks(text, settings.tts_chunk_max_chars)
+        if settings.tts_chunk_enabled
+        else [text]
+    )
+    if not chunks:
+        raise HTTPException(status_code=400, detail="Input text is empty.")
+    session_id = uuid.uuid4().hex[:12]
+    with _play_sessions_lock:
+        _play_sessions[session_id] = {
+            "session_id": session_id,
+            "full_text": text,
+            "chunks": chunks,
+            "generated": {},
+            "profile_id": prof.id if prof else "builtin",
+            "speaker_label": prof.name if prof else "Speech Studio",
+            "language": lang,
+            "voice": req.voice,
+            "seed": req.seed,
+            "force_stop_captions": req.force_stop_captions,
+            "sr": 24000,
+            "total_elapsed": 0.0,
+        }
+    return {"session_id": session_id, "chunks": chunks}
+
+
+@app.post("/api/tts/session/{session_id}/chunk/{index}")
+def tts_session_chunk(session_id: str, index: int, force_stop_captions: bool = False):
+    if not re.fullmatch(r"[a-f0-9]+", session_id):
+        raise HTTPException(status_code=400, detail="Invalid session id.")
+    with _play_sessions_lock:
+        sess = _play_sessions.get(session_id)
+        if sess is None:
+            raise HTTPException(status_code=404, detail="Play session expired.")
+        chunks = sess["chunks"]
+        if index < 0 or index >= len(chunks):
+            raise HTTPException(status_code=404, detail="Chunk index out of range.")
+        existing: Optional[Path] = sess["generated"].get(index)
+        chunk_text = chunks[index]
+        profile_id = sess["profile_id"]
+        lang = sess["language"]
+        voice = sess["voice"]
+        seed = sess["seed"]
+        force = force_stop_captions or sess["force_stop_captions"]
+
+    out_path = PLAY_SESSION_DIR / f"{session_id}_chunk_{index:04d}.wav"
+    if existing and existing.exists():
+        return {
+            "index": index,
+            "audio_url": f"/api/tts/session/{session_id}/chunk/{index}/audio",
+            "duration_s": 0.0,
+            "sr": sess["sr"],
+            "elapsed_s": 0.0,
+            "rtf": 0.0,
+        }
+
+    prof = profiles.get_profile(profile_id)
+    res, speaker_label = _run_tts(
+        prof=prof,
+        text=chunk_text,
+        lang=lang,
+        out_path=out_path,
+        seed=seed,
+        force_stop_captions=force,
+        voice=voice,
+    )
+    with _play_sessions_lock:
+        cur = _play_sessions.get(session_id)
+        if cur is not None:
+            cur["generated"][index] = out_path
+            cur["speaker_label"] = speaker_label
+            cur["sr"] = int(res.get("sr") or cur["sr"])
+            cur["total_elapsed"] += float(res.get("elapsed_s") or 0.0)
+    return {
+        "index": index,
+        "audio_url": f"/api/tts/session/{session_id}/chunk/{index}/audio",
+        "duration_s": res["duration_s"],
+        "sr": res["sr"],
+        "elapsed_s": res["elapsed_s"],
+        "rtf": res["rtf"],
+    }
+
+
+@app.get("/api/tts/session/{session_id}/chunk/{index}/audio")
+def get_session_chunk_audio(session_id: str, index: int):
+    if not re.fullmatch(r"[a-f0-9]+", session_id) or index < 0:
+        raise HTTPException(status_code=400, detail="Invalid chunk reference.")
+    fp = PLAY_SESSION_DIR / f"{session_id}_chunk_{index:04d}.wav"
+    if not fp.exists():
+        raise HTTPException(status_code=404, detail="Chunk audio missing or cleared.")
+    return FileResponse(fp, media_type="audio/wav", filename=fp.name)
+
+
+@app.post("/api/tts/session/{session_id}/save")
+def tts_session_save(session_id: str, force_stop_captions: bool = False):
+    if not re.fullmatch(r"[a-f0-9]+", session_id):
+        raise HTTPException(status_code=400, detail="Invalid session id.")
+    with _play_sessions_lock:
+        sess = _play_sessions.get(session_id)
+        if sess is None:
+            raise HTTPException(status_code=404, detail="Play session expired.")
+        chunks = list(sess["chunks"])
+        generated = dict(sess["generated"])
+        profile_id = sess["profile_id"]
+        speaker_label = sess["speaker_label"]
+        full_text = sess["full_text"]
+        lang = sess["language"]
+        voice = sess["voice"]
+        seed = sess["seed"]
+        force = force_stop_captions or sess["force_stop_captions"]
+
+    prof = profiles.get_profile(profile_id)
+    chunk_paths: list[Path] = []
+    extra_elapsed = 0.0
+    for idx, chunk_text in enumerate(chunks):
+        fp = generated.get(idx) or (PLAY_SESSION_DIR / f"{session_id}_chunk_{idx:04d}.wav")
+        if not fp.exists():
+            res, speaker_label = _run_tts(
+                prof=prof,
+                text=chunk_text,
+                lang=lang,
+                out_path=fp,
+                seed=seed,
+                force_stop_captions=force,
+                voice=voice,
+            )
+            extra_elapsed += float(res.get("elapsed_s") or 0.0)
+            with _play_sessions_lock:
+                cur = _play_sessions.get(session_id)
+                if cur is not None:
+                    cur["generated"][idx] = fp
+                    cur["speaker_label"] = speaker_label
+        chunk_paths.append(fp)
+
+    settings = load_settings()
+    out_dir = resolved_outputs_dir(settings)
+    ts = time.strftime("%Y%m%d_%H%M%S")
+    pid_tag = prof.id if prof else "api"
+    fname = f"{ts}_{pid_tag}_{uuid.uuid4().hex[:6]}.wav"
+    out_path = out_dir / fname
+    dur_s, sr = _concat_wav_files(chunk_paths, out_path)
+
+    with _play_sessions_lock:
+        cur = _play_sessions.get(session_id)
+        elapsed_total = (cur["total_elapsed"] if cur else 0.0) + extra_elapsed
+    rtf = (elapsed_total / dur_s) if dur_s > 0 else 0.0
+
+    rec = history.add_record(
+        profile_id=pid_tag,
+        profile_name=speaker_label,
+        text=full_text,
+        language=lang,
+        file_path=str(out_path),
+        saved_path=str(out_path),
+        duration_s=dur_s,
+        sr=sr,
+        elapsed_s=elapsed_total,
+        rtf=rtf,
+    )
+    from .toasts import say
+
+    fire_toast(say("app"), say("wav_saved", speaker=speaker_label, seconds=f"{rec.duration_s:.1f}"))
+    return {
+        "mode": "wav",
+        "record": rec.model_dump(),
+        "saved_path": str(out_path),
+        "audio_url": f"/api/tts/history/{rec.id}/audio",
+    }
+
+
+@app.post("/api/tts/session/clear")
+def tts_session_clear():
+    cleanup_play_session()
+    return {"cleared": True}
+
+
+@app.post("/api/tts/cancel")
+def tts_cancel():
+    from . import crispasr
+
+    crispasr.server_manager.cancel_active()
+    cleanup_play_session()
+    return {"cancelled": True}
+
+
+@app.post("/api/tts/synthesize")
+def tts_synthesize(req: SynthesizeRequest):
+    text, settings, prof, lang = _resolve_tts_context(req)
 
     if req.mode == "play":
         _cleanup_tmp_previews()
@@ -1289,6 +1816,7 @@ def tts_synthesize(req: SynthesizeRequest):
         text=text,
         language=lang,
         file_path=str(out_path),
+        saved_path=str(out_path),
         duration_s=res["duration_s"],
         sr=res["sr"],
         elapsed_s=res["elapsed_s"],
@@ -1364,12 +1892,19 @@ def _run_stt(audio_path: Path, language: Optional[str] = None, model_id: Optiona
     from . import crispasr
 
     stt_dev = "cpu" if settings.stt_device == "cpu" else "gpu"
-    if crispasr.stt_backend_for_model(target_id) and crispasr.is_available(device=stt_dev):
+    stt_entry = next(
+        (m for m in downloader.build_catalog(settings) if m.kind == "stt" and m.id == target_id),
+        None,
+    )
+    stt_dir = Path(stt_entry.install_dir) if (stt_entry and stt_entry.install_dir) else None
+    stt_key = (stt_entry.engine if stt_entry else target_id) or target_id
+    if (crispasr.stt_backend_for_model(stt_key) or crispasr.stt_backend_for_model(target_id)) and crispasr.is_available(device=stt_dev):
         try:
             res = crispasr.transcribe_stt(
-                model_id=target_id,
+                model_id=stt_key if crispasr.stt_backend_for_model(stt_key) else target_id,
                 audio_path=audio_path,
                 language=language,
+                model_dir=stt_dir,
                 device=stt_dev,
             )
             return {**res, "source": "local", "model": target_id}
@@ -1489,6 +2024,16 @@ def handle_captions_protected(_, exc: LiveCaptionsProtectedError):
 @app.exception_handler(InsufficientVramError)
 def handle_insufficient_vram(_, exc: InsufficientVramError):
     return JSONResponse(status_code=507, content={"detail": str(exc)})
+
+
+@app.exception_handler(FileNotFoundError)
+def handle_missing_file(_, exc: FileNotFoundError):
+    return JSONResponse(status_code=503, content={"detail": str(exc)})
+
+
+@app.exception_handler(Exception)
+def handle_unexpected_error(_, exc: Exception):
+    return JSONResponse(status_code=500, content={"detail": str(exc)})
 
 
 def main(port: Optional[int] = None) -> None:

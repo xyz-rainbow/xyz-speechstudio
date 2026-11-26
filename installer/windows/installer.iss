@@ -1,5 +1,5 @@
 ; ==============================================================================
-;  XYZ-PRODUCTIONS - MODULAR MASTER INSTALLER SCRIPT
+;  RAINBOW TECHNOLOGY - MODULAR MASTER INSTALLER SCRIPT
 ; ==============================================================================
 ;  Este script importa automáticamente la configuración desde 'config.iss'.
 ;  Incluye estética Cyberpunk/Scene, selector de ámbito (Usuario/Todos),
@@ -126,7 +126,7 @@ Name: "{commondesktop}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; Working
 Name: "{app}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; WorkingDir: "{app}"; IconFilename: "{app}\speech-studio.ico"; Check: IsPortable
 
 [Run]
-Filename: "{sys}\WindowsPowerShell\v1.0\powershell.exe"; Parameters: "-NoProfile -WindowStyle Hidden -ExecutionPolicy Bypass -File ""{app}\installer\setup-env.ps1"" -AppRoot ""{app}"""; StatusMsg: "Preparando entornos Python (core, qwen, stt)..."; Flags: waituntilterminated runhidden
+Filename: "{sys}\WindowsPowerShell\v1.0\powershell.exe"; Parameters: "-NoProfile -WindowStyle Hidden -ExecutionPolicy Bypass -File ""{app}\installer\setup-env.ps1"" -AppRoot ""{app}"""; StatusMsg: "Preparando entornos Python (core, pytts)..."; Flags: waituntilterminated runhidden
 Filename: "{app}\{#MyAppExeName}"; WorkingDir: "{app}"; Description: "{cm:LaunchApp}"; Flags: nowait postinstall skipifsilent
 
 [Code]

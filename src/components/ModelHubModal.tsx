@@ -6,7 +6,6 @@ import {
   Download,
   File as FileIcon,
   FolderOpen,
-  Globe,
   Loader2,
   Search,
   Sparkles,
@@ -122,6 +121,7 @@ export const ModelHubModal: React.FC<ModelHubModalProps> = ({
   // Hub Search state
   const [hubQuery, setHubQuery] = useState("");
   const [hubSubmittedQuery, setHubSubmittedQuery] = useState("");
+  const [hubReadyOnly, setHubReadyOnly] = useState(true);
   const [hubPage, setHubPage] = useState(1);
   const [hubLoading, setHubLoading] = useState(false);
   const [hubItems, setHubItems] = useState<HubModelSummary[]>([]);
@@ -132,6 +132,7 @@ export const ModelHubModal: React.FC<ModelHubModalProps> = ({
   const [inspectPreview, setInspectPreview] = useState<HfInspectResponse | null>(null);
   const [inspectName, setInspectName] = useState("");
   const [inspectFiles, setInspectFiles] = useState<string[]>([]);
+  const [convertToGguf, setConvertToGguf] = useState(false);
   const [installingUrl, setInstallingUrl] = useState(false);
 
   // Import tab state
@@ -147,15 +148,16 @@ export const ModelHubModal: React.FC<ModelHubModalProps> = ({
     setFeaturedPage(1);
     setHubPage(1);
     setInspectPreview(null);
+    setConvertToGguf(false);
     setError(null);
   }, [open, kind]);
 
-  const loadHub = async (query: string, page: number) => {
+  const loadHub = async (query: string, page: number, readyOnly: boolean) => {
     if (!baseUrl) return;
     setHubLoading(true);
     setError(null);
     try {
-      const res = await searchModelHub(baseUrl, kind, query, page, 6);
+      const res = await searchModelHub(baseUrl, kind, query, page, 6, readyOnly);
       setHubItems(res.items);
       setHubHasMore(res.has_more);
     } catch (err) {
@@ -167,9 +169,9 @@ export const ModelHubModal: React.FC<ModelHubModalProps> = ({
 
   useEffect(() => {
     if (!open || tab !== "hub") return;
-    void loadHub(hubSubmittedQuery, hubPage);
+    void loadHub(hubSubmittedQuery, hubPage, hubReadyOnly);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open, tab, kind, hubPage, hubSubmittedQuery]);
+  }, [open, tab, kind, hubPage, hubSubmittedQuery, hubReadyOnly]);
 
   const families: FamilyGroup[] = useMemo(() => {
     const map = new Map<string, FamilyGroup>();
@@ -208,6 +210,7 @@ export const ModelHubModal: React.FC<ModelHubModalProps> = ({
   const runInspectUrl = async (target: string) => {
     if (!baseUrl || !target.trim()) return;
     setError(null);
+    setConvertToGguf(false);
     const res = await inspectModelUrl(baseUrl, target.trim());
     setInspectPreview(res);
     setInspectName(res.suggested_name);
@@ -221,6 +224,12 @@ export const ModelHubModal: React.FC<ModelHubModalProps> = ({
 
   const handleInstallInspected = async () => {
     if (!baseUrl || !inspectPreview || inspectFiles.length === 0) return;
+    const hasSelectedGguf = inspectFiles.some((f) => f.toLowerCase().endsWith(".gguf"));
+    const readyNow = Boolean(inspectPreview.crispasr_ready) || hasSelectedGguf;
+    if (!readyNow && !(convertToGguf && inspectPreview.can_convert_gguf)) {
+      setError(inspectPreview.crispasr_reason || t("models.notReadyReason"));
+      return;
+    }
     setInstallingUrl(true);
     setError(null);
     try {
@@ -237,6 +246,10 @@ export const ModelHubModal: React.FC<ModelHubModalProps> = ({
         kind,
         files: inspectFiles,
         direct_urls: directUrls,
+        crispasr_ready: readyNow,
+        crispasr_backend: inspectPreview.crispasr_backend ?? null,
+        convert_to_gguf: !readyNow && convertToGguf,
+        convert_script: inspectPreview.convert_script ?? null,
       });
       await onRefreshCatalog();
       onClose();
@@ -287,9 +300,16 @@ export const ModelHubModal: React.FC<ModelHubModalProps> = ({
 
   const renderInspectPanel = (onBack?: () => void) => {
     if (!inspectPreview) return null;
+    const hasSelectedGguf = inspectFiles.some((f) => f.toLowerCase().endsWith(".gguf"));
+    const readyNow = Boolean(inspectPreview.crispasr_ready) || hasSelectedGguf;
+    const canInstallNow =
+      inspectFiles.length > 0 &&
+      !installingUrl &&
+      (readyNow || (convertToGguf && Boolean(inspectPreview.can_convert_gguf)));
+
     return (
       <div className="flex flex-col gap-3">
-        <div className="flex items-center justify-between gap-2">
+        <div className="flex items-center justify-between gap-2 flex-wrap">
           {onBack && (
             <button
               type="button"
@@ -301,10 +321,40 @@ export const ModelHubModal: React.FC<ModelHubModalProps> = ({
               {t("models.backToResults")}
             </button>
           )}
-          <span className="text-[11px] font-mono truncate" style={{ color: "var(--text-muted)" }}>
-            {inspectPreview.source.toUpperCase()} · {inspectPreview.repo_id}
-          </span>
+          <div className="flex items-center gap-2 ml-auto min-w-0">
+            <span className="text-[11px] font-mono truncate" style={{ color: "var(--text-muted)" }}>
+              {inspectPreview.source.toUpperCase()} · {inspectPreview.repo_id}
+            </span>
+            <span
+              className={clsx(
+                "rounded-full px-2 py-0.5 text-[10px] font-mono font-semibold border shrink-0",
+                readyNow
+                  ? "bg-emerald-500/20 text-emerald-300 border-emerald-400/50"
+                  : "bg-rose-500/20 text-rose-300 border-rose-400/50"
+              )}
+            >
+              {readyNow ? t("models.crispReady") : t("models.crispNotReady")}
+            </span>
+          </div>
         </div>
+
+        {!readyNow && (
+          <div className="rounded-xl border border-rose-500/40 bg-rose-500/10 px-3 py-2 text-xs text-rose-200 flex flex-col gap-2">
+            <span>{inspectPreview.crispasr_reason || t("models.notReadyReason")}</span>
+            {inspectPreview.can_convert_gguf && inspectPreview.convert_script && (
+              <label className="inline-flex items-center gap-2 text-[11px] font-mono text-amber-200 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={convertToGguf}
+                  onChange={(e) => setConvertToGguf(e.target.checked)}
+                />
+                <span>
+                  {t("models.convertGgufOption")} ({inspectPreview.convert_script})
+                </span>
+              </label>
+            )}
+          </div>
+        )}
 
         <div className="flex flex-col gap-1">
           <span className="text-[10px] font-mono" style={{ color: "var(--text-muted)" }}>
@@ -355,7 +405,7 @@ export const ModelHubModal: React.FC<ModelHubModalProps> = ({
         <div className="flex justify-end gap-2">
           <button
             type="button"
-            disabled={inspectFiles.length === 0 || installingUrl}
+            disabled={!canInstallNow}
             onClick={handleInstallInspected}
             className="inline-flex items-center gap-1.5 rounded-xl border border-cyan-400/60 bg-cyan-500/20 px-3.5 py-1.5 text-xs font-semibold text-cyan-200 disabled:opacity-40"
           >
@@ -813,6 +863,28 @@ export const ModelHubModal: React.FC<ModelHubModalProps> = ({
                     }}
                   />
                   <button
+                    type="button"
+                    onClick={() => {
+                      setHubPage(1);
+                      setHubReadyOnly((v) => !v);
+                    }}
+                    className={clsx(
+                      "inline-flex items-center gap-1.5 rounded-xl border px-3 py-1.5 text-xs font-mono font-semibold transition-colors shrink-0",
+                      hubReadyOnly
+                        ? "border-emerald-400/60 bg-emerald-500/20 text-emerald-300"
+                        : "border-white/15 opacity-70 hover:opacity-100"
+                    )}
+                    title={t("models.readyFilterHint")}
+                  >
+                    <span
+                      className={clsx(
+                        "w-2 h-2 rounded-full",
+                        hubReadyOnly ? "bg-emerald-400" : "bg-zinc-400"
+                      )}
+                    />
+                    {t("models.crispReady")}
+                  </button>
+                  <button
                     type="submit"
                     disabled={hubLoading}
                     className="inline-flex items-center gap-1 rounded-xl border px-3 py-1.5 text-xs font-medium hover:border-cyan-400/60"
@@ -834,6 +906,13 @@ export const ModelHubModal: React.FC<ModelHubModalProps> = ({
                   <div className="py-10 flex items-center justify-center gap-2 text-xs opacity-75">
                     <Loader2 className="w-4 h-4 animate-spin" />
                     <span>Loading...</span>
+                  </div>
+                ) : hubItems.length === 0 ? (
+                  <div
+                    className="py-8 text-center text-xs rounded-2xl border border-dashed"
+                    style={{ borderColor: "var(--border-glass)", color: "var(--text-muted)" }}
+                  >
+                    {t("models.hubEmpty")}
                   </div>
                 ) : (
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
@@ -859,7 +938,17 @@ export const ModelHubModal: React.FC<ModelHubModalProps> = ({
                       >
                         <div className="flex items-start justify-between gap-2">
                           <span className="text-xs font-semibold truncate">{item.repo_id}</span>
-                          <Globe className="w-3.5 h-3.5 text-cyan-400 shrink-0" />
+                          <span
+                            title={item.crispasr_reason || undefined}
+                            className={clsx(
+                              "rounded-full px-2 py-0.5 text-[10px] font-mono font-semibold border shrink-0",
+                              item.crispasr_ready
+                                ? "bg-emerald-500/20 text-emerald-300 border-emerald-400/50"
+                                : "bg-rose-500/20 text-rose-300 border-rose-400/50"
+                            )}
+                          >
+                            {item.crispasr_ready ? t("models.crispReady") : t("models.crispNotReady")}
+                          </span>
                         </div>
                         <div
                           className="text-[10px] font-mono flex items-center gap-2"
@@ -870,6 +959,12 @@ export const ModelHubModal: React.FC<ModelHubModalProps> = ({
                           </span>
                           <span>·</span>
                           <span>★ {item.likes}</span>
+                          {item.crispasr_backend && (
+                            <>
+                              <span>·</span>
+                              <span className="text-cyan-300">{item.crispasr_backend}</span>
+                            </>
+                          )}
                         </div>
                       </button>
                     ))}

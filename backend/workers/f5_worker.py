@@ -4,9 +4,11 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import hashlib
 import json
 import os
 import socket
+import tempfile
 import time
 import wave
 from contextlib import asynccontextmanager
@@ -69,6 +71,61 @@ def _find_ckpt_and_vocab(model_dir: Path) -> tuple[Path, Optional[Path]]:
     return ckpts[0], (vocabs[0] if vocabs else None)
 
 
+def _detect_model_arch(model_dir: Path, ckpt_file: Path) -> str:
+    ckpt_low = ckpt_file.name.lower()
+    dir_low = model_dir.name.lower()
+    if "1200000" in ckpt_low or "spanish" in dir_low or ("base" in ckpt_low and "v1" not in ckpt_low):
+        return "F5TTS_Base"
+    return "F5TTS_v1_Base"
+
+
+def _trim_text_proportionally(ref_text: str, keep_ratio: float) -> str:
+    txt = ref_text.strip()
+    if not txt or keep_ratio >= 0.99:
+        return txt
+    target_chars = max(16, int(len(txt) * keep_ratio))
+    if len(txt) <= target_chars:
+        return txt
+    cut = txt[:target_chars]
+    last_space = cut.rfind(" ")
+    if last_space > 8:
+        cut = cut[:last_space]
+    return cut.rstrip(" ,;:") + "."
+
+
+def _prepare_short_ref(speaker: Path, ref_text: str, max_seconds: float = 11.0) -> tuple[Path, str]:
+    import numpy as np
+    import soundfile as sf
+
+    info = sf.info(str(speaker))
+    duration = float(info.duration or 0.0)
+    if duration <= 12.2 or duration <= 0.0:
+        return speaker, ref_text
+
+    stat = speaker.stat()
+    key = hashlib.sha1(f"{speaker.resolve()}|{stat.st_mtime_ns}|{max_seconds}".encode("utf-8")).hexdigest()[:12]
+    clip_dir = Path(tempfile.gettempdir()) / "ss_f5_clips"
+    clip_dir.mkdir(parents=True, exist_ok=True)
+    clip_path = clip_dir / f"{key}_11s.wav"
+
+    if not clip_path.is_file():
+        data, sr = sf.read(str(speaker), always_2d=True, dtype="float32")
+        mono = data.mean(axis=1)
+        if sr != 24000:
+            n_out = max(1, int(round(len(mono) * 24000.0 / float(sr))))
+            mono = np.interp(
+                np.linspace(0.0, max(0, len(mono) - 1), n_out),
+                np.arange(len(mono)),
+                mono,
+            ).astype(np.float32)
+            sr = 24000
+        max_frames = int(round(max_seconds * sr))
+        _save_pcm16_wav(clip_path, mono[:max_frames], sr)
+
+    trimmed_text = _trim_text_proportionally(ref_text, max_seconds / duration) if ref_text.strip() else ""
+    return clip_path, trimmed_text
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     print(
@@ -109,13 +166,21 @@ def load_model(req: LoadRequest):
         return {"loaded": True, "cached": True, "elapsed_s": 0.0}
 
     try:
+        import soundfile as sf
         import torch
+        import torchaudio
         from f5_tts.api import F5TTS
+
+        def _sf_load(uri, *l_args, **l_kwargs):
+            data, sr = sf.read(str(uri), always_2d=True, dtype="float32")
+            return torch.from_numpy(data.T.copy()), int(sr)
+
+        torchaudio.load = _sf_load
 
         ckpt_file, vocab_file = _find_ckpt_and_vocab(model_dir)
         dev = "cuda" if (args.device == "gpu" and torch.cuda.is_available()) else "cpu"
         kwargs: dict = {
-            "model": "F5TTS_v1_Base",
+            "model": _detect_model_arch(model_dir, ckpt_file),
             "ckpt_file": str(ckpt_file),
             "device": dev,
         }
@@ -143,9 +208,10 @@ def synthesize(req: SynthRequest):
 
     t0 = time.perf_counter()
     try:
+        ref_clip, matched_ref_text = _prepare_short_ref(speaker, req.ref_text.strip())
         wav, sr, _ = tts.infer(
-            ref_file=str(speaker),
-            ref_text=req.ref_text.strip(),
+            ref_file=str(ref_clip),
+            ref_text=matched_ref_text,
             gen_text=text,
             seed=req.seed if req.seed >= 0 else None,
         )

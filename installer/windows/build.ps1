@@ -1,8 +1,8 @@
-﻿# XYZ-PRODUCTIONS - Speech Studio installer compiler
+﻿# RAINBOW TECHNOLOGY - Speech Studio installer compiler
 $ErrorActionPreference = "Stop"
 
 Write-Host "==============================================================================" -ForegroundColor Magenta
-Write-Host "   XYZ-PRODUCTIONS - SPEECH STUDIO INSTALLER" -ForegroundColor Cyan
+Write-Host "   RAINBOW TECHNOLOGY - SPEECH STUDIO INSTALLER" -ForegroundColor Cyan
 Write-Host "==============================================================================" -ForegroundColor Magenta
 Write-Host ""
 

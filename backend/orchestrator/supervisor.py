@@ -64,7 +64,13 @@ class WorkerSupervisor:
     def venv_python(self, family: str) -> Path:
         from .catalog_capabilities import resolve_runtime_envs_root
 
-        base = resolve_runtime_envs_root(APP_ROOT) / family
+        root = resolve_runtime_envs_root(APP_ROOT)
+        # Prefer unified pytts environment for Python TTS engines when present.
+        if family in ("xtts", "f5", "fish", "kitten", "pytts"):
+            unified = root / "pytts" / ("Scripts" if sys.platform == "win32" else "bin") / ("python.exe" if sys.platform == "win32" else "python")
+            if unified.exists():
+                return unified
+        base = root / family
         if sys.platform == "win32":
             return base / "Scripts" / "python.exe"
         return base / "bin" / "python"
@@ -93,6 +99,12 @@ class WorkerSupervisor:
                 "vram_est_mib": w.vram_est_mib if w else 0,
                 "started_at": w.started_at if w else None,
             }
+        try:
+            from .crispasr import server_manager
+
+            families["crispasr"] = server_manager.status()
+        except Exception:
+            pass
         return {
             "workers": families,
             "live_captions_active": self.live_captions_active,
@@ -112,10 +124,22 @@ class WorkerSupervisor:
         if device == "cpu":
             return evicted
 
-        if total_vram_mib > 0 and vram_est_mib > total_vram_mib - 256:
-            raise InsufficientVramError(
-                f"Model requires ~{vram_est_mib} MiB, exceeding detected GPU VRAM ({total_vram_mib} MiB)."
-            )
+        if total_mib := total_vram_mib:
+            if vram_est_mib > total_mib - 256:
+                raise InsufficientVramError(
+                    f"Model requires ~{vram_est_mib} MiB, exceeding detected GPU VRAM ({total_mib} MiB)."
+                )
+
+        try:
+            from .crispasr import server_manager
+
+            st = server_manager.status()
+            if st.get("running") and st.get("device") == "gpu" and target_family != "crispasr":
+                server_manager.eject()
+                evicted.append("crispasr")
+                _, free_vram_mib = query_nvidia_vram()
+        except Exception:
+            pass
 
         if free_vram_mib >= vram_est_mib + 300:
             return evicted
@@ -138,31 +162,10 @@ class WorkerSupervisor:
         py_exe = self.venv_python(family)
         if py_exe.exists():
             return py_exe
-        req_file = APP_ROOT / "installer" / f"requirements-{family}.txt"
-        import shutil
-
-        uv_bin = shutil.which("uv")
-        if not uv_bin or not req_file.is_file():
-            raise FileNotFoundError(f"Worker venv not found: {py_exe}")
-
-        env_dir = py_exe.parent.parent
-        env_dir.parent.mkdir(parents=True, exist_ok=True)
-        creationflags = getattr(subprocess, "CREATE_NO_WINDOW", 0)
-        subprocess.run(
-            [uv_bin, "venv", str(env_dir), "--python", "3.12"],
-            check=True,
-            capture_output=True,
-            text=True,
-            creationflags=creationflags,
+        raise FileNotFoundError(
+            f"Python environment for '{family}' not found ({py_exe}). "
+            "Run installer/setup-env.ps1 or install the unified .venvs/pytts environment."
         )
-        subprocess.run(
-            [uv_bin, "pip", "install", "--python", str(py_exe), "-r", str(req_file)],
-            check=True,
-            capture_output=True,
-            text=True,
-            creationflags=creationflags,
-        )
-        return py_exe
 
     def spawn_worker(
         self,
@@ -197,6 +200,8 @@ class WorkerSupervisor:
             stdout=subprocess.PIPE,
             stderr=err_fh,
             text=True,
+            encoding="utf-8",
+            errors="replace",
             bufsize=1,
             creationflags=creationflags,
         )
@@ -252,6 +257,10 @@ class WorkerSupervisor:
         return handle
 
     def eject(self, family: str) -> bool:
+        if family == "crispasr":
+            from .crispasr import server_manager
+
+            return server_manager.eject()
         handle = self.active_workers.pop(family, None)
         if not handle:
             return False
@@ -277,5 +286,11 @@ class WorkerSupervisor:
         return True
 
     def shutdown_all(self) -> None:
+        try:
+            from .crispasr import server_manager
+
+            server_manager.eject()
+        except Exception:
+            pass
         for fam in list(self.active_workers.keys()):
             self.eject(fam)
