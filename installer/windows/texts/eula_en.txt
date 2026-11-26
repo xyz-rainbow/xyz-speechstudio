@@ -1,6 +1,6 @@
 ====================================================================
   RAINBOW TECHNOLOGY / XYZ-PRODUCTIONS - EXCLUSIVE ACCESS
-  SPEECH STUDIO v0.1.0 [INTERNAL MASTER RELEASE]
+  SPEECH STUDIO v0.1.1 [INTERNAL MASTER RELEASE]
 ====================================================================
 
 PROPRIETARY & CONFIDENTIAL SOFTWARE NOTICE:

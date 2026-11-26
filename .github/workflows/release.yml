@@ -57,6 +57,10 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v7
 
+      - name: Sync version to release tag
+        shell: pwsh
+        run: python scripts/sync_version.py --version "${{ github.ref_name }}"
+
       - name: Setup Node
         uses: actions/setup-node@v7
         with:
@@ -93,6 +97,7 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          $setup = Get-ChildItem -LiteralPath installer\Output -Filter "*_Setup.exe" | Select-Object -First 1
-          if (-not $setup) { throw "No se encontro SpeechStudio_*_Setup.exe" }
+          $ver = "${{ github.ref_name }}".TrimStart("v", "V")
+          $setup = Get-ChildItem -LiteralPath installer\Output -Filter "SpeechStudio_${ver}_Setup.exe" | Select-Object -First 1
+          if (-not $setup) { throw "No se encontro SpeechStudio_${ver}_Setup.exe" }
           gh release upload "${{ github.ref_name }}" $setup.FullName --clobber

@@ -7,6 +7,12 @@ Write-Host "====================================================================
 Write-Host ""
 
 $repo = (Resolve-Path (Join-Path $PSScriptRoot "..\..")).Path
+$tauriConf = Get-Content -LiteralPath (Join-Path $repo "src-tauri\tauri.conf.json") -Raw | ConvertFrom-Json
+$appVersion = [string]$tauriConf.version
+if (-not $appVersion) {
+    Write-Host "[ERROR] No se pudo leer version desde src-tauri\tauri.conf.json" -ForegroundColor Red
+    exit 1
+}
 $payload = Join-Path $PSScriptRoot "app_payload"
 $exe = Join-Path $repo "src-tauri\target\release\speech-studio.exe"
 $icon = Join-Path $repo "src-tauri\icons\icon.ico"
@@ -94,8 +100,8 @@ if (-not $isccPath) {
     exit 1
 }
 
-Write-Host "[INFO] Compilador: $isccPath" -ForegroundColor Green
-& $isccPath (Join-Path $PSScriptRoot "installer.iss")
+Write-Host "[INFO] Compilador: $isccPath (v$appVersion)" -ForegroundColor Green
+& $isccPath "/DMyAppVersion=$appVersion" (Join-Path $PSScriptRoot "installer.iss")
 if ($LASTEXITCODE -ne 0) {
     Write-Host "[ERROR] La compilacion fallo (codigo $LASTEXITCODE)." -ForegroundColor Red
     exit $LASTEXITCODE

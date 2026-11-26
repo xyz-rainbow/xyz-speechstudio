@@ -1,7 +1,7 @@
 {
   "app": {
     "name": "Speech Studio",
-    "phaseBadge": "v0.1.0"
+    "phaseBadge": "v0.1.1"
   },
   "nav": {
     "synthesize": "Sintetizar",

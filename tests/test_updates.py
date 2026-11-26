@@ -90,3 +90,10 @@ def test_urls_stay_on_this_repo() -> None:
     )
     assert asset_url_allowed("https://objects.githubusercontent.com/github-production-release-asset-1/a")
     assert not asset_url_allowed("https://evil.example/SpeechStudio_Setup.exe")
+
+
+def test_project_versions_stay_in_sync() -> None:
+    from scripts.sync_version import read_tauri_version, sync_all
+
+    errors = sync_all(read_tauri_version(), check_only=True)
+    assert errors == []

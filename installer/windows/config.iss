@@ -8,7 +8,9 @@
 
 ; --- 1. DATOS DE LA APLICACIÓN ---
 #define MyAppName "Speech Studio"
-#define MyAppVersion "0.1.0"
+#ifndef MyAppVersion
+  #define MyAppVersion "0.1.1"
+#endif
 #define MyAppPublisher "Rainbow Technology & XYZ-Productions"
 #define MyAppURL "https://github.com/xyz-rainbow/xyz-speechstudio"
 #define MyAppExeName "speech-studio.exe"
@@ -19,7 +21,7 @@
 #define MyDefaultDirName "{autopf}\XYZ-Productions\Speech Studio"
 #define MyDefaultGroupName "XYZ-Productions\Speech Studio"
 #define OutputDirectory "..\Output"
-#define OutputBaseFilename "SpeechStudio_0.1.0_Setup"
+#define OutputBaseFilename "SpeechStudio_" + MyAppVersion + "_Setup"
 
 ; --- 3. RECURSOS GRÁFICOS Y TEXTOS ---
 #define SetupIconPath "assets\app_icon.ico"

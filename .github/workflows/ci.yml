@@ -64,6 +64,9 @@ jobs:
       - name: Compile backend
         run: python -m compileall -q backend
 
+      - name: Verify version sync
+        run: python scripts/sync_version.py --check
+
       - name: Pytest
         run: pytest -q
 
