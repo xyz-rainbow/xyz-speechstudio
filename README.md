@@ -2,13 +2,15 @@
 
 # Speech Studio
 
-Local Windows desktop app for text-to-speech, voice cloning, and transcription.
+Local Windows desktop app for text-to-speech, voice cloning, and transcription — published by **Rainbow Technology**.
 
-[![CI](https://github.com/xyz-rainbow/xyz-speechstudio/actions/workflows/ci.yml/badge.svg)](https://github.com/xyz-rainbow/xyz-speechstudio/actions/workflows/ci.yml) [![License: Proprietary](https://img.shields.io/badge/license-Proprietary-red?style=flat-square)](LICENSE) [![Windows](https://img.shields.io/badge/platform-Windows-0078d4?style=flat-square&logo=windows&logoColor=white)](https://www.microsoft.com/windows) [![Tauri](https://img.shields.io/badge/Tauri-2-24c8db?style=flat-square&logo=tauri&logoColor=white)](https://tauri.app/) [![Python](https://img.shields.io/badge/Python-3.11%2B-3776ab?style=flat-square&logo=python&logoColor=white)](https://www.python.org/)
+[![CI](https://github.com/xyz-rainbow/xyz-speechstudio/actions/workflows/ci.yml/badge.svg)](https://github.com/xyz-rainbow/xyz-speechstudio/actions/workflows/ci.yml) [![Release v0.2.0](https://img.shields.io/badge/release-v0.2.0-39ff14?style=flat-square)](https://github.com/xyz-rainbow/xyz-speechstudio/releases/tag/v0.2.0) [![License: Proprietary](https://img.shields.io/badge/license-Proprietary-red?style=flat-square)](LICENSE) [![Windows](https://img.shields.io/badge/platform-Windows-0078d4?style=flat-square&logo=windows&logoColor=white)](https://www.microsoft.com/windows) [![Tauri](https://img.shields.io/badge/Tauri-2-24c8db?style=flat-square&logo=tauri&logoColor=white)](https://tauri.app/) [![Python](https://img.shields.io/badge/Python-3.12-3776ab?style=flat-square&logo=python&logoColor=white)](https://www.python.org/)
 
-Speech Studio is a [Tauri 2](https://tauri.app/) desktop shell (React + TypeScript + Rust) with a Python FastAPI orchestrator. It runs **Qwen3-TTS** locally for synthesis and voice profiles, and **faster-whisper** for file transcription. Windows is the primary platform (version `0.1.0`); **Ubuntu 24.04** can build and run the shell plus Python backend for TTS/STT development. Live captions, read-selection UI Automation, and Windows toasts remain Windows-only.
+Speech Studio `v0.2.0` is a [Tauri 2](https://tauri.app/) desktop shell (React + TypeScript + Rust) paired with a Python FastAPI orchestrator, bundled **[CrispASR](https://github.com/CrispStrobe/CrispASR)** (C++/CUDA & CPU, persistent `--server` VRAM mode), a unified **`pytts`** Python environment, and native CPU **eSpeak NG** (`espeakng-loader`). Windows 10/11 (x64) is the primary platform; **Ubuntu 24.04** can build and run the shell plus Python backend for TTS/STT development, while Live Captions, UI Automation read-selection, and Windows toasts remain Windows-only.
 
 ![Speech Studio banner](docs/assets/banner.svg)
+
+![Speech Studio interface](docs/assets/screenshot.png)
 
 ![Architecture: Tauri shell, orchestrator, and workers](docs/assets/architecture.svg)
 
@@ -16,31 +18,36 @@ Speech Studio is a [Tauri 2](https://tauri.app/) desktop shell (React + TypeScri
 
 ## Features
 
-- **TTS Studio** — synthesize with a cloned voice profile, preview playback, and export WAV history (save, save-as, reveal in Explorer, delete).
-- **Voice profiles** — create profiles from reference audio and a transcript; extract `.spk` / `.rvq` embeddings with the Qwen worker; transcribe the reference clip when needed.
-- **Transcriber** — transcribe `.wav`, `.mp3`, `.m4a`, `.flac`, or `.opus` files with local faster-whisper (tiny, base, small, medium, large-v3-turbo) or an external STT endpoint. Returns full text plus timestamped segments. Language can be auto-detected.
-- **Models & endpoints** — catalog entries carry `capabilities` (install mode, voice mode, languages). **Qwen and faster-whisper load today.** Place [CrispASR](https://github.com/CrispStrobe/CrispASR) at `runtime/bin/crispasr` (see `scripts/fetch-crispasr.ps1`) to enable Piper and F5 GGUF synthesis. Coqui XTTS v2 has a worker under `runtime/envs/xtts`; Parakeet, Moonshine, and Fish stay catalog-only until their runtime lands.
-- **Optional local API** — OpenAI-compatible `POST /v1/audio/speech` and `POST /v1/audio/transcriptions`, with an on/off switch, bind host (`127.0.0.1` or `0.0.0.0`), fixed or dynamic port, and a Bearer token. Listening on `0.0.0.0` requires a non-empty token. Settings will not save that combination, and the orchestrator will not serve it.
-- **External endpoints** — presets for OpenAI, Groq, ElevenLabs, and Deepgram, plus custom OpenAI-compatible URLs. Test connection and copy a cURL snippet from Settings.
-- **Windows desktop shell** — system tray (show/hide, captions shortcut, eject models, exit), single-instance, close-to-tray, NVIDIA VRAM meter, GPU or CPU device selectors, and a global hotkey that reads the selected text via UI Automation (the clipboard is not used) and sends it to TTS Studio.
-- **Notifications** — optional Windows toast notifications through `scripts/notify.ps1` (BurntToast / [xyz-windows-notify](https://github.com/xyz-rainbow/xyz-windows-notify)).
-- **UI** — English or Spanish (follows the in-app language setting), dark/light themes, accent colors, and an optional ASCII background.
-- **Live Captions overlay** — the Subtitles tab picks an app and streams its process-loopback audio to the selected STT (local faster-whisper or an external endpoint). The overlay shows that text. A live capture session has not been tried yet.
+- **TTS Studio (`Synthesize`)** — sentence- and word-aware section chunking with progressive background prefetching so long texts start playing faster; shared loading-bar / `<ChunkedAudioPlayer>` slot (timeline buffer, seek, volume/mute, cyclic speed `0.75x–3x`); red/rose **Stop** button cancelling backend generation (`POST /api/tts/cancel`); lime-green `FloatingPlaybackIsland` when navigating to other tabs; Smart Save WAV concatenation into `outputs_dir`; and automatic ephemeral `data/tmp/play_session/` cleanup.
+- **Voice profiles (`Profiles`)** — non-destructive 24 kHz mono WAV normalization, inline reference audio Play/Pause preview, warning badge on long clips (`>15s`) with non-destructive **Trim to 12s**, per-engine profile counters `(0)/(1)`, automatic `Ready` status for inline cloning engines, and built-in Parakeet/Whisper reference transcription.
+- **Transcriber** — transcribe `.wav`, `.mp3`, `.m4a`, `.flac`, or `.opus` files using local CrispASR **Parakeet TDT 0.6B v3** / **Whisper** (`faster-whisper` also supported) or external STT endpoints, returning full text + timestamped segments with auto language detection and an explicit clear (`×`) action.
+- **Live Captions (`Subtitles`)** — Discord-style paginated `2×2` window picker (`WindowPickerModal`), safe window enumeration (`spawn_blocking` + `IsHungAppWindow`), Windows WASAPI process-loopback PCM capture, and an overlay streaming captions from the selected STT backend.
+- **Models & Hub** — grouped **Featured** catalog with inline variant/quantization selectors, **Explore Hub** live Hugging Face search with `Ready` compatibility filter, **Import** from Hugging Face / ModelScope / direct URLs / local files, and per-model **`CrispASR | Python`** runtime toggles on dual-runtime cards (`Qwen3-TTS`, `F5-TTS`).
+- **Global CLI (`speechstudio`)** — connects to a running backend via `data/runtime.json` or spins up a temporary headless orchestrator (`play`, `status`, `models`, `profiles`, `transcribe`, `config`, `endpoints`, `--json`).
+- **Optional OpenAI-compatible Local API & External Endpoints** — `POST /v1/audio/speech` and `POST /v1/audio/transcriptions` (`127.0.0.1` or `0.0.0.0` with required Bearer token), plus presets for OpenAI, Groq, ElevenLabs, and Deepgram with connection testing and cURL snippet generation.
+- **Windows desktop shell** — fixed non-resizable `880×580` window, system tray, close confirmation popup (**Minimize App** vs **Close & Shut Down**), single-line system autostart toggle, NVIDIA VRAM meter, GPU/CPU device toggles, global UI Automation read-selection hotkey, persistent tab state, and start (`0%`) / completion (`100%`) download toast alerts via `scripts/notify.ps1`.
+
+### Supported TTS Engines (`v0.2.0`)
+
+10 local TTS engines verified end-to-end with real audio synthesis and NVIDIA Parakeet transcription:
+
+| Runtime | Engines | Notes |
+| --- | --- | --- |
+| **CrispASR** (C++/CUDA & CPU `--server`) | **Qwen3-TTS** (`1.7B Base`, `0.6B Base`, `CustomVoice`), **Kokoro 82M** (54 voices auto-packed to GGUF v3), **Piper**, **Chatterbox Turbo**, **CosyVoice3 0.5B** | Stays warm in VRAM across Play calls; frees VRAM immediately on **Eject**; `Chatterbox Multilingual`, `F5-TTS GGUF F16`, `IndexTTS 1.5`, and `Orpheus 3B` are also cataloged |
+| **Unified `pytts`** (`.venvs/pytts` / `runtime/envs/pytts`) | **Coqui XTTS v2**, **F5-TTS Spanish** (`F5TTS_Base` + automatic `<=11s` reference clip & transcript matching), **Fish Speech 1.5** (`v1.5.1`), **KittenTTS 2 Mini** (ONNX + multilingual `voices_<lang>.npz`) | Runs all four Python engines in a single environment |
+| **Native CPU** | **eSpeak NG** (`espeak-ng.dll` via `espeakng-loader` / `ctypes`) | Runs directly inside the `core` orchestrator without external servers |
 
 ## Requirements
 
-- Windows 10 or 11. The Rust sidecar, UI Automation hotkey, tray, toasts, and `runtime\envs\*\Scripts\python.exe` paths are Windows-specific.
-- [Node.js](https://nodejs.org/) 20+ and npm.
-- Rust stable and the [Tauri 2 Windows prerequisites](https://v2.tauri.app/start/prerequisites/).
-- 64-bit Python 3.11 or newer.
-- Optional: an NVIDIA GPU and a recent driver (`nvidia-smi` / NVML) for GPU inference and the VRAM meter. CPU mode is supported.
-- Optional: the PowerShell [BurntToast](https://github.com/Windos/BurntToast) module for toasts.
-
-Virtual environments come from [`installer/setup-env.ps1`](installer/setup-env.ps1) (`uv`, Python 3.12) and the pinned files [`installer/requirements-core.txt`](installer/requirements-core.txt), [`requirements-qwen.txt`](installer/requirements-qwen.txt), [`requirements-stt.txt`](installer/requirements-stt.txt), and [`requirements-xtts.txt`](installer/requirements-xtts.txt). The Windows package is Inno Setup: `installer/Output/SpeechStudio_0.1.0_Setup.exe`. A silent clean install on 24 Nov 2026 wrote the app to `C:\Program Files (x86)\XYZ-Productions\Speech Studio`. `setup-env.ps1` exited 0 and created the `runtime/envs`. A silent `/DIR` pointing at another folder was ignored. The template default is `{autopf}\XYZ-Productions\Speech Studio`. MSI and NSIS bundles from `tauri build` do not install Python. `uv` has to be on the machine. Model weights are not in the installer.
+- Windows 10 or 11 (x64). Inno Setup package: **`SpeechStudio_0.2.0_Setup.exe`** ([GitHub Releases `v0.2.0`](https://github.com/xyz-rainbow/xyz-speechstudio/releases/tag/v0.2.0)), publisher **Rainbow Technology**, default install directory `C:\Program Files\Rainbow Technology\Speech Studio` (plus Portable Mode).
+- Bundled CrispASR CUDA (`cuda/`) and CPU (`cpu/`) binaries under `runtime/bin/` (`scripts/fetch-crispasr.ps1`).
+- [`uv`](https://docs.astral.sh/uv/) and 64-bit Python 3.12 (for `installer/setup-env.ps1` creating `runtime/envs/core` and `runtime/envs/pytts`).
+- From source only: [Node.js](https://nodejs.org/) 20+, Rust stable, and [Tauri 2 Windows prerequisites](https://v2.tauri.app/start/prerequisites/).
+- Optional: NVIDIA GPU + driver (`nvidia-smi` / NVML) for GPU acceleration & VRAM meter; [BurntToast](https://github.com/Windos/BurntToast) PowerShell module for desktop toast notifications.
 
 ### Linux (Ubuntu 24.04) — development
 
-Install [Tauri prerequisites](https://v2.tauri.app/start/prerequisites/) for Linux, for example:
+Install [Tauri prerequisites](https://v2.tauri.app/start/prerequisites/) for Linux:
 
 ```bash
 sudo apt update
@@ -48,20 +55,20 @@ sudo apt install -y libwebkit2gtk-4.1-dev build-essential curl wget file \
   libxdo-dev libssl-dev libayatana-appindicator3-dev librsvg2-dev
 ```
 
-`installer/setup-env.ps1` is Windows-only. On Linux, create the same environments with `uv` and the requirements files (`bin/python`, not `Scripts/python.exe`):
+`installer/setup-env.ps1` is Windows-only. On Linux, create `core` and `pytts` with `uv` (`bin/python` instead of `Scripts/python.exe`):
 
 ```bash
 uv venv --python 3.12 runtime/envs/core
 uv pip install --python runtime/envs/core/bin/python -r installer/requirements-core.txt
-uv venv --python 3.12 runtime/envs/qwen
-uv pip install --python runtime/envs/qwen/bin/python -r installer/requirements-qwen.txt
-uv venv --python 3.12 runtime/envs/stt
-uv pip install --python runtime/envs/stt/bin/python -r installer/requirements-stt.txt
+
+uv venv --python 3.12 runtime/envs/pytts
+uv pip install --python runtime/envs/pytts/bin/python torch torchaudio --torch-backend=auto
+uv pip install --python runtime/envs/pytts/bin/python -r installer/requirements-pytts.txt
 ```
 
-XTTS also needs PyTorch before `installer/requirements-xtts.txt` (`uv pip install --python runtime/envs/xtts/bin/python torch torchaudio torchcodec --torch-backend=auto`, after `uv venv --python 3.12 runtime/envs/xtts`). Then `npm install` and `npm run tauri dev`. The Rust sidecar uses a process group on Unix instead of Windows Job Objects. On Linux, `notify-send` is used when notifications are enabled. Linux CI builds the shell and does not produce an AppImage or a `.deb`.
+Then run `npm install` and `npm run tauri dev`. On Unix, the Rust sidecar manages a process group instead of Windows Job Objects and uses `notify-send` when notifications are enabled.
 
-## Installation
+## Installation (Windows from Source)
 
 ```powershell
 git clone https://github.com/xyz-rainbow/xyz-speechstudio.git
@@ -70,19 +77,14 @@ npm install
 powershell -NoProfile -ExecutionPolicy Bypass -File .\installer\setup-env.ps1 -AppRoot (Get-Location).Path
 ```
 
-`setup-env.ps1` is the official bootstrap. It needs [`uv`](https://docs.astral.sh/uv/) and Python 3.12, and it creates four environments under `runtime\envs\` (the shell looks for `Scripts\python.exe` on Windows):
+`setup-env.ps1` creates the two runtime environments under `runtime\envs\` (local dev trees also detect `.venvs\`):
 
 | Venv | Requirements | Used for |
 | --- | --- | --- |
-| `runtime\envs\core` | `installer/requirements-core.txt` | Orchestrator (`backend.orchestrator.main`) + native eSpeak NG CPU engine |
-| `runtime\envs\pytts` | `installer/requirements-pytts.txt` | Unified Python TTS venv for XTTS v2 (`coqui-tts==0.28.0`), F5-TTS Spanish (`f5-tts`), Fish Speech 1.5 (`fish-speech @ v1.5.1`), and KittenTTS 2 Mini (`onnxruntime` + `phonemizer`) |
-| `runtime\envs\qwen` | `installer/requirements-qwen.txt` | Legacy Qwen Python worker (`realtimetts-qwen-native`) |
-| `runtime\envs\stt` | `installer/requirements-stt.txt` | faster-whisper worker |
-| `runtime\envs\xtts` | `installer/requirements-xtts.txt` | Standalone Coqui XTTS v2 fallback venv |
+| `runtime\envs\core` | `installer/requirements-core.txt` | Orchestrator (`backend.orchestrator.main`) + native CPU **eSpeak NG** |
+| `runtime\envs\pytts` | PyTorch + `installer/requirements-pytts.txt` | Unified Python TTS venv (**XTTS v2**, **F5-TTS**, **Fish Speech 1.5**, **KittenTTS 2 Mini**) |
 
-Models that support both CrispASR C++ and Python (`Qwen3-TTS`, `F5-TTS`) expose a per-model **CrispASR | Python** toggle on their card in **Models**; CrispASR keeps models warm in VRAM via persistent `--server` and frees them immediately when clicking **Eject** or switching to a Python GPU worker. Models without a CrispASR backend (`XTTS v2`, `Fish Speech 1.5`, `KittenTTS 2 Mini`, `eSpeak NG`) run exclusively on their native/Python runtime.
-
-Download a Qwen3-TTS GGUF pair (talker + tokenizer) and a faster-whisper model from the in-app **Models** view, or place them in the configured models folder. Built-in Qwen builds come from [`Serveurperso/Qwen3-TTS-GGUF`](https://huggingface.co/Serveurperso/Qwen3-TTS-GGUF); Whisper builds come from the Systran `faster-whisper-*` repos. XTTS checkpoint weights are not in git (Coqui Public Model License). On this tree the weights are already on disk; a real synthesis may still be validating. A load failed once because `six` was missing, until `pip install six` (`six` is now pinned). Parakeet, Moonshine, and Fish Audio do not load.
+Model weights are not committed to git and are downloaded cleanly from the in-app **Models** (`+`) modal (`Featured`, `Explore Hub`, `Import`).
 
 ## Usage
 
@@ -90,18 +92,16 @@ Download a Qwen3-TTS GGUF pair (talker + tokenizer) and a faster-whisper model f
 npm run tauri dev
 ```
 
-This starts the Vite UI and the Tauri window. The Rust sidecar launches the orchestrator from `runtime\envs\core` and writes `data/tmp/orchestrator.stderr.log`.
+1. Open **Models**, click **`+`**, and download a TTS model (for example **Qwen3-TTS**, **Kokoro 82M**, **XTTS v2**, or **F5-TTS Spanish**) and an STT model (**Parakeet TDT 0.6B v3** or **faster-whisper**).
+2. Open **Profiles** for voice-cloning models, choose a reference audio clip (with optional inline preview and non-destructive 12s trim), and transcribe/save the profile.
+3. Open **Synthesize**, select the model and voice/profile, type or paste text, and click **Play** (or **Stop** to cancel) or **Save** (exports WAV to `outputs_dir`).
+4. Open **Transcriber** for audio-to-text, or **Subtitles** to stream Live Captions from a selected desktop app.
 
-1. Open **Models**, download or select a TTS model and an STT model, and load the workers (GPU or CPU from the top bar).
-2. Open **Profiles**, add a reference audio file and its transcript, then extract the voice.
-3. Open **Synthesize**, pick the profile, enter text, and use **Play** or **Save** (exports a WAV and lists it in history).
-4. Open **Transcriber** to transcribe an audio file.
-
-Closing the main window hides it to the tray; use **Exit** in the tray to quit. The app enforces a single instance and focuses the existing window if you start it again.
+Closing the window opens the **Close Confirmation** dialog (**Minimize App** to tray or **Close & Shut Down**). The app enforces a single instance and focuses the active window if launched again.
 
 ### Local API
 
-In **Settings**, enable *Serve Local OpenAI-Compatible API*. Restart the app if you change the bind host or the fixed port (`0` means a dynamic port). If a Bearer token is set, send it as `Authorization: Bearer <token>`. Binding `0.0.0.0` requires a non-empty token; that combination is rejected on save and before the orchestrator listens.
+In **Settings**, enable *Serve Local OpenAI-Compatible API* (`127.0.0.1` or `0.0.0.0` with a required Bearer token):
 
 ```powershell
 curl.exe -X POST "http://127.0.0.1:<port>/v1/audio/speech" `
@@ -113,46 +113,47 @@ curl.exe -X POST "http://127.0.0.1:<port>/v1/audio/speech" `
 curl.exe -X POST "http://127.0.0.1:<port>/v1/audio/transcriptions" `
   -H "Authorization: Bearer <token>" `
   -F "file=@audio.wav" `
-  -F "model=faster-whisper-base"
+  -F "model=parakeet-tdt-0.6b-v3-gguf"
 ```
-
-`GET /health` reports whether the orchestrator is up. The API stays off until the setting is enabled.
 
 ## Configuration
 
-Settings are stored in `data/settings.json` (created on first run). Useful keys:
+Settings live in `data/settings.json` (created on first run):
 
 | Key | Meaning |
 | --- | --- |
 | `language` | UI language: `en` or `es` |
 | `theme`, `accent` | `dark` / `light` and neon accent (`cyber`, `emerald`, `amber`, `rose`) |
-| `models_dir`, `outputs_dir` | Custom folders; empty means `data/models` and `data/outputs` |
+| `models_dir`, `outputs_dir` | Custom folders; empty uses `data/models` and `data/outputs` |
+| `chunking_enabled`, `chunking_max_chars` | Split long TTS inputs into Play sections (`180 / 300 / 500` presets or slider) |
+| `model_runtimes` | Per-model runtime preference (`crispasr` or `python`) on dual-runtime models |
 | `tts_device`, `stt_device` | `gpu` or `cpu` |
 | `tts_source`, `stt_source` | `local` or `endpoint` |
 | `active_tts_model`, `active_stt_model` | Catalog model ids |
-| `api_endpoint_enabled`, `api_bind_host`, `api_fixed_port`, `api_bearer_token` | Local API |
-| `read_hotkey` | Global accelerator for “read selection” |
-| `notifications_enabled` | Windows toasts |
-| `external_endpoints` | Saved TTS/STT endpoint configs |
+| `api_endpoint_enabled`, `api_bind_host`, `api_fixed_port`, `api_bearer_token` | OpenAI-compatible Local API |
+| `read_hotkey` | Global UI Automation “read selection” accelerator |
+| `notifications_enabled` | Windows toast notifications |
+| `external_endpoints` | Saved external TTS/STT endpoint presets |
 
-Do not commit `data/`, voice profiles, API keys, or model weights. They are gitignored.
+Do not commit `data/`, voice profiles, API keys, or model weights; they are ignored by `.gitignore`.
 
 ## Development
 
 | Command | What it does |
 | --- | --- |
 | `npm run dev` | Vite UI only (`http://localhost:1420`) |
-| `npm run build` | Typecheck (`tsc --noEmit`) and Vite production build |
-| `npm run tauri dev` | Full desktop app |
-| `python -m compileall backend` | Syntax-check the orchestrator and workers |
-
-Lightweight tests live in `tests/` and run in CI (`pytest`). The `spikes/` tree holds earlier end-to-end experiments and is not part of CI.
-
-See [CONTRIBUTING.md](CONTRIBUTING.md) for pull request conventions.
+| `npm run build` | TypeScript check (`tsc --noEmit`) + Vite production bundle |
+| `npm run tauri build --no-bundle` | Build `src-tauri/target/release/speech-studio.exe` |
+| `.\installer\windows\build.ps1` | Package Inno Setup `installer/Output/SpeechStudio_<ver>_Setup.exe` |
+| `python scripts/sync_version.py --check` | Verify synced version across Tauri, npm, Cargo, locales, and Inno Setup |
+| `python -m compileall backend` | Syntax-check orchestrator and workers |
 
 ## Documentation
 
-[docs/README.md](docs/README.md) indexes the changelog, the community spec, known issues, and the living app notes in [docs/app/](docs/app/README.md).
+- [CHANGELOG.md](CHANGELOG.md) — full change history (`v0.2.0`).
+- [docs/releases/v0.2.0.md](docs/releases/v0.2.0.md) — `v0.2.0` release notes.
+- [docs/crispasr-research.md](docs/crispasr-research.md) — compatibility research across CrispASR C++ backends and unified `pytts`.
+- [docs/README.md](docs/README.md) — community spec, known issues, and app notes.
 
 ## Contributing
 
@@ -160,7 +161,7 @@ Issues, discussions, and pull requests are welcome. Please read [CONTRIBUTING.md
 
 ## Sponsor
 
-If the project is useful, you can [sponsor xyz-rainbow](https://github.com/sponsors/xyz-rainbow). Other platforms are listed in [`.github/FUNDING.yml`](.github/FUNDING.yml) (GitHub Sponsors, Patreon, Ko-fi, Buy Me a Coffee, PayPal).
+If the project is useful, you can [sponsor xyz-rainbow](https://github.com/sponsors/xyz-rainbow). Other platforms are listed in [`.github/FUNDING.yml`](.github/FUNDING.yml).
 
 ## License
 
