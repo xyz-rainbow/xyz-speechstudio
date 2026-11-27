@@ -23,7 +23,7 @@ DefaultDirName={#MyDefaultDirName}
 DefaultGroupName={#MyDefaultGroupName}
 AllowNoIcons=yes
 DisableDirPage=no
-UsePreviousAppDir=no
+UsePreviousAppDir=not IsPortable
 DisableProgramGroupPage=yes
 
 OutputDir={#OutputDirectory}
@@ -32,7 +32,7 @@ OutputBaseFilename={#OutputBaseFilename}
 Compression=lzma2/ultra64
 SolidCompression=yes
 LZMAUseSeparateProcess=yes
-LZMADictionarySize=1048576
+LZMADictionarySize=65536
 
 WizardStyle=modern
 WizardImageFile={#SideBannerPath}
@@ -47,15 +47,22 @@ InfoBeforeFile={#InfoBeforePath}
 LicenseFile={#LicenseEsPath}
 
 PrivilegesRequired=admin
+PrivilegesRequiredOverridesAllowed=commandline
 
-Uninstallable=yes
-CreateUninstallRegKey=yes
+Uninstallable=not IsPortable
+CreateUninstallRegKey=not IsPortable
 
 [Languages]
 Name: "es"; MessagesFile: "compiler:Languages\Spanish.isl"; LicenseFile: "{#LicenseEsPath}"
 Name: "en"; MessagesFile: "compiler:Default.isl"; LicenseFile: "{#LicenseEnPath}"
 
 [CustomMessages]
+en.CudaTask=Download NVIDIA CUDA acceleration (Internet required)
+es.CudaTask=Descargar aceleracion NVIDIA CUDA (requiere Internet)
+en.CudaDownloading=Downloading and verifying NVIDIA CUDA runtime...
+es.CudaDownloading=Descargando y verificando el runtime NVIDIA CUDA...
+en.CudaFailure=CUDA download or verification failed. CPU inference is available.
+es.CudaFailure=Fallo la descarga o verificacion de CUDA. Puedes usar el motor CPU.
 es.NfoTitle=Información de la Release
 es.NfoSubTitle=Detalles del paquete y especificaciones internas.
 en.NfoTitle=Release Information
@@ -98,6 +105,7 @@ es.PortableCheckboxCaption=Modo Portable (crear carpeta autónoma sin registrar 
 en.PortableCheckboxCaption=Portable Mode (standalone folder, no Windows registry keys)
 
 [Tasks]
+Name: "cuda"; Description: "{cm:CudaTask}"; Flags: unchecked
 Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{cm:AdditionalIcons}"; Check: NotPortable
 
 [Files]
@@ -106,19 +114,6 @@ Source: "app_payload\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs c
 ; Icono del asistente, copiado junto a la app
 Source: "{#SetupIconPath}"; DestDir: "{app}"; Flags: ignoreversion
 
-[Dirs]
-Name: "{app}\data"; Permissions: users-modify; Flags: uninsneveruninstall
-Name: "{app}\data\models"; Permissions: users-modify; Flags: uninsneveruninstall
-Name: "{app}\data\profiles"; Permissions: users-modify; Flags: uninsneveruninstall
-Name: "{app}\data\outputs"; Permissions: users-modify; Flags: uninsneveruninstall
-Name: "{app}\data\tmp"; Permissions: users-modify; Flags: uninsneveruninstall
-Name: "{app}\.venvs"; Permissions: users-modify
-Name: "{app}\runtime"; Permissions: users-modify
-Name: "{app}\runtime\envs"; Permissions: users-modify
-Name: "{app}\runtime\bin"; Permissions: users-modify
-Name: "{app}\runtime\bin\cuda"; Permissions: users-modify
-Name: "{app}\runtime\bin\cpu"; Permissions: users-modify
-
 [Icons]
 Name: "{commonprograms}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; WorkingDir: "{app}"; IconFilename: "{app}\speech-studio.ico"; Check: IsAllUsers
 Name: "{commonprograms}\{cm:UninstallProgram,{#MyAppName}}"; Filename: "{uninstallexe}"; Check: IsAllUsers
@@ -126,7 +121,6 @@ Name: "{commondesktop}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; Working
 Name: "{app}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; WorkingDir: "{app}"; IconFilename: "{app}\speech-studio.ico"; Check: IsPortable
 
 [Run]
-Filename: "{sys}\WindowsPowerShell\v1.0\powershell.exe"; Parameters: "-NoProfile -WindowStyle Hidden -ExecutionPolicy Bypass -File ""{app}\installer\setup-env.ps1"" -AppRoot ""{app}"""; StatusMsg: "Preparando entornos Python (core, pytts)..."; Flags: waituntilterminated runhidden
 Filename: "{app}\{#MyAppExeName}"; WorkingDir: "{app}"; Description: "{cm:LaunchApp}"; Flags: nowait postinstall skipifsilent
 
 [Code]
@@ -152,7 +146,8 @@ var
 
 function IsPortable(): Boolean;
 begin
-  Result := (PortableCheckBox <> nil) and PortableCheckBox.Checked;
+  Result := (ExpandConstant('{param:portable|0}') = '1') or
+    ((PortableCheckBox <> nil) and PortableCheckBox.Checked);
 end;
 
 function IsAllUsers(): Boolean;
@@ -324,7 +319,6 @@ begin
   AllUsersRadio.Caption := CustomMessage('AllUsersInstallCaption');
   AllUsersRadio.Checked := True;
   AllUsersRadio.OnClick := @OnScopeChange;
-  WizardForm.DirEdit.Text := ExpandConstant('{#MyDefaultDirName}');
 
   PortableCheckBox := TCheckBox.Create(WizardForm);
   PortableCheckBox.Parent := WizardForm.SelectDirPage;
@@ -381,12 +375,21 @@ begin
 end;
 
 procedure CurStepChanged(CurStep: TSetupStep);
+var
+  RuntimeExitCode: Integer;
 begin
+  if (CurStep = ssPostInstall) and WizardIsTaskSelected('cuda') then
+  begin
+    WizardForm.StatusLabel.Caption := CustomMessage('CudaDownloading');
+    if not Exec(ExpandConstant('{sys}\WindowsPowerShell\v1.0\powershell.exe'),
+      '-NoProfile -ExecutionPolicy Bypass -File "' + ExpandConstant('{app}\scripts\fetch-crispasr.ps1') + '" -Variant cuda',
+      ExpandConstant('{app}'), SW_HIDE, ewWaitUntilTerminated, RuntimeExitCode) then
+      MsgBox(CustomMessage('CudaFailure'), mbInformation, MB_OK)
+    else if RuntimeExitCode <> 0 then
+      MsgBox(CustomMessage('CudaFailure'), mbInformation, MB_OK);
+  end;
   if (CurStep = ssPostInstall) and IsPortable() then
   begin
-    RegDeleteKeyIncludingSubkeys(HKEY_CURRENT_USER, 'Software\Microsoft\Windows\CurrentVersion\Uninstall\' + ExpandConstant('{#MyAppId}') + '_is1');
-    RegDeleteKeyIncludingSubkeys(HKEY_LOCAL_MACHINE, 'Software\Microsoft\Windows\CurrentVersion\Uninstall\' + ExpandConstant('{#MyAppId}') + '_is1');
-    DeleteFile(ExpandConstant('{app}\unins000.exe'));
-    DeleteFile(ExpandConstant('{app}\unins000.dat'));
+    SaveStringToFile(ExpandConstant('{app}\portable.txt'), 'Speech Studio portable mode', False);
   end;
 end;

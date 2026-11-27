@@ -252,7 +252,7 @@ def discover_voices(force_refresh: bool = False) -> list[dict[str, str]]:
                 "gender": str(row.get("gender") or ""),
             }
             tag = (
-                "Loquendo 32-bit"
+                f"Loquendo {'32-bit' if src == 'sapi32' else '64-bit'}"
                 if _is_loquendo(item)
                 else ("32-bit" if src == "sapi32" else ("OneCore" if src == "onecore" else "64-bit"))
             )

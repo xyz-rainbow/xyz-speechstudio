@@ -318,3 +318,19 @@ def resolve_runtime_envs_root(app_root: Path) -> Path:
     if legacy.is_dir():
         return legacy
     return canonical
+
+
+def resolve_runtime_python(app_root: Path, family: str, *, windows: bool) -> Path:
+    """Resolve each environment independently during partial runtime upgrades."""
+    roots = [app_root / "runtime" / "envs", app_root / ".venvs"]
+    families = ["pytts", family] if family in {"xtts", "f5", "fish", "kitten"} else [family]
+    suffix = ("Scripts", "python.exe") if windows else ("bin", "python")
+    for name in families:
+        for root in roots:
+            candidate = root.joinpath(name, *suffix)
+            if candidate.is_file():
+                return candidate
+    bundled = app_root / "runtime" / "python" / ("python.exe" if windows else "bin/python3")
+    if family == "stt" and bundled.is_file():
+        return bundled
+    return roots[0].joinpath(family, *suffix)

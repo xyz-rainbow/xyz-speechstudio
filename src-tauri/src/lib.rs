@@ -2,6 +2,7 @@ mod audio_capture;
 mod autostart;
 mod dialogs;
 mod notify;
+mod paths;
 mod selection;
 mod sidecar;
 mod tray;
@@ -201,7 +202,7 @@ struct HotkeySettings {
 
 #[cfg(any(windows, target_os = "linux"))]
 fn configured_read_hotkey(app_root: &std::path::Path) -> Option<String> {
-    let text = std::fs::read_to_string(app_root.join("data").join("settings.json")).ok()?;
+    let text = std::fs::read_to_string(paths::data_dir(app_root).join("settings.json")).ok()?;
     let parsed: HotkeySettings = serde_json::from_str(&text).ok()?;
     parsed.read_hotkey.filter(|s| !s.trim().is_empty())
 }
@@ -233,6 +234,7 @@ pub fn run() {
         )
         .manage(backend)
         .setup(|app| {
+            selection::initialize();
             tray::create_tray(app.handle())?;
             if std::env::args().any(|arg| arg == "--minimized") {
                 if let Some(win) = app.get_webview_window("main") {

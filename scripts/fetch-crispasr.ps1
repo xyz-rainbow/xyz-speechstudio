@@ -37,6 +37,16 @@ function Install-Variant([string]$v) {
     $ZipPath = Join-Path $env:TEMP ("crispasr-" + $v + "-" + [guid]::NewGuid().ToString("N") + ".zip")
     Write-Host "Downloading $($Asset.browser_download_url) ..."
     Invoke-WebRequest -Uri $Asset.browser_download_url -OutFile $ZipPath
+    if ((Get-Item -LiteralPath $ZipPath).Length -ne [long]$Asset.size) {
+        throw 'Downloaded runtime size does not match the release asset'
+    }
+    if (-not $Asset.digest -or $Asset.digest -notmatch '^sha256:([0-9a-fA-F]{64})$') {
+        throw 'The release asset has no valid SHA-256 digest'
+    }
+    $ExpectedHash = $Matches[1]
+    if ((Get-FileHash -LiteralPath $ZipPath -Algorithm SHA256).Hash -ne $ExpectedHash) {
+        throw 'Downloaded runtime SHA-256 does not match the release asset'
+    }
 
     $ExtractDir = Join-Path $env:TEMP ("crispasr-extract-" + $v + "-" + [guid]::NewGuid().ToString("N"))
     New-Item -ItemType Directory -Force -Path $ExtractDir | Out-Null
@@ -48,16 +58,35 @@ function Install-Variant([string]$v) {
     }
 
     $DestDir = Join-Path $BinDir $v
-    New-Item -ItemType Directory -Force -Path $DestDir | Out-Null
-    # Clear previous install of this variant (keep sibling variants).
-    Get-ChildItem -LiteralPath $DestDir -Force -ErrorAction SilentlyContinue |
-        Remove-Item -Recurse -Force -ErrorAction SilentlyContinue
-
-    Copy-Item -Force $Exe.FullName (Join-Path $DestDir "crispasr.exe")
+    $ResolvedBin = [IO.Path]::GetFullPath($BinDir)
+    $ResolvedDest = [IO.Path]::GetFullPath($DestDir)
+    if ([IO.Path]::GetDirectoryName($ResolvedDest) -ne $ResolvedBin) {
+        throw 'Unexpected runtime destination'
+    }
+    $StagingDir = Join-Path $BinDir ($v + '.staging-' + [guid]::NewGuid().ToString('N'))
+    $BackupDir = Join-Path $BinDir ($v + '.previous-' + [guid]::NewGuid().ToString('N'))
+    New-Item -ItemType Directory -Path $StagingDir | Out-Null
+    Copy-Item -LiteralPath $Exe.FullName -Destination (Join-Path $StagingDir "crispasr.exe")
     $Dlls = Get-ChildItem -Path $Exe.Directory.FullName -File -Filter "*.dll" -ErrorAction SilentlyContinue
     foreach ($dll in $Dlls) {
-        Copy-Item -Force $dll.FullName (Join-Path $DestDir $dll.Name)
+        Copy-Item -LiteralPath $dll.FullName -Destination (Join-Path $StagingDir $dll.Name)
     }
+    if (Test-Path -LiteralPath $DestDir) {
+        Move-Item -LiteralPath $DestDir -Destination $BackupDir
+    }
+    try {
+        Move-Item -LiteralPath $StagingDir -Destination $DestDir
+    } catch {
+        if (Test-Path -LiteralPath $BackupDir) { Move-Item -LiteralPath $BackupDir -Destination $DestDir }
+        throw
+    }
+    foreach ($TemporaryDir in @($BackupDir, $ExtractDir)) {
+        $ResolvedTemporary = [IO.Path]::GetFullPath($TemporaryDir)
+        $AllowedParent = if ($TemporaryDir -eq $BackupDir) { $ResolvedBin } else { [IO.Path]::GetFullPath($env:TEMP) }
+        if ([IO.Path]::GetDirectoryName($ResolvedTemporary) -ne $AllowedParent) { throw 'Unexpected cleanup directory' }
+        if (Test-Path -LiteralPath $ResolvedTemporary) { Remove-Item -LiteralPath $ResolvedTemporary -Recurse -Force }
+    }
+    Remove-Item -LiteralPath $ZipPath -Force
     Write-Host "Installed [$v]: $(Join-Path $DestDir 'crispasr.exe') (+ $($Dlls.Count) DLLs)"
 }
 

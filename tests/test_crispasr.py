@@ -107,7 +107,7 @@ def test_supports_engine_requires_binary(monkeypatch, tmp_path: Path):
     )
     assert crispasr.supports_engine("piper") is True
     assert crispasr.supports_engine("kokoro") is True
-    assert crispasr.supports_engine("espeak") is True
+    assert crispasr.supports_engine("espeak") is False
     assert crispasr.supports_engine("f5-tts") is True
     assert crispasr.supports_engine("unknown-engine") is False
     assert crispasr.stt_backend_for_model("parakeet-tdt-0.6b-v3") == "parakeet"
@@ -128,7 +128,7 @@ def test_synthesize_tts_uses_ascii_temp_for_non_ascii_output(monkeypatch, tmp_pa
 
     seen_out: list[str] = []
 
-    def fake_run(cmd, **_kwargs):
+    def fake_run(*, cmd, **_kwargs):
         out_arg = Path(cmd[cmd.index("--tts-output") + 1])
         seen_out.append(str(out_arg))
         with wave.open(str(out_arg), "wb") as wf:
@@ -137,14 +137,9 @@ def test_synthesize_tts_uses_ascii_temp_for_non_ascii_output(monkeypatch, tmp_pa
             wf.setframerate(22050)
             wf.writeframes(b"\x00\x00" * 100)
 
-        class Res:
-            returncode = 0
-            stdout = ""
-            stderr = ""
+        return 0, "", ""
 
-        return Res()
-
-    monkeypatch.setattr(crispasr.subprocess, "run", fake_run)
+    monkeypatch.setattr(crispasr.server_manager, "run_cli_cancelable", fake_run)
     dest = tmp_path / "[🛠️]" / "out.wav"
     res = crispasr.synthesize_tts(engine="piper", text="Hola", out_path=dest)
     assert dest.is_file() and dest.stat().st_size > 44

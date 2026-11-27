@@ -20,6 +20,8 @@ SEMVER_RE = re.compile(r"^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$")
 
 TAURI_CONF = ROOT / "src-tauri" / "tauri.conf.json"
 PACKAGE_JSON = ROOT / "package.json"
+PACKAGE_LOCK = ROOT / "package-lock.json"
+BACKEND_VERSION = ROOT / "backend" / "orchestrator" / "__init__.py"
 CARGO_TOML = ROOT / "src-tauri" / "Cargo.toml"
 LOCALE_EN = ROOT / "src" / "i18n" / "locales" / "en.json"
 LOCALE_ES = ROOT / "src" / "i18n" / "locales" / "es.json"
@@ -88,6 +90,13 @@ def sync_all(version: str, check_only: bool) -> list[str]:
     for err in (
         _sync_json_key(TAURI_CONF, ("version",), version, check_only),
         _sync_json_key(PACKAGE_JSON, ("version",), version, check_only),
+        _sync_json_key(PACKAGE_LOCK, ("version",), version, check_only),
+        _sync_json_key(PACKAGE_LOCK, ("packages", "", "version"), version, check_only),
+        _sync_regex(
+            BACKEND_VERSION,
+            re.compile(r'(?m)^(__version__ = ")([^"]+)(")'),
+            rf"\g<1>{version}\g<3>", version, "backend version", check_only,
+        ),
         _sync_json_key(LOCALE_EN, ("app", "phaseBadge"), f"v{version}", check_only),
         _sync_json_key(LOCALE_ES, ("app", "phaseBadge"), f"v{version}", check_only),
         _sync_regex(

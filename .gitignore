@@ -62,6 +62,7 @@ Desktop.ini
 
 # editors
 .idea/
+.cursor
 .vscode/
 *.swp
 
@@ -71,3 +72,15 @@ Desktop.ini
 installer/windows/app_payload/**
 !installer/windows/app_payload/.gitkeep
 installer/Output/
+
+# Local clean-install validation copies
+/_clean_install_test/
+/_clean_install_from_setup/
+
+# Downloaded optional runtime packages
+/runtime/packages/
+/runtime/python/
+/.packaging/
+/runtime/bin/metal/
+/runtime/bin/*.staging-*/
+/runtime/bin/*.previous-*/

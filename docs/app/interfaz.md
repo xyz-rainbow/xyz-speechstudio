@@ -2,7 +2,7 @@
 
 ## Ahora
 
-Una ventana principal, 880×580, con sidebar de iconos que se pliega. El estado del pliegue se guarda en Ajustes.
+Una ventana principal con tamaño inicial y mínimo de 880×580, redimensionable y maximizable, con sidebar de iconos que se pliega. El estado del pliegue se guarda en Ajustes.
 
 Pestañas: Synthesize, Profiles, Transcriber, Subtitles, Models, Settings.
 

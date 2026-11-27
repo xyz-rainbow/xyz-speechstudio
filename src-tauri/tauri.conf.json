@@ -1,7 +1,7 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
   "productName": "Speech Studio",
-  "version": "0.2.1",
+  "version": "0.2.2",
   "identifier": "com.xyz.speechstudio",
   "build": {
     "beforeDevCommand": "npm run dev",
@@ -18,8 +18,8 @@
         "height": 580,
         "minWidth": 880,
         "minHeight": 580,
-        "resizable": false,
-        "maximizable": false,
+        "resizable": true,
+        "maximizable": true,
         "center": true,
         "decorations": true
       }

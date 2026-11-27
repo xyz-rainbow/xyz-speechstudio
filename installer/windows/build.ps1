@@ -1,4 +1,5 @@
 ﻿# RAINBOW TECHNOLOGY - Speech Studio installer compiler
+param([switch]$IncludeCuda)
 $ErrorActionPreference = "Stop"
 
 Write-Host "==============================================================================" -ForegroundColor Magenta
@@ -27,8 +28,17 @@ if (-not (Test-Path -LiteralPath $icon)) {
     exit 1
 }
 
+if ((Get-Item -LiteralPath $exe).LastWriteTimeUtc -lt (Get-Item -LiteralPath (Join-Path $repo 'src-tauri\tauri.conf.json')).LastWriteTimeUtc) {
+    throw 'Executable predates the version configuration. Run npx tauri build --no-bundle first.'
+}
 Write-Host "[INFO] Preparando app_payload" -ForegroundColor Cyan
-Get-ChildItem -LiteralPath $payload -Force | Where-Object { $_.Name -ne ".gitkeep" } | Remove-Item -Recurse -Force
+$payloadAbsolute = [IO.Path]::GetFullPath($payload)
+if ($payloadAbsolute -ne [IO.Path]::GetFullPath((Join-Path $repo 'installer\windows\app_payload'))) {
+    throw 'Unexpected payload directory'
+}
+Get-ChildItem -LiteralPath $payloadAbsolute -Force | Where-Object { $_.Name -ne ".gitkeep" } | ForEach-Object {
+    Remove-Item -LiteralPath $_.FullName -Recurse -Force
+}
 Copy-Item -LiteralPath $exe -Destination (Join-Path $payload "speech-studio.exe")
 Copy-Item -LiteralPath $icon -Destination (Join-Path $payload "speech-studio.ico")
 Copy-Item -LiteralPath (Join-Path $repo "backend") -Destination (Join-Path $payload "backend") -Recurse
@@ -36,6 +46,7 @@ Get-ChildItem -LiteralPath (Join-Path $payload "backend") -Recurse -Directory -F
     Remove-Item -Recurse -Force
 New-Item -ItemType Directory -Force -Path (Join-Path $payload "scripts") | Out-Null
 Copy-Item -LiteralPath (Join-Path $repo "scripts\notify.ps1") -Destination (Join-Path $payload "scripts\notify.ps1")
+Copy-Item -LiteralPath (Join-Path $repo "scripts\fetch-crispasr.ps1") -Destination (Join-Path $payload "scripts\fetch-crispasr.ps1")
 if (Test-Path -LiteralPath (Join-Path $repo "scripts\speechstudio.cmd")) {
     Copy-Item -LiteralPath (Join-Path $repo "scripts\speechstudio.cmd") -Destination (Join-Path $payload "scripts\speechstudio.cmd")
 }
@@ -47,7 +58,9 @@ if (Test-Path -LiteralPath (Join-Path $crispasrSrc "README.md")) {
     Copy-Item -LiteralPath (Join-Path $crispasrSrc "README.md") -Destination (Join-Path $crispasrDst "README.md")
 }
 $packed = 0
-foreach ($variant in @("cuda", "cpu")) {
+$variants = @('cpu')
+if ($IncludeCuda) { $variants += 'cuda' }
+foreach ($variant in $variants) {
     $srcVar = Join-Path $crispasrSrc $variant
     if (-not (Test-Path -LiteralPath $srcVar)) { continue }
     $dstVar = Join-Path $crispasrDst $variant
@@ -67,7 +80,7 @@ Get-ChildItem -LiteralPath $crispasrSrc -File -ErrorAction SilentlyContinue |
         $packed++
     }
 if ($packed -gt 0) {
-    Write-Host "[INFO] CrispASR empaquetado ($packed archivos; cuda/ + cpu/ si existen)" -ForegroundColor Green
+    Write-Host "[INFO] CrispASR empaquetado ($packed archivos; $($variants -join ', '))" -ForegroundColor Green
 } else {
     Write-Host "[WARN] Sin crispasr en runtime\bin\cuda|cpu — ejecuta scripts\fetch-crispasr.ps1" -ForegroundColor Yellow
 }
@@ -77,6 +90,17 @@ Copy-Item -LiteralPath (Join-Path $repo "installer\setup-env.ps1") -Destination 
 Get-ChildItem -LiteralPath (Join-Path $repo "installer") -Filter "requirements-*.txt" | ForEach-Object {
     Copy-Item -LiteralPath $_.FullName -Destination $stagedInstaller
 }
+
+# uv is a build-time dependency. The installed app carries this interpreter.
+$buildPython = Join-Path $repo 'data\tmp\installer-core\Scripts\python.exe'
+if (-not (Test-Path -LiteralPath $buildPython)) {
+    & uv venv --managed-python --python 3.12 (Join-Path $repo 'data\tmp\installer-core')
+    if ($LASTEXITCODE -ne 0) { throw 'Could not create the core packaging environment' }
+}
+& uv pip install --python $buildPython -r (Join-Path $repo 'installer\requirements-core.txt') -r (Join-Path $repo 'installer\requirements-stt-cpu.txt')
+if ($LASTEXITCODE -ne 0) { throw 'Could not install core packaging dependencies' }
+& $buildPython (Join-Path $repo 'scripts\package_runtime.py') --output (Join-Path $payload 'runtime\python')
+if ($LASTEXITCODE -ne 0) { throw 'Could not package the standalone core runtime' }
 
 $isccCandidates = @(
     "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe",
@@ -101,7 +125,7 @@ if (-not $isccPath) {
 }
 
 Write-Host "[INFO] Compilador: $isccPath (v$appVersion)" -ForegroundColor Green
-& $isccPath "/DMyAppVersion=$appVersion" (Join-Path $PSScriptRoot "installer.iss")
+& $isccPath /Qp "/DMyAppVersion=$appVersion" (Join-Path $PSScriptRoot "installer.iss")
 if ($LASTEXITCODE -ne 0) {
     Write-Host "[ERROR] La compilacion fallo (codigo $LASTEXITCODE)." -ForegroundColor Red
     exit $LASTEXITCODE

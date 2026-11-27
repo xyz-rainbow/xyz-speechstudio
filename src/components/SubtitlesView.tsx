@@ -4,6 +4,7 @@ import { AppWindow, Captions, ChevronDown, Monitor, RefreshCw, X } from "lucide-
 import { clsx } from "clsx";
 import { BorderBeamButton } from "./BorderBeamButton";
 import { GlassCard } from "./GlassCard";
+import { SttModelSelector } from "./SttModelSelector";
 import { WindowPickerModal } from "./WindowPickerModal";
 import { useI18n } from "../i18n";
 import {
@@ -18,7 +19,7 @@ import {
   toggleOverlayWindow,
   type AudioAppRow,
 } from "../services/api";
-import type { AppSettings } from "../types";
+import type { AppSettings, CatalogModelEntry } from "../types";
 
 interface CaptionEvent {
   type: "partial" | "final" | "error" | "status";
@@ -32,14 +33,18 @@ function rowKey(row: AudioAppRow): string {
 
 interface SubtitlesViewProps {
   baseUrl: string;
+  catalog: CatalogModelEntry[];
   settings: AppSettings;
+  onSaveSettings: (next: AppSettings) => Promise<void>;
   onAfterGpuAction: () => void;
   liveCaptionsSupported: boolean;
 }
 
 export const SubtitlesView: React.FC<SubtitlesViewProps> = ({
   baseUrl,
+  catalog,
   settings,
+  onSaveSettings,
   onAfterGpuAction,
   liveCaptionsSupported,
 }) => {
@@ -54,14 +59,9 @@ export const SubtitlesView: React.FC<SubtitlesViewProps> = ({
   const [history, setHistory] = useState<string[]>([]);
   const [error, setError] = useState("");
 
-  const activeLabel =
-    settings.stt_source === "endpoint"
-      ? settings.external_endpoints.find((ep) => ep.id === settings.active_stt_endpoint_id)?.name ||
-        t("subtitles.noEndpoint")
-      : settings.active_stt_model || t("models.noLocalInstalled");
-
   useEffect(() => {
     let unlisten: (() => void) | undefined;
+    let disposed = false;
     listen<string>("caption", (ev) => {
       let body: CaptionEvent;
       try {
@@ -91,9 +91,13 @@ export const SubtitlesView: React.FC<SubtitlesViewProps> = ({
         });
       }
     }).then((fn) => {
-      unlisten = fn;
+      if (disposed) fn();
+      else unlisten = fn;
     });
-    return () => unlisten?.();
+    return () => {
+      disposed = true;
+      unlisten?.();
+    };
   }, [baseUrl, settings.captions_max_history]);
 
   const refreshApps = async () => {
@@ -146,9 +150,9 @@ export const SubtitlesView: React.FC<SubtitlesViewProps> = ({
           : "";
       const wsUrl = baseUrl.replace(/^http/i, "ws") + `/api/captions/stream${query}`;
       await showOverlayWindow();
-      await startLiveCaptions(selectedRow.pid, wsUrl, "auto", selectedRow.stream_index);
       await setCaptionsLock(baseUrl, true);
       setRunning(true);
+      await startLiveCaptions(selectedRow.pid, wsUrl, "auto", selectedRow.stream_index);
       void notify(settings.notifications_enabled, t("toast.title"), t("toast.captionsOn"));
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
@@ -184,7 +188,12 @@ export const SubtitlesView: React.FC<SubtitlesViewProps> = ({
           <span className="text-xs" style={{ color: "var(--text-secondary)" }}>
             {t("subtitles.activeStt")}
           </span>
-          <span className="text-xs font-mono">{activeLabel}</span>
+          <SttModelSelector
+            catalog={catalog}
+            settings={settings}
+            onSaveSettings={onSaveSettings}
+            disabled={running || busy}
+          />
         </div>
         <BorderBeamButton onClick={() => toggleOverlayWindow()}>
           <Captions className="w-4 h-4" />

@@ -33,8 +33,8 @@ def test_default_settings() -> None:
     settings = AppSettings()
     assert settings.language == "en"
     assert settings.theme == "dark"
-    assert settings.tts_device == "gpu"
-    assert settings.stt_device == "gpu"
+    assert settings.tts_device == "cpu"
+    assert settings.stt_device == "cpu"
     assert settings.tts_source == "local"
     assert settings.stt_source == "local"
     assert settings.api_endpoint_enabled is False
@@ -42,6 +42,12 @@ def test_default_settings() -> None:
     assert settings.api_bearer_token == ""
     assert settings.active_stt_model == "faster-whisper-base"
     assert settings.close_behavior == "ask"
+
+
+def test_explicit_gpu_settings_are_preserved() -> None:
+    settings = AppSettings.model_validate({"tts_device": "gpu", "stt_device": "gpu"})
+    assert settings.tts_device == "gpu"
+    assert settings.stt_device == "gpu"
 
 
 def test_public_bind_requires_bearer_token() -> None:

@@ -3,7 +3,10 @@
 from __future__ import annotations
 
 import sys
+import subprocess
+import json
 from pathlib import Path
+import pytest
 
 ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
@@ -56,3 +59,34 @@ def test_parser_supports_core_commands() -> None:
     assert args_imp.models_action == "import"
     assert args_imp.kind == "tts"
     assert args_imp.name == "MyTTS"
+
+
+@pytest.mark.parametrize("code,expected", [
+    ('import time; time.sleep(60)', "Timed out"),
+    ('print("not a handshake")', "exited before startup"),
+])
+def test_backend_startup_failure_is_bounded(code, expected):
+    process = subprocess.Popen([sys.executable, "-u", "-c", code], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+    try:
+        with pytest.raises(RuntimeError, match=expected):
+            cli_main._wait_for_handshake(process, timeout=0.5)
+    finally:
+        process.terminate()
+        process.wait(timeout=5)
+        process.stdout.close()
+        process.stderr.close()
+
+
+def test_backend_startup_drains_stderr():
+    payload = {"port": 12345, "pid": 42}
+    code = f'import sys; sys.stderr.write("x" * 100000); sys.stderr.flush(); print({json.dumps(json.dumps(payload))})'
+    process = subprocess.Popen([sys.executable, "-u", "-c", code], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+    try:
+        assert cli_main._wait_for_handshake(process, timeout=5) == payload
+        process.wait(timeout=5)
+    finally:
+        if process.poll() is None:
+            process.kill()
+            process.wait(timeout=5)
+        process.stdout.close()
+        process.stderr.close()

@@ -6,11 +6,14 @@ import { useI18n } from "../i18n";
 import { GlassCard } from "./GlassCard";
 import {
   checkForUpdate,
+  fetchUpdateProgress,
+  cancelUpdate,
   installUpdate,
   isTauri,
   openUpdateRelease,
   quitApp,
   type UpdateCheck,
+  type UpdateProgress,
 } from "../services/api";
 
 const SIX_HOURS_MS = 6 * 60 * 60 * 1000;
@@ -100,7 +103,22 @@ export const UpdatesView: React.FC<UpdatesViewProps> = ({ baseUrl }) => {
   const [info, setInfo] = useState<UpdateCheck | null>(null);
   const [checking, setChecking] = useState(false);
   const [installing, setInstalling] = useState(false);
+  const [progress, setProgress] = useState<UpdateProgress | null>(null);
   const [error, setError] = useState("");
+
+  useEffect(() => {
+    if (!installing) return;
+    let disposed = false;
+    const poll = async () => {
+      try {
+        const next = await fetchUpdateProgress(baseUrl);
+        if (!disposed) setProgress(next);
+      } catch { /* The install request reports terminal errors. */ }
+    };
+    void poll();
+    const timer = window.setInterval(() => void poll(), 500);
+    return () => { disposed = true; window.clearInterval(timer); };
+  }, [installing, baseUrl]);
 
   useEffect(() => {
     if (!isTauri()) return;
@@ -138,6 +156,7 @@ export const UpdatesView: React.FC<UpdatesViewProps> = ({ baseUrl }) => {
   const onInstall = async () => {
     if (!canInstall) return;
     setInstalling(true);
+    setProgress(null);
     setError("");
     try {
       const result = await installUpdate(baseUrl, version);
@@ -148,7 +167,7 @@ export const UpdatesView: React.FC<UpdatesViewProps> = ({ baseUrl }) => {
       setInstalling(false);
     } catch (err) {
       const code = err instanceof Error ? err.message : "";
-      setError(code === "no-asset" ? t("update.noAsset") : t("update.error"));
+      setError(code === "no-asset" ? t("update.noAsset") : code === "cancelled" ? t("update.cancelled") : t("update.installError"));
       setInstalling(false);
     }
   };
@@ -195,6 +214,18 @@ export const UpdatesView: React.FC<UpdatesViewProps> = ({ baseUrl }) => {
         <p className="text-xs text-amber-300">{t("update.noAsset")}</p>
       )}
       {error && <p className="text-xs text-rose-300">{error}</p>}
+
+      {installing && (
+        <div className="flex items-center gap-3 text-xs">
+          <progress className="flex-1" aria-label={t("update.installing")}
+            value={progress?.total ? progress.downloaded : undefined}
+            max={progress?.total || 1} />
+          {progress && progress.total > 0 && <span>{Math.min(100, Math.round(progress.downloaded / progress.total * 100))}%</span>}
+          <button type="button" onClick={() => void cancelUpdate(baseUrl).catch(() => setError(t("update.installError")))}>
+            {t("update.cancel")}
+          </button>
+        </div>
+      )}
 
       <div className="flex flex-wrap items-center gap-2 pt-1">
         <button

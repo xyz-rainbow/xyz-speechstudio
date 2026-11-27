@@ -13,19 +13,24 @@ export const CaptionOverlay: React.FC = () => {
 
   useEffect(() => {
     let unlisten: (() => void) | undefined;
+    let disposed = false;
     listen<string>("caption", (ev) => {
       try {
         const body = JSON.parse(ev.payload) as { type?: string; text?: string };
-        if (body.type === "partial" || body.type === "final") {
+        if (body.type === "partial" || body.type === "final" || body.type === "error") {
           setLine(body.text || "");
         }
       } catch {
         /* ignore malformed events */
       }
     }).then((fn) => {
-      unlisten = fn;
+      if (disposed) fn();
+      else unlisten = fn;
     });
-    return () => unlisten?.();
+    return () => {
+      disposed = true;
+      unlisten?.();
+    };
   }, []);
 
   useEffect(() => {

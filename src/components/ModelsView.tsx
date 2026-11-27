@@ -50,6 +50,7 @@ import {
 } from "../utils/endpointPresets";
 import { GlassCard } from "./GlassCard";
 import { ModelHubModal } from "./ModelHubModal";
+import { LoquendoInstallControl } from "./LoquendoInstallControl";
 
 interface ModelsViewProps {
   baseUrl: string;
@@ -450,7 +451,7 @@ export const ModelsView: React.FC<ModelsViewProps> = ({
   }) => {
     const isEndpoint = opts.source === "endpoint";
     const visibleLocalCards = opts.localCards.filter(
-      (card) => card.installed || !!activeJobFor(card.id)
+      (card) => card.installed || card.id === "loquendo-tts7" || !!activeJobFor(card.id)
     );
     const triggerAdd = () =>
       isEndpoint ? openCreateEndpointModal(opts.kind) : setHubModalKind(opts.kind);
@@ -639,7 +640,10 @@ export const ModelsView: React.FC<ModelsViewProps> = ({
                       </div>
                     ) : (
                       <div className="flex flex-col gap-1.5 mt-auto pt-1">
-                        {!card.runtime_supported && (
+                        {card.id === "loquendo-tts7" && (
+                          <LoquendoInstallControl baseUrl={baseUrl} supported={card.runtime_supported} onRefresh={refreshCatalog} />
+                        )}
+                        {!card.runtime_supported && card.id !== "loquendo-tts7" && (
                           <span className="text-[10px] font-mono text-amber-300/80">
                             {t("models.runtimeLater")}
                           </span>
@@ -649,7 +653,7 @@ export const ModelsView: React.FC<ModelsViewProps> = ({
                             <>
                               <button
                                 type="button"
-                                disabled={!!busyKey || isLoaded}
+                                disabled={!!busyKey || isLoaded || !card.installed}
                                 onClick={() => handleLoadModel(card)}
                                 className="flex-1 inline-flex items-center justify-center gap-1 rounded-xl border px-2 py-1 text-xs font-medium disabled:opacity-40 hover:border-cyan-400/50"
                                 style={{

@@ -29,8 +29,10 @@ function Install-Env {
     $venv = Join-Path $AppRoot "runtime\envs\$Name"
     $python = Join-Path $venv "Scripts\python.exe"
     Write-Host "[Speech Studio] Entorno $Name"
-    & $Uv venv --python 3.12 $venv
-    if ($LASTEXITCODE -ne 0) { throw "uv venv fallo para $Name" }
+    if (-not (Test-Path -LiteralPath $python)) {
+        & $Uv venv --python 3.12 $venv
+        if ($LASTEXITCODE -ne 0) { throw "uv venv fallo para $Name" }
+    }
     if ($Name -eq "pytts") {
         Write-Host "[Speech Studio] PyTorch para pytts (--torch-backend=auto)"
         & $Uv pip install --python $python torch torchaudio --torch-backend=auto
@@ -50,6 +52,7 @@ Write-Host "[Speech Studio] uv: $uv"
 
 foreach ($pair in @(
     @{ Name = "core"; File = "requirements-core.txt" },
+    @{ Name = "stt"; File = "requirements-stt.txt" },
     @{ Name = "pytts"; File = "requirements-pytts.txt" }
 )) {
     $req = Join-Path $here $pair.File
@@ -62,4 +65,4 @@ foreach ($pair in @(
 foreach ($dir in @("data", "data\models", "data\profiles", "data\outputs", "data\tmp")) {
     New-Item -ItemType Directory -Force -Path (Join-Path $AppRoot $dir) | Out-Null
 }
-Write-Host "[Speech Studio] Entornos core y pytts listos en runtime\envs."
+Write-Host "[Speech Studio] Entornos core, stt y pytts listos en runtime\envs."

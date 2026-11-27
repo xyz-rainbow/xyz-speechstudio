@@ -1,0 +1,94 @@
+name: Build test installers
+
+on:
+  workflow_dispatch:
+    inputs:
+      include_windows:
+        description: Build the Windows installer too
+        type: boolean
+        default: true
+  workflow_call:
+    inputs:
+      include_windows:
+        type: boolean
+        default: true
+
+permissions:
+  contents: read
+
+jobs:
+  unix:
+    name: Installer (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-24.04
+            bundle: deb
+          - os: macos-15
+            bundle: dmg
+          - os: macos-15-intel
+            bundle: dmg
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: "22"
+          cache: npm
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Linux system dependencies
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y libwebkit2gtk-4.1-dev libxdo-dev libssl-dev libayatana-appindicator3-dev librsvg2-dev
+      - name: Build standalone runtime and resources
+        run: |
+          python -m pip install uv==0.12.21
+          uv venv --managed-python --python 3.12 .packaging/build-env
+          uv pip install --python .packaging/build-env/bin/python -r installer/requirements-core.txt -r installer/requirements-stt-cpu.txt
+          .packaging/build-env/bin/python scripts/fetch_unix_runtime.py
+          .packaging/build-env/bin/python scripts/prepare_unix_payload.py --crispasr-dir .packaging/native/extracted
+      - run: npm ci
+      - name: Build installer
+        run: npx tauri build --bundles ${{ matrix.bundle }} --config installer/tauri.unix.conf.json
+      - uses: actions/upload-artifact@v4
+        with:
+          name: SpeechStudio-${{ matrix.os }}
+          path: src-tauri/target/release/bundle/${{ matrix.bundle }}/*
+          if-no-files-found: error
+
+  windows:
+    if: ${{ inputs.include_windows }}
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: "22"
+          cache: npm
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+      - uses: dtolnay/rust-toolchain@stable
+      - run: npm ci
+      - run: npx tauri build --no-bundle
+      - name: Prepare installer tools
+        shell: pwsh
+        run: |
+          python -m pip install uv==0.12.21
+          choco install innosetup --yes --no-progress
+          if ($LASTEXITCODE -eq 3010) { exit 0 }
+          exit $LASTEXITCODE
+      - name: Native CPU runtime
+        shell: pwsh
+        run: .\scripts\fetch-crispasr.ps1 -Variant cpu
+      - name: Build installer
+        shell: pwsh
+        run: .\installer\windows\build.ps1
+      - uses: actions/upload-artifact@v4
+        with:
+          name: SpeechStudio-Windows-x64
+          path: installer/Output/*.exe
+          if-no-files-found: error

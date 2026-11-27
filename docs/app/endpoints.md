@@ -2,6 +2,8 @@
 
 ## Ahora
 
+Las rutas internas `/api/*`, incluidos los WebSockets, requieren una conexión desde loopback. Si el cliente envía `Origin`, debe corresponder a Tauri o al desarrollo local. El acceso desde LAN usa las rutas públicas `/v1/*` con el token configurado. Los controles de ajustes, modelos, perfiles y actualizaciones responden 403 desde LAN.
+
 Hay dos usos distintos.
 
 ### API local de Speech Studio

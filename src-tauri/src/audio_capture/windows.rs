@@ -1023,13 +1023,26 @@ fn capture_stream_loop<S: std::io::Read + std::io::Write + Send + 'static>(
         };
         match msg {
             Ok(Message::Text(text)) => emit_json(&reader_app, &text),
-            Ok(Message::Close(_)) => break,
+            Ok(Message::Close(_)) => {
+                if !reader_stop.load(Ordering::SeqCst) {
+                    emit_json(&reader_app, r#"{"type":"error","text":"Live captions connection closed."}"#);
+                    reader_stop.store(true, Ordering::SeqCst);
+                }
+                break;
+            }
             Err(tungstenite::Error::Io(err))
                 if err.kind() == ErrorKind::TimedOut || err.kind() == ErrorKind::WouldBlock =>
             {
                 thread::sleep(Duration::from_millis(5));
             }
-            Err(_) => break,
+            Err(err) => {
+                if !reader_stop.load(Ordering::SeqCst) {
+                    let payload = serde_json::json!({"type": "error", "text": format!("Live captions connection failed: {err}")});
+                    emit_json(&reader_app, &payload.to_string());
+                    reader_stop.store(true, Ordering::SeqCst);
+                }
+                break;
+            }
             _ => {}
         }
     });

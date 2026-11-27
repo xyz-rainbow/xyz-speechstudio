@@ -1,7 +1,10 @@
 #!/usr/bin/env bash
 set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-if [[ -x "$ROOT/runtime/envs/core/bin/python" ]]; then
+cd "$ROOT"
+if [[ -x "$ROOT/runtime/python/bin/python3" ]]; then
+  PY="$ROOT/runtime/python/bin/python3"
+elif [[ -x "$ROOT/runtime/envs/core/bin/python" ]]; then
   PY="$ROOT/runtime/envs/core/bin/python"
 elif [[ -x "$ROOT/.venvs/core/bin/python" ]]; then
   PY="$ROOT/.venvs/core/bin/python"

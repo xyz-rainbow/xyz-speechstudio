@@ -3,7 +3,12 @@
 from __future__ import annotations
 
 import sys
+import hashlib
+from contextlib import contextmanager
 from pathlib import Path
+import httpx
+import pytest
+from backend.orchestrator import updates
 
 ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
@@ -97,3 +102,98 @@ def test_project_versions_stay_in_sync() -> None:
 
     errors = sync_all(read_tauri_version(), check_only=True)
     assert errors == []
+
+
+def test_installer_limit_accepts_published_release():
+    assert updates.MAX_ASSET_BYTES > 634_503_325
+
+
+def test_architecture_selection_rejects_other_cpu():
+    def asset(name):
+        return updates.ReleaseAsset(name, "https://github.com/test", 1)
+    assets = [asset("SpeechStudio_arm64_Setup.exe"), asset("SpeechStudio_x64_Setup.exe")]
+    assert pick_asset(assets, "win32", "AMD64").name == "SpeechStudio_x64_Setup.exe"
+    assert pick_asset(assets, "win32", "aarch64").name == "SpeechStudio_arm64_Setup.exe"
+    assert pick_asset(assets[:1], "win32", "x86_64") is None
+
+
+@pytest.mark.parametrize("failure", [None, "size-mismatch", "digest-mismatch", "too-large"])
+def test_download_checks_integrity_before_publishing(tmp_path, monkeypatch, failure):
+    data = b"installer-content"
+    digest = hashlib.sha256(data).hexdigest()
+    asset = updates.ReleaseAsset(
+        "SpeechStudio_Setup.exe",
+        "https://github.com/xyz-rainbow/xyz-speechstudio/releases/download/v1/SpeechStudio_Setup.exe",
+        len(data) + (1 if failure == "size-mismatch" else 0),
+        "sha256:" + ("0" * 64 if failure == "digest-mismatch" else digest),
+    )
+    monkeypatch.setattr(updates, "tempfile_dir", lambda: str(tmp_path))
+    if failure == "too-large":
+        monkeypatch.setattr(updates, "MAX_ASSET_BYTES", len(data) - 1)
+
+    @contextmanager
+    def stream(*args, **kwargs):
+        yield httpx.Response(200, content=data, request=httpx.Request("GET", asset.url))
+
+    monkeypatch.setattr(updates.httpx, "stream", stream)
+    if failure:
+        with pytest.raises(updates.UpdateError) as error:
+            updates._download(asset)
+        assert error.value.code == failure
+        assert not list(tmp_path.rglob("*.exe"))
+        assert not list(tmp_path.rglob("*.part"))
+    else:
+        result = updates._download(asset)
+        assert result.read_bytes() == data
+
+
+def test_windows_msi_is_launched_with_windows_installer(tmp_path, monkeypatch):
+    calls = []
+    monkeypatch.setattr(updates.subprocess, "Popen", lambda args, **kwargs: calls.append((args, kwargs)))
+    path = tmp_path / "SpeechStudio.msi"
+    updates._launch(path, "win32")
+    assert calls[0][0] == ["msiexec.exe", "/i", str(path)]
+    assert calls[0][1]["creationflags"] & 0x01000000
+
+
+def test_duplicate_install_request_is_rejected():
+    updates._install_lock.acquire()
+    try:
+        with pytest.raises(updates.UpdateError) as error:
+            updates.install_latest("0.2.0")
+        assert error.value.code == "busy"
+    finally:
+        updates._install_lock.release()
+
+
+def test_cancelled_download_removes_partial_file(tmp_path, monkeypatch):
+    asset = updates.ReleaseAsset(
+        "SpeechStudio_Setup.exe",
+        "https://github.com/xyz-rainbow/xyz-speechstudio/releases/download/v1/SpeechStudio_Setup.exe", 6,
+    )
+    monkeypatch.setattr(updates, "tempfile_dir", lambda: str(tmp_path))
+
+    class Download:
+        url = asset.url
+        def raise_for_status(self):
+            pass
+        def iter_bytes(self):
+            yield b"abc"
+            assert updates.download_progress()["downloaded"] == 3
+            updates.cancel_download()
+            yield b"def"
+
+    @contextmanager
+    def stream(*args, **kwargs):
+        yield Download()
+
+    monkeypatch.setattr(updates.httpx, "stream", stream)
+    updates._cancel_download.clear()
+    try:
+        with pytest.raises(updates.UpdateError) as error:
+            updates._download(asset)
+        assert error.value.code == "cancelled"
+        assert not list(tmp_path.rglob("*.part"))
+        assert not list(tmp_path.rglob("*.exe"))
+    finally:
+        updates._cancel_download.clear()

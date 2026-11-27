@@ -7,9 +7,11 @@ from typing import Literal
 from pydantic import BaseModel, Field, ValidationError, model_validator
 
 from .external_providers import ExternalEndpointConfig
+from .persistence import write_json_atomic
+from .paths import resolve_data_dir
 
 APP_ROOT = Path(__file__).absolute().parents[2]
-DATA_DIR = APP_ROOT / "data"
+DATA_DIR = resolve_data_dir(APP_ROOT)
 DEFAULT_MODELS_DIR = DATA_DIR / "models"
 DEFAULT_PROFILES_DIR = DATA_DIR / "profiles"
 DEFAULT_OUTPUTS_DIR = DATA_DIR / "outputs"
@@ -44,8 +46,8 @@ class AppSettings(BaseModel):
     sidebar_collapsed: bool = False
     models_dir: str = ""
     outputs_dir: str = ""
-    tts_device: Literal["gpu", "cpu"] = "gpu"
-    stt_device: Literal["gpu", "cpu"] = "gpu"
+    tts_device: Literal["gpu", "cpu"] = "cpu"
+    stt_device: Literal["gpu", "cpu"] = "cpu"
     tts_source: Literal["local", "endpoint"] = "local"
     stt_source: Literal["local", "endpoint"] = "local"
     active_tts_model: str = "qwen3-1.7b-base-Q8_0"
@@ -105,10 +107,7 @@ def load_settings() -> AppSettings:
 
 def save_settings(settings: AppSettings) -> AppSettings:
     ensure_data_dirs()
-    SETTINGS_PATH.write_text(
-        json.dumps(settings.model_dump(), indent=2, ensure_ascii=False),
-        encoding="utf-8",
-    )
+    write_json_atomic(SETTINGS_PATH, settings.model_dump())
     return settings
 
 

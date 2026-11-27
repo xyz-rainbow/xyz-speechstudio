@@ -5,6 +5,11 @@ mod linux;
 #[cfg(windows)]
 mod windows;
 
+pub fn initialize() {
+    #[cfg(windows)]
+    windows::ensure_focus_hook();
+}
+
 /// `code` is `text`, `empty`, or `unavailable`.
 /// `unavailable` means the Linux primary-selection tools are missing.
 /// It does not mean the clipboard was read.
