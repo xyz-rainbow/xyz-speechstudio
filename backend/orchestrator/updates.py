@@ -8,9 +8,13 @@ The version check itself is the same on every desktop.
 from __future__ import annotations
 
 import subprocess
+import hashlib
+import platform as host_platform
+import re
 import sys
 import threading
 import time
+import tempfile
 import urllib.parse
 from dataclasses import dataclass
 from pathlib import Path
@@ -21,7 +25,7 @@ import httpx
 REPO = "xyz-rainbow/xyz-speechstudio"
 API_URL = f"https://api.github.com/repos/{REPO}/releases/latest"
 CACHE_TTL_S = 6 * 60 * 60
-MAX_ASSET_BYTES = 512 * 1024 * 1024
+MAX_ASSET_BYTES = 4 * 1024 * 1024 * 1024
 _NOTES_LIMIT = 8000
 
 _ALLOWED_PAGES = "github.com"
@@ -43,6 +47,7 @@ class ReleaseAsset:
     name: str
     url: str
     size: int
+    digest: Optional[str] = None
 
 
 @dataclass
@@ -55,6 +60,25 @@ class ReleaseInfo:
 
 
 _lock = threading.Lock()
+_install_lock = threading.Lock()
+_progress_lock = threading.Lock()
+_cancel_download = threading.Event()
+_progress = {"phase": "idle", "downloaded": 0, "total": 0}
+
+
+def download_progress() -> dict:
+    with _progress_lock:
+        return dict(_progress)
+
+
+def cancel_download() -> dict:
+    _cancel_download.set()
+    return {"cancel_requested": True}
+
+
+def _set_progress(phase: str, downloaded: int = 0, total: int = 0) -> None:
+    with _progress_lock:
+        _progress.update(phase=phase, downloaded=downloaded, total=total)
 _cache: dict[str, object] = {"fetched_at": 0.0, "release": None}
 
 
@@ -111,8 +135,17 @@ def asset_rank(name: str, platform: str) -> Optional[int]:
     return None
 
 
-def pick_asset(assets: list[ReleaseAsset], platform: str) -> Optional[ReleaseAsset]:
-    ranked = [(asset_rank(asset.name, platform), asset) for asset in assets]
+def pick_asset(assets: list[ReleaseAsset], platform: str, architecture: Optional[str] = None) -> Optional[ReleaseAsset]:
+    architecture = (architecture or host_platform.machine()).lower()
+    aliases = {"amd64": "x64", "x86_64": "x64", "aarch64": "arm64"}
+    architecture = aliases.get(architecture, architecture)
+    compatible = []
+    for asset in assets:
+        labels = set(re.findall(r"(?<![a-z0-9])(x86_64|amd64|x64|aarch64|arm64|i686|x86)(?![a-z0-9])", asset.name.lower()))
+        architectures = {aliases.get(label, label) for label in labels}
+        if not architectures or architecture in architectures:
+            compatible.append(asset)
+    ranked = [(asset_rank(asset.name, platform), asset) for asset in compatible]
     choices = [(rank, asset) for rank, asset in ranked if rank is not None]
     if not choices:
         return None
@@ -155,7 +188,7 @@ def parse_release(payload: dict) -> ReleaseInfo:
             size = int(row.get("size") or 0)
         except (TypeError, ValueError):
             size = 0
-        assets.append(ReleaseAsset(name=name, url=url, size=size))
+        assets.append(ReleaseAsset(name=name, url=url, size=size, digest=row.get("digest")))
     notes = str(payload.get("body") or "").strip()
     if len(notes) > _NOTES_LIMIT:
         notes = notes[:_NOTES_LIMIT].rstrip() + "…"
@@ -256,11 +289,21 @@ def _download(asset: ReleaseAsset) -> Path:
     if not asset_url_allowed(asset.url):
         raise UpdateError("bad-url")
     name = safe_asset_name(asset.name)
-    dest_dir = Path(tempfile_dir())
-    dest_dir.mkdir(parents=True, exist_ok=True)
+    if asset.size > MAX_ASSET_BYTES:
+        raise UpdateError("too-large")
+    expected_digest = None
+    if asset.digest:
+        if not isinstance(asset.digest, str) or not re.fullmatch(r"sha256:[0-9a-fA-F]{64}", asset.digest):
+            raise UpdateError("bad-digest")
+        expected_digest = asset.digest.split(":", 1)[1].lower()
+    cache_dir = Path(tempfile_dir())
+    cache_dir.mkdir(parents=True, exist_ok=True)
+    dest_dir = Path(tempfile.mkdtemp(prefix="download-", dir=cache_dir))
     dest = dest_dir / name
     partial = dest.with_suffix(dest.suffix + ".part")
     written = 0
+    digest = hashlib.sha256()
+    _set_progress("downloading", 0, asset.size)
     try:
         with httpx.stream(
             "GET",
@@ -274,10 +317,21 @@ def _download(asset: ReleaseAsset) -> Path:
             response.raise_for_status()
             with partial.open("wb") as handle:
                 for chunk in response.iter_bytes():
+                    if _cancel_download.is_set():
+                        raise UpdateError("cancelled")
                     written += len(chunk)
                     if written > MAX_ASSET_BYTES:
                         raise UpdateError("too-large")
                     handle.write(chunk)
+                    digest.update(chunk)
+                    _set_progress("downloading", written, asset.size)
+        if _cancel_download.is_set():
+            raise UpdateError("cancelled")
+        _set_progress("verifying", written, asset.size)
+        if written == 0 or (asset.size > 0 and written != asset.size):
+            raise UpdateError("size-mismatch")
+        if expected_digest and digest.hexdigest() != expected_digest:
+            raise UpdateError("digest-mismatch")
         partial.replace(dest)
     except UpdateError:
         partial.unlink(missing_ok=True)
@@ -298,10 +352,11 @@ def _launch(path: Path, platform: str) -> None:
     if platform == "win32":
         detached = 0x00000008  # DETACHED_PROCESS
         new_group = 0x00000200  # CREATE_NEW_PROCESS_GROUP
+        breakaway = 0x01000000  # CREATE_BREAKAWAY_FROM_JOB
         subprocess.Popen(  # noqa: S603
-            [str(path)],
+            ["msiexec.exe", "/i", str(path)] if path.suffix.lower() == ".msi" else [str(path)],
             close_fds=True,
-            creationflags=detached | new_group,
+            creationflags=detached | new_group | breakaway,
         )
         return
     if platform == "darwin":
@@ -315,6 +370,20 @@ def _launch(path: Path, platform: str) -> None:
 
 
 def install_latest(current: str, platform: Optional[str] = None) -> dict:
+    if not _install_lock.acquire(blocking=False):
+        raise UpdateError("busy")
+    try:
+        _cancel_download.clear()
+        return _install_latest(current, platform)
+    except Exception:
+        progress = download_progress()
+        _set_progress("failed", progress["downloaded"], progress["total"])
+        raise
+    finally:
+        _install_lock.release()
+
+
+def _install_latest(current: str, platform: Optional[str] = None) -> dict:
     plat = platform or sys.platform
     release = load_release(force=False)
     summary = summarize(release, current.strip(), plat)
@@ -324,7 +393,10 @@ def install_latest(current: str, platform: Optional[str] = None) -> dict:
     if chosen is None:
         raise UpdateError("no-asset")
     path = _download(chosen)
+    if _cancel_download.is_set():
+        raise UpdateError("cancelled")
     _launch(path, plat)
+    _set_progress("launched", chosen.size, chosen.size)
     return {
         "launched": True,
         "asset_name": chosen.name,

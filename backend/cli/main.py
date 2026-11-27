@@ -3,14 +3,17 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import queue
 import shutil
 import signal
 import subprocess
 import sys
 import tempfile
+import threading
 import time
 import urllib.parse
 from pathlib import Path
+from collections import deque
 from typing import Any, Optional
 
 import httpx
@@ -61,6 +64,40 @@ def _is_alive(base_url: str) -> bool:
         return False
 
 
+def _wait_for_handshake(process: subprocess.Popen[str], timeout: float = 25.0) -> dict:
+    messages: queue.Queue[dict | None] = queue.Queue()
+    errors: deque[str] = deque(maxlen=40)
+
+    def read_stdout():
+        if process.stdout is not None:
+            for line in process.stdout:
+                try:
+                    payload = json.loads(line)
+                except ValueError:
+                    continue
+                if isinstance(payload, dict) and isinstance(payload.get("port"), int) and 0 < payload["port"] <= 65535:
+                    messages.put(payload)
+                    for _ in process.stdout:
+                        pass
+                    return
+        messages.put(None)
+
+    def read_stderr():
+        if process.stderr is not None:
+            for line in process.stderr:
+                errors.append(line[-2000:])
+
+    threading.Thread(target=read_stdout, daemon=True).start()
+    threading.Thread(target=read_stderr, daemon=True).start()
+    try:
+        payload = messages.get(timeout=timeout)
+    except queue.Empty as exc:
+        raise RuntimeError("Timed out starting temporary Speech Studio backend.") from exc
+    if payload is None:
+        raise RuntimeError("Temporary Speech Studio backend exited before startup. " + "".join(errors)[-2000:])
+    return payload
+
+
 class OrchestratorClient:
     """Connect to a running Speech Studio backend or spawn a temporary one."""
 
@@ -84,6 +121,8 @@ class OrchestratorClient:
                 info = json.loads(RUNTIME_JSON_PATH.read_text(encoding="utf-8"))
                 port = info.get("port")
                 host = info.get("host") or "127.0.0.1"
+                if host == "0.0.0.0":
+                    host = "127.0.0.1"
                 if port:
                     candidate = f"http://{host}:{port}"
                     if _is_alive(candidate):
@@ -109,34 +148,15 @@ class OrchestratorClient:
             popen_kwargs["start_new_session"] = True
         self._proc = subprocess.Popen(cmd, **popen_kwargs)
 
-        deadline = time.monotonic() + 25.0
-        while time.monotonic() < deadline:
-            if self._proc.poll() is not None:
-                err_out = ""
-                try:
-                    if self._proc.stderr:
-                        err_out = self._proc.stderr.read().strip()
-                except Exception:
-                    pass
-                raise RuntimeError(
-                    f"Temporary Speech Studio backend exited early ({self._proc.returncode}): {err_out}"
-                )
-            if self._proc.stdout:
-                line = self._proc.stdout.readline().strip()
-                if line.startswith("{"):
-                    try:
-                        payload = json.loads(line)
-                        if "port" in payload:
-                            self._spawned_pid = int(payload.get("pid") or self._proc.pid)
-                            self.base_url = f"http://127.0.0.1:{payload['port']}"
-                            self._http = httpx.Client(base_url=self.base_url, timeout=300.0)
-                            return self
-                    except json.JSONDecodeError:
-                        pass
-            time.sleep(0.05)
-
-        self.__exit__(None, None, None)
-        raise RuntimeError("Timed out starting temporary Speech Studio backend.")
+        try:
+            payload = _wait_for_handshake(self._proc)
+            self._spawned_pid = self._proc.pid
+            self.base_url = f"http://127.0.0.1:{payload['port']}"
+            self._http = httpx.Client(base_url=self.base_url, timeout=300.0)
+            return self
+        except BaseException:
+            self.__exit__(*sys.exc_info())
+            raise
 
     def __exit__(self, exc_type: Any, exc: Any, tb: Any) -> None:
         if self._http is not None:
@@ -844,6 +864,8 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def main(argv: Optional[list[str]] = None) -> int:
+    if hasattr(sys.stdout, "reconfigure"):
+        sys.stdout.reconfigure(encoding="utf-8")
     raw_argv = list(sys.argv[1:] if argv is None else argv)
     normalized = _normalize_shorthands(raw_argv)
     parser = build_parser()

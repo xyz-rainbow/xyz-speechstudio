@@ -1145,6 +1145,9 @@ def synthesize_tts(
 
 def stt_backend_for_model(model_id: str) -> Optional[str]:
     low = (model_id or "").strip().lower()
+    # CTranslate2 checkpoints are executed by faster-whisper, not the GGUF backend.
+    if low.startswith("faster-whisper"):
+        return None
     for key, backend in STT_MODEL_BACKEND.items():
         if key in low:
             return backend

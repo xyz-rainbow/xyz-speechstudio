@@ -10,6 +10,7 @@ from typing import Optional
 from pydantic import BaseModel
 
 from .config import DEFAULT_OUTPUTS_DIR, DEFAULT_TMP_DIR, ensure_data_dirs
+from .persistence import json_transaction, write_json_atomic
 
 HISTORY_JSON = DEFAULT_OUTPUTS_DIR / "history.json"
 
@@ -29,6 +30,7 @@ class GenerationRecord(BaseModel):
     created_at: float
 
 
+@json_transaction
 def _read_all() -> list[GenerationRecord]:
     ensure_data_dirs()
     if not HISTORY_JSON.exists():
@@ -42,10 +44,7 @@ def _read_all() -> list[GenerationRecord]:
 
 def _write_all(records: list[GenerationRecord]) -> None:
     ensure_data_dirs()
-    HISTORY_JSON.write_text(
-        json.dumps([r.model_dump() for r in records], indent=2, ensure_ascii=False),
-        encoding="utf-8",
-    )
+    write_json_atomic(HISTORY_JSON, [r.model_dump() for r in records])
 
 
 def list_history() -> list[GenerationRecord]:
@@ -59,6 +58,7 @@ def get_record(rec_id: str) -> Optional[GenerationRecord]:
     return None
 
 
+@json_transaction
 def add_record(
     *,
     profile_id: str,
@@ -92,6 +92,7 @@ def add_record(
     return rec
 
 
+@json_transaction
 def set_saved_path(rec_id: str, dest_path: str) -> Optional[GenerationRecord]:
     records = _read_all()
     for idx, r in enumerate(records):
@@ -109,6 +110,7 @@ def set_saved_path(rec_id: str, dest_path: str) -> Optional[GenerationRecord]:
     return None
 
 
+@json_transaction
 def delete_record(rec_id: str) -> bool:
     records = _read_all()
     target = next((r for r in records if r.id == rec_id), None)

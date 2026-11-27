@@ -62,18 +62,9 @@ class WorkerSupervisor:
     live_captions_active: bool = False
 
     def venv_python(self, family: str) -> Path:
-        from .catalog_capabilities import resolve_runtime_envs_root
+        from .catalog_capabilities import resolve_runtime_python
 
-        root = resolve_runtime_envs_root(APP_ROOT)
-        # Prefer unified pytts environment for Python TTS engines when present.
-        if family in ("xtts", "f5", "fish", "kitten", "pytts"):
-            unified = root / "pytts" / ("Scripts" if sys.platform == "win32" else "bin") / ("python.exe" if sys.platform == "win32" else "python")
-            if unified.exists():
-                return unified
-        base = root / family
-        if sys.platform == "win32":
-            return base / "Scripts" / "python.exe"
-        return base / "bin" / "python"
+        return resolve_runtime_python(APP_ROOT, family, windows=sys.platform == "win32")
 
     def worker_script(self, family: str) -> Path:
         return APP_ROOT / "backend" / "workers" / f"{family}_worker.py"

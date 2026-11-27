@@ -12,6 +12,7 @@ from pydantic import BaseModel
 
 from .audio_prep import ensure_ref_24k, probe_audio_info, trim_ref_audio
 from .config import DEFAULT_PROFILES_DIR, ensure_data_dirs
+from .persistence import json_transaction, write_json_atomic
 
 PROFILES_JSON = DEFAULT_PROFILES_DIR / "profiles.json"
 
@@ -67,6 +68,7 @@ def _is_inline_clone_ready(engine: str, ref_audio_path: str) -> bool:
     return (engine or "").strip().lower() in INLINE_CLONE_ENGINES and bool(ref_audio_path) and Path(ref_audio_path).exists()
 
 
+@json_transaction
 def _read_all() -> list[VoiceProfile]:
     ensure_data_dirs()
     if not PROFILES_JSON.exists():
@@ -100,10 +102,7 @@ def _read_all() -> list[VoiceProfile]:
 
 def _write_all(profiles: list[VoiceProfile]) -> None:
     ensure_data_dirs()
-    PROFILES_JSON.write_text(
-        json.dumps([p.model_dump() for p in profiles], indent=2, ensure_ascii=False),
-        encoding="utf-8",
-    )
+    write_json_atomic(PROFILES_JSON, [p.model_dump() for p in profiles])
 
 
 def list_profiles() -> list[VoiceProfile]:
@@ -119,6 +118,7 @@ def get_profile(identifier: str) -> Optional[VoiceProfile]:
     return None
 
 
+@json_transaction
 def create_profile(
     *,
     name: str,
@@ -178,6 +178,7 @@ def create_profile(
     return prof
 
 
+@json_transaction
 def update_profile(
     pid: str,
     *,
@@ -261,6 +262,7 @@ def update_profile(
     return None
 
 
+@json_transaction
 def trim_profile_audio(pid: str, max_seconds: float = 12.0) -> Optional[VoiceProfile]:
     """Create a trimmed 24 kHz mono reference copy for profile pid without altering original audio."""
     profiles = _read_all()
@@ -291,6 +293,7 @@ def trim_profile_audio(pid: str, max_seconds: float = 12.0) -> Optional[VoicePro
     return None
 
 
+@json_transaction
 def delete_profile(pid: str) -> bool:
     profiles = _read_all()
     kept = [p for p in profiles if p.id != pid]
