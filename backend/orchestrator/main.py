@@ -524,35 +524,67 @@ def ensure_stt_loaded(
     return handle
 
 
+def _qwen_uses_crispasr(settings: AppSettings) -> bool:
+    from . import crispasr
+
+    tts_dev = "cpu" if settings.tts_device == "cpu" else "gpu"
+    entry = _active_tts_catalog_entry(settings)
+    if entry is None or entry.engine != "qwen":
+        entry = next(
+            (
+                m
+                for m in downloader.build_catalog(settings)
+                if m.kind == "tts" and m.engine == "qwen" and m.installed
+            ),
+            None,
+        )
+    prefer_crispasr = (entry.active_runtime or "crispasr") != "python" if entry is not None else True
+    model_dir = Path(entry.install_dir) if (entry and entry.install_dir) else None
+    return prefer_crispasr and crispasr.supports_engine("qwen", model_dir=model_dir, device=tts_dev)
+
+
 def build_qwen_profile(prof: profiles.VoiceProfile, force_stop_captions: bool = False) -> profiles.VoiceProfile:
     if not prof.ref_audio_path or not Path(prof.ref_audio_path).exists():
         raise HTTPException(status_code=400, detail="Profile needs a valid reference audio file.")
-    handle = ensure_qwen_loaded(force_stop_captions=force_stop_captions)
     pdir = DEFAULT_PROFILES_DIR / prof.id
     pdir.mkdir(parents=True, exist_ok=True)
     wav_24k = pdir / "ref_24k.wav"
-    spk_p = pdir / "voice.spk"
-    rvq_p = pdir / "voice.rvq"
 
-    with httpx.Client(timeout=180.0) as client:
-        resp = client.post(
-            f"http://127.0.0.1:{handle.port}/extract_ref",
-            json={
-                "wav_path": prof.ref_audio_path,
-                "wav_24k_path": str(wav_24k),
-                "spk_path": str(spk_p),
-                "rvq_path": str(rvq_p),
-            },
+    if _qwen_uses_crispasr(load_settings()):
+        from . import audio_prep
+
+        try:
+            audio_prep.ensure_ref_24k(Path(prof.ref_audio_path), wav_24k)
+        except Exception:
+            pass
+        updated = profiles.update_profile(prof.id, ready=True)
+    else:
+        try:
+            handle = ensure_qwen_loaded(force_stop_captions=force_stop_captions)
+        except FileNotFoundError as exc:
+            raise HTTPException(status_code=503, detail=str(exc)) from exc
+        spk_p = pdir / "voice.spk"
+        rvq_p = pdir / "voice.rvq"
+
+        with httpx.Client(timeout=180.0) as client:
+            resp = client.post(
+                f"http://127.0.0.1:{handle.port}/extract_ref",
+                json={
+                    "wav_path": prof.ref_audio_path,
+                    "wav_24k_path": str(wav_24k),
+                    "spk_path": str(spk_p),
+                    "rvq_path": str(rvq_p),
+                },
+            )
+            if resp.status_code >= 400:
+                raise HTTPException(status_code=500, detail=f"Failed extracting voice ref: {resp.text}")
+
+        updated = profiles.update_profile(
+            prof.id,
+            ready=True,
+            spk_path=str(spk_p),
+            rvq_path=str(rvq_p),
         )
-        if resp.status_code >= 400:
-            raise HTTPException(status_code=500, detail=f"Failed extracting voice ref: {resp.text}")
-
-    updated = profiles.update_profile(
-        prof.id,
-        ready=True,
-        spk_path=str(spk_p),
-        rvq_path=str(rvq_p),
-    )
     assert updated is not None
     from .toasts import say
 
@@ -1075,10 +1107,11 @@ def create_profile_route(req: CreateProfileRequest):
         raise HTTPException(status_code=400, detail="Profile name is required.")
     s = load_settings()
     if req.engine == "qwen":
-        try:
-            resolve_qwen_gguf(s)
-        except FileNotFoundError as exc:
-            raise HTTPException(status_code=400, detail=str(exc))
+        if not _qwen_uses_crispasr(s):
+            try:
+                resolve_qwen_gguf(s)
+            except FileNotFoundError as exc:
+                raise HTTPException(status_code=400, detail=str(exc))
     elif req.engine == "xtts":
         try:
             downloader.resolve_xtts_dir(s)
