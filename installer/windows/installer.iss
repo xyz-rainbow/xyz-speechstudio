@@ -374,24 +374,65 @@ begin
     CancelBorderPanel.Visible := WizardForm.CancelButton.Visible;
 end;
 
+procedure OnCudaOutput(const S: String; const Error, FirstLine: Boolean);
+var
+  Rest, PctStr, StatusText, DetailText: String;
+  Sep, Pct: Integer;
+begin
+  Log(S);
+  if Pos('PROGRESS|', S) = 1 then
+  begin
+    Rest := Copy(S, 10, Length(S) - 9);
+    Sep := Pos('|', Rest);
+    if Sep > 0 then
+    begin
+      PctStr := Copy(Rest, 1, Sep - 1);
+      Rest := Copy(Rest, Sep + 1, Length(Rest) - Sep);
+      Sep := Pos('|', Rest);
+      if Sep > 0 then
+      begin
+        StatusText := Copy(Rest, 1, Sep - 1);
+        DetailText := Copy(Rest, Sep + 1, Length(Rest) - Sep);
+      end
+      else
+      begin
+        StatusText := Rest;
+        DetailText := '';
+      end;
+      Pct := StrToIntDef(PctStr, -1);
+      if (Pct >= 0) and (Pct <= 100) then
+        WizardForm.ProgressGauge.Position := Pct;
+      if StatusText <> '' then
+        WizardForm.StatusLabel.Caption := StatusText;
+      if DetailText <> '' then
+        WizardForm.FilenameLabel.Caption := DetailText;
+      WizardForm.Update;
+    end;
+  end;
+end;
+
 procedure CurStepChanged(CurStep: TSetupStep);
 var
   RuntimeExitCode: Integer;
 begin
   if (CurStep = ssPostInstall) and WizardIsTaskSelected('cuda') then
   begin
+    WizardForm.ProgressGauge.Style := npbstNormal;
+    WizardForm.ProgressGauge.Min := 0;
+    WizardForm.ProgressGauge.Max := 100;
+    WizardForm.ProgressGauge.Position := 0;
     WizardForm.StatusLabel.Caption := CustomMessage('CudaDownloading');
     WizardForm.FilenameLabel.Caption := 'crispasr-windows-x86_64-cuda.zip';
-    WizardForm.ProgressGauge.Style := npbstMarquee;
+    WizardForm.Update;
     try
-      if not Exec(ExpandConstant('{sys}\WindowsPowerShell\v1.0\powershell.exe'),
-        '-NoProfile -ExecutionPolicy Bypass -File "' + ExpandConstant('{app}\scripts\fetch-crispasr.ps1') + '" -Variant cuda',
-        ExpandConstant('{app}'), SW_SHOWNORMAL, ewWaitUntilTerminated, RuntimeExitCode) then
+      if not ExecAndLogOutput(ExpandConstant('{sys}\WindowsPowerShell\v1.0\powershell.exe'),
+        '-NoProfile -ExecutionPolicy Bypass -File "' + ExpandConstant('{app}\scripts\fetch-crispasr.ps1') + '" -Variant cuda -InstallerProgress -Lang ' + ActiveLanguage,
+        ExpandConstant('{app}'), SW_HIDE, ewWaitUntilTerminated, RuntimeExitCode, @OnCudaOutput) then
         MsgBox(CustomMessage('CudaFailure'), mbInformation, MB_OK)
       else if RuntimeExitCode <> 0 then
         MsgBox(CustomMessage('CudaFailure'), mbInformation, MB_OK);
     finally
-      WizardForm.ProgressGauge.Style := npbstNormal;
+      WizardForm.ProgressGauge.Position := 100;
     end;
   end;
   if (CurStep = ssPostInstall) and IsPortable() then
