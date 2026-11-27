@@ -9,12 +9,11 @@ use windows::Win32::System::Com::{
 };
 use windows::Win32::UI::Accessibility::{
     CUIAutomation, IUIAutomation, IUIAutomationElement, IUIAutomationTextPattern, IUIAutomationTreeWalker,
-    SetWinEventHook, UIA_TextPatternId, HWINEVENTHOOK, WINEVENT_OUTOFCONTEXT, WINEVENT_SKIPOWNPROCESS,
-    EVENT_OBJECT_FOCUS,
+    SetWinEventHook, UIA_TextPatternId, HWINEVENTHOOK,
 };
 use windows::Win32::UI::WindowsAndMessaging::{
     DispatchMessageW, GetClassNameW, GetGUIThreadInfo, GetMessageW, GetWindowThreadProcessId, IsWindow,
-    TranslateMessage, GUITHREADINFO, MSG,
+    TranslateMessage, EVENT_OBJECT_FOCUS, GUITHREADINFO, MSG, WINEVENT_OUTOFCONTEXT, WINEVENT_SKIPOWNPROCESS,
 };
 use windows::Win32::Foundation::HWND;
 
@@ -60,8 +59,9 @@ fn ensure_focus_hook() {
                 let _ = TranslateMessage(&msg);
                 DispatchMessageW(&msg);
             }
-            // `hook` must stay alive for the process; leaking it is intentional.
-            std::mem::forget(hook);
+            // SetWinEventHook stays installed until process exit. HWINEVENTHOOK
+            // is Copy and does not unhook on drop.
+            let _ = hook;
         });
     });
 }
