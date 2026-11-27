@@ -1,5 +1,39 @@
 # Speech Studio — Roadmap
 
+## Plan de estabilización y soporte multiplataforma
+
+Las decisiones posteriores del usuario establecen una reorganización profunda, núcleo Rust, CrispASR principal, Python opcional autocontenido e instaladores multiplataforma que funcionen sin Python instalado. El diseño y los criterios de aceptación están en [la especificación de arquitectura](specs/2026-11-27-desktop-runtime-architecture.md).
+
+Actualizado el 27 de noviembre de 2026. Las secciones posteriores conservan el historial anterior a v0.2.1. Este plan define el trabajo pendiente y sus criterios de aceptación.
+
+| Fase | Etapas | Criterio de cierre | Estado |
+| --- | --- | --- | --- |
+| 1. Referencia de Windows | Comparar instalador local y publicado. Abrir sin Vite. Probar TTS, STT, guardar y reabrir. | Instalador identificado por SHA-256 y recorrido completo reproducido desde instalación limpia. | Huella y tamaño coinciden con GitHub. Puerto 1420 libre. Validación visual pendiente por fallo de inicialización del control de Windows. |
+| 2. Fiabilidad y API | Actualizar pruebas del catálogo y CrispASR. Proteger rutas internas HTTP/WebSocket. Compilar producción en CI de Windows. | Pruebas correctas en Python 3.12, TypeScript y Rust. Clientes LAN solo acceden a API pública autenticada. | En ejecución. |
+| 3. Subtítulos y atajo | Corregir carrera de inicio y liberación de listeners. Diagnosticar captura, PCM, WebSocket, STT y eventos. Iniciar seguimiento de foco con la aplicación. | Voz conocida produce texto en vista y overlay. Parar y reiniciar funciona. Atajo verificado en primer uso y tras cambiar de ventana. | Corrección de inicio en ejecución. Prueba real pendiente. |
+| 4. Datos y recuperación | Escrituras atómicas. Serializar cambios de historial y perfiles. Separar recursos, datos y caché por usuario. Migrar instalaciones existentes y conservar modo portable. | Interrupciones y operaciones concurrentes preservan datos. Arranque desde ubicación de solo lectura en cada sistema. | Pendiente. |
+| 5. Núcleo multiplataforma | Instalación reproducible de Python y motores en Linux/macOS. Preparar paquetes con backend y recursos. Declarar capacidades según sistema y hardware. | Instalación limpia en Windows, Ubuntu 24.04 y macOS permite TTS, STT, guardar y reabrir. | Pendiente de implementación y equipos de validación. |
+| 6. Interfaz y experiencia | Redimensionado y escalado. Teclado y foco. Estados de carga, cancelación y errores recuperables. Coherencia de inglés/español. Fuente real de audio visible en macOS. | Recorridos principales verificados con teclado y escalado. Errores indican una acción concreta y permiten reintentar. | Pendiente. |
+| 7. Distribución | Matriz CI de tres sistemas. Artefactos de prueba. Actualización conservando datos. Notas y documentación alineadas con capacidades verificadas. | Paquetes instalados y probados por sistema. Evidencias de actualización y cierre de procesos. Aprobación de publicación. | Pendiente. |
+
+La validación de GPU incluye Fish y XTTS en rutas con espacios, Unicode y corchetes. La precarga de cuDNN se ampliará cuando una reproducción identifique el proceso afectado. Los tiempos de carga se medirán por motor en frío y en caliente.
+
+### Evidencias de la primera etapa
+
+- Instalador v0.2.1 local y publicado con el mismo SHA-256, `e79d51b5ca7266ace171942d2f2090a94b77a5dc1cabbefe493b109f52d18a6f`.
+- Suite local de Python 3.12.13 con 77 pruebas correctas. Incluye bloqueo HTTP/WebSocket, preservación del archivo ante un reemplazo fallido, 24 escrituras concurrentes de historial y API de voz nativa sin perfiles.
+- Compilación TypeScript/Vite y 13 pruebas Rust correctas en Windows. `npx tauri build --no-bundle` genera el ejecutable de producción actualizado. El instalador publicado continúa siendo el de v0.2.1.
+- Petición real a `/v1/audio/speech` usando eSpeak CPU devuelve HTTP 200 y WAV mono a 22050 Hz con 2,15 segundos de audio. La prueba usa ajustes temporales en memoria.
+- Ajustes, historial y perfiles usan reemplazo atómico. Las operaciones de historial y perfiles se serializan dentro de un proceso. La coordinación entre múltiples procesos y la migración de rutas siguen pendientes.
+- Subtítulos libera listeners incluso si la suscripción termina después del desmontaje. La UI marca la sesión antes de arrancar la captura, y un cierre inesperado de WebSocket se comunica como error. El overlay muestra errores. Falta la validación visual y con voz real.
+- El seguimiento de foco de Windows arranca con la aplicación. La ventana principal permite redimensionar y maximizar. Falta la prueba interactiva del atajo y del escalado.
+
+El control visual de Windows falla al inicializarse por la interpretación de los corchetes de la ruta del workspace. Debian está registrado en WSL, pero falta preparar sus dependencias de desarrollo y audio. No hay un equipo macOS seleccionado para esta validación. La nueva configuración de CI requiere una ejecución remota para confirmar el resultado en los runners.
+
+La firma y notarización de macOS requieren credenciales del editor. La publicación se realizará tras verificar los paquetes y recibir autorización. Una compilación correcta cubre la construcción. Las pruebas de escritorio y audio deben ejecutarse en cada sistema.
+
+## Historial anterior a v0.2.1
+
 App de escritorio en `N:\` (`Z:\[🛠️] [Tools]\xyz-speech-studio`). Estado contrastado con el código el 24 de noviembre de 2026.
 
 El detalle vivo de cada parte está en [app/](app/README.md). Este archivo solo guarda las fases.

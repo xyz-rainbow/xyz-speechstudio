@@ -90,7 +90,10 @@ jobs:
 
       - name: Compile installer
         shell: pwsh
-        run: .\installer\windows\build.ps1
+        run: |
+          python -m pip install uv==0.12.21
+          .\scripts\fetch-crispasr.ps1 -Variant cpu
+          .\installer\windows\build.ps1
 
       - name: Upload installer
         shell: pwsh

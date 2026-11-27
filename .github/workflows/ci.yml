@@ -46,7 +46,11 @@ jobs:
 
   python:
     name: Python lint and test
-    runs-on: ${{ inputs.use_github_hosted && 'ubuntu-24.04' || 'arc-xyz-speechstudio' }}
+    strategy:
+      fail-fast: false
+      matrix:
+        platform: [linux, windows, macos]
+    runs-on: ${{ matrix.platform == 'windows' && 'windows-latest' || matrix.platform == 'macos' && 'macos-latest' || (inputs.use_github_hosted && 'ubuntu-24.04' || 'arc-xyz-speechstudio') }}
     steps:
       - name: Checkout
         uses: actions/checkout@v7
@@ -59,7 +63,7 @@ jobs:
       - name: Install test dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install pydantic fastapi httpx huggingface_hub pytest
+          pip install -r installer/requirements-core.txt pytest
 
       - name: Compile backend
         run: python -m compileall -q backend
@@ -69,6 +73,10 @@ jobs:
 
       - name: Pytest
         run: pytest -q
+
+      - name: Check Unix launchers
+        if: runner.os != 'Windows'
+        run: bash -n installer/setup-env.sh scripts/speechstudio
 
   rust-linux:
     name: Rust check and build (Linux)
@@ -90,7 +98,7 @@ jobs:
               libxdo-dev \
               libssl-dev \
               libayatana-appindicator3-dev \
-              librsvg2-dev || true
+              librsvg2-dev
           fi
 
       - name: Setup Rust
@@ -141,8 +149,7 @@ jobs:
         run: cargo clippy --locked --all-targets -- -D warnings
 
   rust-windows:
-    name: Rust check (Windows)
-    if: ${{ github.event_name == 'workflow_dispatch' && inputs.use_github_hosted }}
+    name: Production build and Rust tests (Windows)
     runs-on: windows-latest
     steps:
       - name: Checkout
@@ -159,3 +166,19 @@ jobs:
       - name: Cargo check
         working-directory: src-tauri
         run: cargo check --locked
+
+      - name: Setup Node
+        uses: actions/setup-node@v7
+        with:
+          node-version: "22"
+          cache: npm
+
+      - name: Install frontend dependencies
+        run: npm ci
+
+      - name: Production build
+        run: npx tauri build --no-bundle
+
+      - name: Rust tests
+        working-directory: src-tauri
+        run: cargo test --locked
