@@ -425,9 +425,9 @@ export const TtsStudioView: React.FC<TtsStudioViewProps> = ({
         if (p.engine === modelFamily || (modelFamily === "qwen" && p.engine === "qwen")) {
           return true;
         }
-        // Fish Speech clones from the reference wav. A profile tagged chatterbox
-        // (or another clone engine) is still a valid voice for the active model.
-        if (modelFamily === "fish" && p.ref_audio_path) return true;
+        // Fish Speech and F5 clone from the reference wav. A profile tagged
+        // chatterbox (or another clone engine) is still a valid voice.
+        if ((modelFamily === "fish" || modelFamily === "f5") && p.ref_audio_path) return true;
         return false;
       })
     : [];

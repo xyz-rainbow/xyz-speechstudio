@@ -8,6 +8,7 @@ import hashlib
 import json
 import os
 import socket
+import sys
 import tempfile
 import time
 import wave
@@ -45,6 +46,46 @@ class SynthRequest(BaseModel):
     ref_text: str = ""
     out_path: str
     seed: int = -1
+
+
+def _preload_cudnn() -> None:
+    """Map the wheel's cuDNN plugins before torch's loader runs.
+
+    cuDNN resolves sibling DLLs from the module path. A path that contains
+    brackets (this repo lives under ``[🛠️]``) makes that lookup return an
+    invalid handle, and the first convolution aborts with
+    ``Cannot load symbol cudnnGetVersion``. Loading the DLLs by absolute path
+    first keeps the already-mapped plugins.
+    """
+    if os.name != "nt":
+        return
+    libdir = Path(sys.prefix) / "Lib" / "site-packages" / "torch" / "lib"
+    if not libdir.is_dir():
+        return
+    import ctypes
+
+    try:
+        os.add_dll_directory(str(libdir))
+    except OSError:
+        return
+    kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+    for dll in sorted(libdir.glob("cudnn*.dll")):
+        kernel32.LoadLibraryExW(str(dll), None, 0x00001100)
+
+
+def _use_soundfile_loader() -> None:
+    """TorchAudio 2.9+ reads clips through TorchCodec, which needs FFmpeg shared libraries."""
+    import soundfile as sf
+    import torch
+    import torchaudio
+    import f5_tts.infer.utils_infer as utils_infer
+
+    def _sf_load(uri, *l_args, **l_kwargs):
+        data, sr = sf.read(str(uri), always_2d=True, dtype="float32")
+        return torch.from_numpy(data.T.copy()), int(sr)
+
+    torchaudio.load = _sf_load
+    utils_infer.torchaudio.load = _sf_load
 
 
 def _save_pcm16_wav(path: Path, audio, sr: int) -> None:
@@ -166,16 +207,11 @@ def load_model(req: LoadRequest):
         return {"loaded": True, "cached": True, "elapsed_s": 0.0}
 
     try:
-        import soundfile as sf
+        _preload_cudnn()
         import torch
-        import torchaudio
         from f5_tts.api import F5TTS
 
-        def _sf_load(uri, *l_args, **l_kwargs):
-            data, sr = sf.read(str(uri), always_2d=True, dtype="float32")
-            return torch.from_numpy(data.T.copy()), int(sr)
-
-        torchaudio.load = _sf_load
+        _use_soundfile_loader()
 
         ckpt_file, vocab_file = _find_ckpt_and_vocab(model_dir)
         dev = "cuda" if (args.device == "gpu" and torch.cuda.is_available()) else "cpu"
@@ -208,7 +244,10 @@ def synthesize(req: SynthRequest):
 
     t0 = time.perf_counter()
     try:
-        ref_clip, matched_ref_text = _prepare_short_ref(speaker, req.ref_text.strip())
+        _use_soundfile_loader()
+        # An empty transcript makes F5 download openai/whisper-large-v3-turbo.
+        ref_text = req.ref_text.strip() or "Referencia."
+        ref_clip, matched_ref_text = _prepare_short_ref(speaker, ref_text)
         wav, sr, _ = tts.infer(
             ref_file=str(ref_clip),
             ref_text=matched_ref_text,

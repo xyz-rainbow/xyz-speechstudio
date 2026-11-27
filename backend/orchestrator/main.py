@@ -1462,6 +1462,34 @@ def _run_tts(
             )
             return res, prof.name
 
+        # Safetensors F5 (Spanish and the other fine-tunes) is the Python worker.
+        # A profile tagged for another clone engine only supplies the reference clip.
+        if entry.engine in ("f5", "f5-tts") and "gguf" not in entry.id.lower():
+            if prof is None or not prof.ref_audio_path or not Path(prof.ref_audio_path).exists():
+                raise HTTPException(
+                    status_code=400,
+                    detail="F5-TTS needs a voice profile with a reference audio file.",
+                )
+            raw_ref = (
+                Path(prof.ref_24k_path)
+                if prof.ref_24k_path and Path(prof.ref_24k_path).is_file()
+                else Path(prof.ref_audio_path)
+            )
+            clip_ref, matched_ref_text = _prepare_f5_ref(raw_ref, prof.ref_text or "", lang, settings)
+            res = _call_tts_worker(
+                lambda: ensure_f5_loaded(model_id=entry.id, force_stop_captions=force_stop_captions),
+                {
+                    "text": text,
+                    "lang": lang,
+                    "speaker_wav": str(clip_ref),
+                    "ref_text": matched_ref_text,
+                    "out_path": str(out_path),
+                    "seed": seed,
+                },
+                "F5-TTS",
+            )
+            return res, prof.name
+
     if prof is None:
         raise HTTPException(status_code=404, detail="Voice profile not found.")
     if prof.engine == "xtts":
