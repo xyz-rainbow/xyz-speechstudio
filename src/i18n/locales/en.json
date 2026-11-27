@@ -1,7 +1,7 @@
 {
   "app": {
     "name": "Speech Studio",
-    "phaseBadge": "v0.2.1"
+    "phaseBadge": "v0.2.2"
   },
   "nav": {
     "synthesize": "Synthesize",
@@ -336,6 +336,20 @@
     "quitBtn": "Close & Shut Down",
     "remember": "Remember my choice"
   },
+  "loquendo": {
+    "selectInstaller": "Select a Loquendo TTS 7 installer",
+    "installerFilter": "Windows installers",
+    "installerRequired": "Requires the Loquendo TTS 7 engine and voice installers. Select an existing installer, then rescan voices.",
+    "finishInstaller": "Complete the engine or voice installation, then rescan. You can select additional voice installers here.",
+    "windowsOnly": "Loquendo through SAPI 5 requires Windows. This model is unavailable on this system.",
+    "installLocal": "Install from file",
+    "rescan": "Rescan voices",
+    "confirmTitle": "Install Loquendo TTS 7",
+    "licenseNotice": "Loquendo TTS 7 is third-party software with its own license. You need a valid license for the engine and voices. Review and accept the original supplier's terms in its installer. This confirmation does not grant a license or redistribution rights.",
+    "licenseConfirm": "I have a valid license for the selected software and will follow the original supplier's license terms.",
+    "openInstaller": "Open installer",
+    "cancel": "Cancel"
+  },
   "update": {
     "badge": "Update",
     "title": "Updates",
@@ -353,6 +367,9 @@
     "available": "A new version is available.",
     "noAsset": "This release has no installer for this system yet. Open it on GitHub.",
     "willQuit": "Speech Studio will close so the installer can replace it.",
-    "error": "Could not reach GitHub."
+    "error": "Could not reach GitHub.",
+    "installError": "The update could not be completed. Check your connection and try again.",
+    "cancel": "Cancel download",
+    "cancelled": "Update download cancelled."
   }
 }

@@ -1,7 +1,7 @@
 {
   "app": {
     "name": "Speech Studio",
-    "phaseBadge": "v0.2.1"
+    "phaseBadge": "v0.2.2"
   },
   "nav": {
     "synthesize": "Sintetizar",
@@ -336,6 +336,20 @@
     "quitBtn": "Cerrar y Apagar",
     "remember": "Recordar mi elección"
   },
+  "loquendo": {
+    "selectInstaller": "Selecciona un instalador de Loquendo TTS 7",
+    "installerFilter": "Instaladores de Windows",
+    "installerRequired": "Requiere los instaladores del motor y las voces de Loquendo TTS 7. Selecciona un instalador existente y después busca las voces.",
+    "finishInstaller": "Completa la instalación del motor o la voz y después busca las voces. Aquí puedes seleccionar instaladores de voces adicionales.",
+    "windowsOnly": "Loquendo mediante SAPI 5 requiere Windows. Este modelo está disponible únicamente en ese sistema.",
+    "installLocal": "Instalar desde archivo",
+    "rescan": "Buscar voces",
+    "confirmTitle": "Instalar Loquendo TTS 7",
+    "licenseNotice": "Loquendo TTS 7 es software de terceros con su propia licencia. Necesitas una licencia válida para el motor y las voces. Revisa y acepta las condiciones originales del proveedor en su instalador. Esta confirmación no concede una licencia ni derechos de redistribución.",
+    "licenseConfirm": "Dispongo de una licencia válida para el software seleccionado y seguiré las condiciones de licencia originales del proveedor.",
+    "openInstaller": "Abrir instalador",
+    "cancel": "Cancelar"
+  },
   "update": {
     "badge": "Update",
     "title": "Actualizaciones",
@@ -353,6 +367,9 @@
     "available": "Hay una versión nueva.",
     "noAsset": "Esta release todavía no incluye un instalador para este sistema. Ábrela en GitHub.",
     "willQuit": "Speech Studio se cerrará para que el instalador pueda sustituirla.",
-    "error": "No se pudo consultar GitHub."
+    "error": "No se pudo consultar GitHub.",
+    "installError": "No se pudo completar la actualización. Comprueba la conexión y vuelve a intentarlo.",
+    "cancel": "Cancelar descarga",
+    "cancelled": "Descarga de la actualización cancelada."
   }
 }

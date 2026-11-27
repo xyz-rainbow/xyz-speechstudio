@@ -33,6 +33,7 @@ import type {
   VramStatus,
 } from "../types";
 import { GlassCard } from "./GlassCard";
+import { LoquendoInstallControl } from "./LoquendoInstallControl";
 
 interface ModelHubModalProps {
   open: boolean;
@@ -724,7 +725,9 @@ export const ModelHubModal: React.FC<ModelHubModalProps> = ({
                         </div>
                       )}
 
-                      {activeJob ? (
+                      {variant.id === "loquendo-tts7" ? (
+                        <LoquendoInstallControl baseUrl={baseUrl} supported={variant.runtime_supported} onRefresh={onRefreshCatalog} />
+                      ) : activeJob ? (
                         <div className="mt-auto flex flex-col gap-1.5 pt-1">
                           <div className="flex items-center justify-between text-[10px] font-mono">
                             <span className="text-cyan-300">{t("models.downloading")}</span>

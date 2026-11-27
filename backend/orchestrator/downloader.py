@@ -849,11 +849,11 @@ BUILTIN_MODELS: list[dict[str, Any]] = [
     },
     {
         "id": "windows-sapi5",
-        "name": "Windows SAPI 5 / Loquendo",
+        "name": "Windows SAPI 5",
         "kind": "tts",
         "engine": "sapi5",
         "family_id": "sapi5",
-        "family_name": "Windows SAPI 5 / Loquendo",
+        "family_name": "Windows SAPI 5",
         "variant_label": "32/64-bit + OneCore",
         "repo_id": "local/windows-sapi5",
         "dir_names": [],
@@ -873,6 +873,24 @@ BUILTIN_MODELS: list[dict[str, Any]] = [
                 "recommended": True,
             },
         ],
+    },
+    {
+        "id": "loquendo-tts7",
+        "name": "Loquendo TTS 7",
+        "kind": "tts",
+        "engine": "sapi5",
+        "family_id": "loquendo-tts7",
+        "family_name": "Loquendo TTS 7",
+        "variant_label": "Windows SAPI 5 · 32/64-bit",
+        "repo_id": "local/loquendo-tts7",
+        "dir_names": [],
+        "description": "Loquendo TTS 7 engine and voices through Windows SAPI 5. Requires an existing licensed installer. Select the engine and voice installers locally, then rescan installed voices.",
+        "runtime_supported": True,
+        "install_mode": "shared_weights",
+        "voice_mode": "builtin_voices",
+        "quant_policy": "binary",
+        "languages": [],
+        "quants": [{"id": "native", "label": "Windows SAPI 5", "disk_mb": 0, "vram_mib": 0, "files": [], "recommended": True}],
     },
     {
         "id": "kitten-tts-2-mini",
@@ -1219,6 +1237,10 @@ def _detect_builtin_install(entry: dict[str, Any], settings: AppSettings) -> tup
     if engine == "sapi5":
         from . import sapi5_engine
 
+        if mid == "loquendo-tts7":
+            from . import loquendo
+
+            return (True, "native", None, False, 0) if loquendo.installed_voices() else (False, None, None, False, 0)
         if sapi5_engine.is_available():
             return True, "native", None, False, 0
         return False, None, None, False, 0
@@ -1454,7 +1476,12 @@ def build_catalog(settings: AppSettings) -> list[CatalogModelEntry]:
         if m["engine"] == "sapi5":
             from . import sapi5_engine
 
-            langs = sapi5_engine.installed_languages()
+            if m["id"] == "loquendo-tts7":
+                from . import loquendo
+
+                langs = loquendo.installed_languages()
+            else:
+                langs = sapi5_engine.installed_languages()
             if langs:
                 caps.languages = langs
         avail_rt, active_rt = _runtimes_for_model(m, settings)

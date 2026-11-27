@@ -27,6 +27,8 @@ from fastapi.responses import FileResponse, JSONResponse, Response
 from pydantic import BaseModel
 
 from . import chunking, downloader, external_providers, history, profiles, updates
+from . import __version__
+from .api_access import DESKTOP_ORIGINS, DEV_ORIGIN_PATTERN, DesktopAccessMiddleware
 from .config import (
     APP_ROOT,
     DEFAULT_PROFILES_DIR,
@@ -628,15 +630,17 @@ async def lifespan(app: FastAPI):
     supervisor.shutdown_all()
 
 
-app = FastAPI(title="Speech Studio Local API", version="0.3.0", lifespan=lifespan)
+app = FastAPI(title="Speech Studio Local API", version=__version__, lifespan=lifespan)
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=DESKTOP_ORIGINS,
+    allow_origin_regex=DEV_ORIGIN_PATTERN,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
+app.add_middleware(DesktopAccessMiddleware)
 
 
 def _update_http(exc: updates.UpdateError) -> HTTPException:
@@ -676,6 +680,16 @@ def updates_install(payload: UpdateCurrentRequest, request: Request):
         return updates.install_latest(payload.current)
     except updates.UpdateError as exc:
         raise _update_http(exc) from exc
+
+
+@app.get("/api/updates/progress")
+def update_progress():
+    return updates.download_progress()
+
+
+@app.post("/api/updates/cancel")
+def cancel_update():
+    return updates.cancel_download()
 
 
 @app.get("/health")
@@ -1368,6 +1382,10 @@ def _run_tts(
             from . import sapi5_engine
 
             try:
+                if entry.id == "loquendo-tts7":
+                    from . import loquendo
+
+                    voice = loquendo.resolve_voice(voice, lang)
                 res = sapi5_engine.synthesize_tts(
                     text=text,
                     out_path=out_path,
@@ -1575,6 +1593,10 @@ def list_tts_builtin_voices(model_id: Optional[str] = None, language: Optional[s
     if entry.engine == "sapi5":
         from . import sapi5_engine
 
+        if entry.id == "loquendo-tts7":
+            from . import loquendo
+
+            return {"voices": loquendo.list_voices(language=language)}
         return {"voices": sapi5_engine.list_voices(language=language)}
     if entry.engine == "espeak":
         from . import espeak_engine
@@ -1605,26 +1627,55 @@ def refresh_sapi5_voices():
     }
 
 
+class LoquendoInstallRequest(BaseModel):
+    source_path: str
+    license_confirmed: bool = False
+
+
+@app.post("/api/tts/loquendo/install")
+def install_loquendo(payload: LoquendoInstallRequest):
+    from . import loquendo
+
+    if not payload.license_confirmed:
+        raise HTTPException(status_code=400, detail="Confirm the Loquendo license notice before opening the installer.")
+    try:
+        return loquendo.launch_installer(payload.source_path)
+    except (ValueError, FileNotFoundError) as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except OSError as exc:
+        raise HTTPException(status_code=500, detail=f"Could not open Loquendo installer: {exc}") from exc
+
+
+@app.post("/api/tts/loquendo/refresh")
+def refresh_loquendo():
+    from . import loquendo
+
+    voices = loquendo.installed_voices(force_refresh=True)
+    return {"installed": bool(voices), "voices": loquendo.list_voices(), "languages": loquendo.installed_languages()}
+
+
+def _supports_profileless_tts(entry, device: str = "gpu") -> bool:
+    from . import crispasr
+
+    if entry is None:
+        return False
+    if entry.engine in ("kitten", "espeak", "sapi5"):
+        return True
+    model_dir = Path(entry.install_dir) if entry.install_dir else None
+    return crispasr.supports_engine(entry.engine, model_dir=model_dir, device=device) and (
+        (entry.capabilities.voice_mode if entry.capabilities else "") == "builtin_voices"
+        or (entry.engine in ("f5", "f5-tts") and "gguf" in entry.id.lower())
+    )
+
+
 def _resolve_tts_context(req: SynthesizeRequest):
     text = req.text.strip()
     if not text:
         raise HTTPException(status_code=400, detail="Input text is empty.")
     settings = load_settings()
-    from . import crispasr
-
     prof = profiles.get_profile(req.profile_id)
     entry = _active_tts_catalog_entry(settings) if settings.tts_source == "local" else None
-    model_dir = Path(entry.install_dir) if entry and entry.install_dir else None
-    builtin_ok = entry is not None and (
-        entry.engine in ("kitten", "espeak", "sapi5")
-        or (
-            crispasr.supports_engine(entry.engine, model_dir=model_dir)
-            and (
-                (entry.capabilities.voice_mode if entry.capabilities else "") == "builtin_voices"
-                or (entry.engine in ("f5", "f5-tts") and "gguf" in entry.id.lower())
-            )
-        )
-    )
+    builtin_ok = _supports_profileless_tts(entry, settings.tts_device)
     if settings.tts_source == "local" and prof is None and not builtin_ok:
         raise HTTPException(status_code=404, detail=f"Profile not found: {req.profile_id}")
 
@@ -2047,19 +2098,8 @@ def openai_speech(request: Request, req: SpeechRequest):
 
     prof = profiles.get_profile(req.voice)
     if prof is None and s.tts_source == "local":
-        from . import crispasr
-
         entry = _active_tts_catalog_entry(s)
-        model_dir = Path(entry.install_dir) if entry and entry.install_dir else None
-        tts_dev = "cpu" if s.tts_device == "cpu" else "gpu"
-        builtin_ok = (
-            entry is not None
-            and crispasr.supports_engine(entry.engine, model_dir=model_dir, device=tts_dev)
-            and (
-                (entry.capabilities.voice_mode if entry.capabilities else "") == "builtin_voices"
-                or (entry.engine in ("f5", "f5-tts") and "gguf" in entry.id.lower())
-            )
-        )
+        builtin_ok = _supports_profileless_tts(entry, s.tts_device)
         if not builtin_ok:
             all_p = [p for p in profiles.list_profiles() if p.ready]
             if not all_p:

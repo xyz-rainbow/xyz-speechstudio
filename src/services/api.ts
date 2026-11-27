@@ -22,6 +22,20 @@ import type {
 export const isTauri = () =>
   typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
 
+export async function installLoquendo(baseUrl: string, sourcePath: string): Promise<void> {
+  const response = await fetch(`${baseUrl}/api/tts/loquendo/install`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ source_path: sourcePath, license_confirmed: true }),
+  });
+  await parseErrorOrJson(response);
+}
+
+export async function refreshLoquendo(baseUrl: string): Promise<void> {
+  const response = await fetch(`${baseUrl}/api/tts/loquendo/refresh`, { method: "POST" });
+  await parseErrorOrJson(response);
+}
+
 export class LiveCaptionsConflictError extends Error {
   constructor(message: string) {
     super(message);
@@ -218,6 +232,22 @@ export async function installUpdate(
     body: JSON.stringify({ current }),
   });
   return parseErrorOrJson(res);
+}
+
+export interface UpdateProgress {
+  phase: string;
+  downloaded: number;
+  total: number;
+}
+
+export async function fetchUpdateProgress(baseUrl: string): Promise<UpdateProgress> {
+  const res = await fetch(`${baseUrl}/api/updates/progress`);
+  return parseErrorOrJson(res);
+}
+
+export async function cancelUpdate(baseUrl: string): Promise<void> {
+  const res = await fetch(`${baseUrl}/api/updates/cancel`, { method: "POST" });
+  await parseErrorOrJson(res);
 }
 
 export interface TrayLabelsPayload {

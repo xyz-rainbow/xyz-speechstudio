@@ -61,7 +61,7 @@ def test_builtin_catalog_has_family_grouping_and_fish_audio() -> None:
     assert "kokoro" in families
     assert "kitten-tts" in families
     assert "piper" in families
-    assert all(m.get("runtime_supported") is False for m in f5)
+    assert {m["id"] for m in f5 if m.get("runtime_supported")} == {"f5-tts-spanish"}
     assert all(m.get("install_mode") == "per_language_checkpoint" for m in f5)
     assert all(len(m.get("quants", [])) >= 1 for m in f5)
 
@@ -72,7 +72,7 @@ def test_empty_models_dir_reports_zero_installed() -> None:
         settings = AppSettings(models_dir=str(tmp))
         entries = downloader.build_catalog(settings)
         assert entries
-        assert all(not entry.installed for entry in entries)
+        assert all(not entry.installed for entry in entries if entry.engine != "sapi5")
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
 
