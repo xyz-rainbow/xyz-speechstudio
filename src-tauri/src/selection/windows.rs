@@ -37,7 +37,7 @@ pub fn read_selected_text() -> Option<String> {
     }
 }
 
-fn ensure_focus_hook() {
+pub(super) fn ensure_focus_hook() {
     static START: Once = Once::new();
     START.call_once(|| {
         std::thread::spawn(|| unsafe {

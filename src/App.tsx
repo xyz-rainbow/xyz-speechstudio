@@ -54,8 +54,8 @@ const DEFAULT_SETTINGS: AppSettings = {
   sidebar_collapsed: false,
   models_dir: "",
   outputs_dir: "",
-  tts_device: "gpu",
-  stt_device: "gpu",
+  tts_device: "cpu",
+  stt_device: "cpu",
   tts_source: "local",
   stt_source: "local",
   active_tts_model: "qwen3-1.7b-base-Q8_0",
@@ -400,7 +400,9 @@ function MainStudio() {
           <div className={activeTab === "subtitles" ? "flex-1 min-h-0 flex flex-col overflow-y-auto" : "hidden"}>
             <SubtitlesView
               baseUrl={backend.base_url}
+              catalog={catalog}
               settings={settings}
+              onSaveSettings={handleSaveSettings}
               onAfterGpuAction={refreshSystem}
               liveCaptionsSupported={backend.live_captions_supported}
             />

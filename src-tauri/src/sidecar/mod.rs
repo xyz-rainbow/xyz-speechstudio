@@ -1,9 +1,9 @@
 use std::fs::{self, File};
-use std::io::{BufRead, BufReader};
+use std::io::{BufRead, BufReader, Read};
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
-use std::sync::Mutex;
-use std::time::{Duration, Instant};
+use std::sync::{mpsc, Mutex};
+use std::time::Duration;
 
 use serde::{Deserialize, Serialize};
 
@@ -17,7 +17,7 @@ pub struct BackendInfo {
     pub read_selection_supported: bool,
 }
 
-#[derive(Deserialize)]
+#[derive(Debug, Deserialize)]
 struct Handshake {
     port: u16,
     pid: u32,
@@ -44,6 +44,12 @@ struct RunningBackend {
 }
 
 fn core_venv_python(app_root: &Path) -> Option<PathBuf> {
+    let bundled = app_root.join("runtime").join("python").join(
+        if cfg!(windows) { "python.exe" } else { "bin/python3" }
+    );
+    if bundled.is_file() {
+        return Some(bundled);
+    }
     // Canonical: runtime/envs; legacy: .venvs (read fallback).
     let roots = [
         app_root.join("runtime").join("envs"),
@@ -81,7 +87,18 @@ fn looks_like_app_root(dir: &Path) -> bool {
 pub fn resolve_app_root() -> PathBuf {
     let mut seeds = Vec::new();
     if let Ok(exe) = std::env::current_exe() {
+        #[cfg(target_os = "macos")]
+        if let Some(contents) = exe.parent().and_then(|dir| dir.parent()) {
+            seeds.push(contents.join("Resources"));
+        }
         seeds.push(exe);
+    }
+    #[cfg(target_os = "linux")]
+    {
+        if let Some(app_dir) = std::env::var_os("APPDIR") {
+            seeds.push(PathBuf::from(app_dir).join("usr/lib/speech-studio"));
+        }
+        seeds.push(PathBuf::from("/usr/lib/speech-studio"));
     }
     if let Ok(cwd) = std::env::current_dir() {
         seeds.push(cwd);
@@ -131,7 +148,7 @@ fn idle_backend_info() -> BackendInfo {
 }
 
 fn read_configured_network(app_root: &Path) -> (String, u16) {
-    let path = app_root.join("data").join("settings.json");
+    let path = crate::paths::data_dir(app_root).join("settings.json");
     if let Ok(text) = fs::read_to_string(path) {
         if let Ok(parsed) = serde_json::from_str::<PartialSettings>(&text) {
             let host = match parsed.api_bind_host.as_deref() {
@@ -149,24 +166,37 @@ fn read_handshake(child: &mut Child) -> Result<Handshake, String> {
         .stdout
         .take()
         .ok_or_else(|| "Missing orchestrator stdout".to_string())?;
-    let mut reader = BufReader::new(stdout);
-    let deadline = Instant::now() + Duration::from_secs(15);
-    while Instant::now() < deadline {
-        let mut line = String::new();
-        match reader.read_line(&mut line) {
-            Ok(0) => break,
-            Ok(_) => {
-                let trimmed = line.trim();
-                if trimmed.starts_with('{') {
-                    if let Ok(hs) = serde_json::from_str::<Handshake>(trimmed) {
-                        return Ok(hs);
+    wait_for_handshake(stdout, Duration::from_secs(15))
+}
+
+fn wait_for_handshake(stdout: impl Read + Send + 'static, timeout: Duration) -> Result<Handshake, String> {
+    let (sender, receiver) = mpsc::channel();
+    std::thread::spawn(move || {
+        let mut reader = BufReader::new(stdout);
+        loop {
+            let mut line = String::new();
+            match reader.read_line(&mut line) {
+                Ok(0) => break,
+                Ok(_) => {
+                    if let Ok(hs) = serde_json::from_str::<Handshake>(line.trim()) {
+                        if hs.port > 0 && hs.pid > 0 {
+                            let _ = sender.send(Ok(hs));
+                            // Keep draining stdout so later logs cannot block the backend.
+                            let _ = std::io::copy(&mut reader, &mut std::io::sink());
+                            return;
+                        }
                     }
                 }
+                Err(error) => {
+                    let _ = sender.send(Err(format!("Failed reading orchestrator handshake: {error}")));
+                    return;
+                }
             }
-            Err(e) => return Err(format!("Failed reading orchestrator handshake: {e}")),
         }
-    }
-    Err("Orchestrator exited or timed out before sending port handshake".to_string())
+        let _ = sender.send(Err("Orchestrator exited before sending port handshake".into()));
+    });
+    receiver.recv_timeout(timeout)
+        .map_err(|_| "Orchestrator timed out before sending port handshake".to_string())?
 }
 
 impl BackendState {
@@ -178,13 +208,25 @@ impl BackendState {
     }
 
     pub fn start(&self) -> Result<BackendInfo, String> {
+        let mut guard = self.inner.lock().unwrap();
+        if let Some(running) = guard.as_mut() {
+            if running.child.try_wait().map_err(|e| e.to_string())?.is_none() {
+                return Ok(running.info.clone());
+            }
+        }
+        if let Some(mut previous) = guard.take() {
+            #[cfg(unix)]
+            unix_lifecycle::kill_process_group(previous.process_group_id);
+            let _ = previous.child.wait();
+        }
         let py_exe = core_venv_python(&self.app_root)
             .ok_or_else(|| {
                 "Python core env missing (runtime/envs/core or legacy .venvs/core)".to_string()
             })?;
 
-        let tmp_dir = self.app_root.join("data").join("tmp");
-        let _ = fs::create_dir_all(&tmp_dir);
+        let data_dir = crate::paths::data_dir(&self.app_root);
+        let tmp_dir = data_dir.join("tmp");
+        fs::create_dir_all(&tmp_dir).map_err(|e| format!("Failed creating data directory: {e}"))?;
         let stderr_file = File::create(tmp_dir.join("orchestrator.stderr.log"))
             .map_err(|e| format!("Failed creating stderr log: {e}"))?;
 
@@ -207,6 +249,8 @@ impl BackendState {
                 &port_arg,
             ])
             .env("SPEECHSTUDIO_DESKTOP", "1")
+            .env("PYTHONUTF8", "1")
+            .env("SPEECHSTUDIO_DATA_DIR", &data_dir)
             .stdout(Stdio::piped())
             .stderr(Stdio::from(stderr_file));
 
@@ -217,14 +261,25 @@ impl BackendState {
             .map_err(|e| format!("Failed spawning orchestrator: {e}"))?;
 
         #[cfg(windows)]
-        windows_lifecycle::assign_child_to_job(&job, &child)?;
+        if let Err(error) = windows_lifecycle::assign_child_to_job(&job, &child) {
+            let _ = child.kill();
+            let _ = child.wait();
+            return Err(error);
+        }
 
         #[cfg(unix)]
         let process_group_id = child.id() as libc::pid_t;
 
-        let hs = read_handshake(&mut child).inspect_err(|_| {
-            let _ = child.kill();
-        })?;
+        let hs = match read_handshake(&mut child) {
+            Ok(handshake) => handshake,
+            Err(error) => {
+                #[cfg(unix)]
+                unix_lifecycle::kill_process_group(process_group_id);
+                let _ = child.kill();
+                let _ = child.wait();
+                return Err(error);
+            }
+        };
 
         let (live_captions_supported, read_selection_supported) = platform_caps();
         let info = BackendInfo {
@@ -236,7 +291,6 @@ impl BackendState {
             read_selection_supported,
         };
 
-        let mut guard = self.inner.lock().unwrap();
         *guard = Some(RunningBackend {
             info: info.clone(),
             child,
@@ -275,6 +329,40 @@ impl BackendState {
     }
 }
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::io::Cursor;
+
+    #[test]
+    fn handshake_skips_logs_and_invalid_ports() {
+        let data = b"starting\n{\"port\":0,\"pid\":42}\n{\"port\":1234,\"pid\":42}\n";
+        let result = wait_for_handshake(Cursor::new(data), Duration::from_secs(1)).unwrap();
+        assert_eq!(result.port, 1234);
+        assert_eq!(result.pid, 42);
+    }
+
+    #[test]
+    fn handshake_reports_early_exit() {
+        assert!(wait_for_handshake(Cursor::new(b""), Duration::from_secs(1)).is_err());
+    }
+
+    #[test]
+    fn silent_process_cannot_block_startup_forever() {
+        struct BlockedReader(mpsc::Receiver<()>);
+        impl Read for BlockedReader {
+            fn read(&mut self, _: &mut [u8]) -> std::io::Result<usize> {
+                let _ = self.0.recv();
+                Ok(0)
+            }
+        }
+        let (release, reader) = mpsc::channel();
+        let result = wait_for_handshake(BlockedReader(reader), Duration::from_millis(20));
+        drop(release);
+        assert!(result.unwrap_err().contains("timed out"));
+    }
+}
+
 #[cfg(windows)]
 mod windows_lifecycle {
     use std::mem::size_of;
@@ -284,7 +372,7 @@ mod windows_lifecycle {
     use windows::Win32::System::JobObjects::{
         AssignProcessToJobObject, CreateJobObjectW, JobObjectExtendedLimitInformation,
         SetInformationJobObject, JOBOBJECT_EXTENDED_LIMIT_INFORMATION,
-        JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE,
+        JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE, JOB_OBJECT_LIMIT_BREAKAWAY_OK,
     };
 
     pub struct JobHandle(pub HANDLE);
@@ -305,7 +393,7 @@ mod windows_lifecycle {
             let h = CreateJobObjectW(None, None)
                 .map_err(|e| format!("CreateJobObjectW failed: {e}"))?;
             let mut limits: JOBOBJECT_EXTENDED_LIMIT_INFORMATION = std::mem::zeroed();
-            limits.BasicLimitInformation.LimitFlags = JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE;
+            limits.BasicLimitInformation.LimitFlags = JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE | JOB_OBJECT_LIMIT_BREAKAWAY_OK;
             SetInformationJobObject(
                 h,
                 JobObjectExtendedLimitInformation,
