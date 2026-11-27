@@ -38,12 +38,14 @@ jobs:
               gh release edit "$GITHUB_REF_NAME" --title "$TITLE" --notes-file "$NOTES"
             else
               gh release create "$GITHUB_REF_NAME" \
+                --draft \
                 --verify-tag \
                 --title "$TITLE" \
                 --notes-file "$NOTES"
             fi
           else
             gh release create "$GITHUB_REF_NAME" \
+              --draft \
               --verify-tag \
               --generate-notes \
               --title "$TITLE"
@@ -104,3 +106,36 @@ jobs:
           $setup = Get-ChildItem -LiteralPath installer\Output -Filter "SpeechStudio_${ver}_Setup.exe" | Select-Object -First 1
           if (-not $setup) { throw "No se encontro SpeechStudio_${ver}_Setup.exe" }
           gh release upload "${{ github.ref_name }}" $setup.FullName --clobber
+
+  unix-installers:
+    uses: ./.github/workflows/build-installers.yml
+    with:
+      include_windows: false
+
+  upload-unix:
+    needs: [release, unix-installers]
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: SpeechStudio-*
+          path: installer-artifacts
+          merge-multiple: true
+      - name: Upload Unix installers
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          mapfile -d '' assets < <(find installer-artifacts -type f \( -name '*.deb' -o -name '*.dmg' \) -print0)
+          test "${#assets[@]}" -ge 3
+          gh release upload "$GITHUB_REF_NAME" "${assets[@]}" --clobber
+
+  publish:
+    needs: [installer, upload-unix]
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Publish complete release
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+        run: gh release edit "$GITHUB_REF_NAME" --draft=false

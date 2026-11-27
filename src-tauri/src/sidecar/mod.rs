@@ -96,8 +96,11 @@ pub fn resolve_app_root() -> PathBuf {
     #[cfg(target_os = "linux")]
     {
         if let Some(app_dir) = std::env::var_os("APPDIR") {
-            seeds.push(PathBuf::from(app_dir).join("usr/lib/speech-studio"));
+            let base = PathBuf::from(app_dir).join("usr/lib");
+            seeds.push(base.join("Speech Studio"));
+            seeds.push(base.join("speech-studio"));
         }
+        seeds.push(PathBuf::from("/usr/lib/Speech Studio"));
         seeds.push(PathBuf::from("/usr/lib/speech-studio"));
     }
     if let Ok(cwd) = std::env::current_dir() {
