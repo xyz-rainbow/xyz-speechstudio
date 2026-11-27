@@ -22,6 +22,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Application quit forces process exit if WebView2 teardown stalls. The captions overlay opens at the bottom of the primary monitor. The window picker is portaled above the subtitles card.
 - Chained playback no longer stops after the first Kokoro section, and the gap between Qwen sections is removed by preloading the next chunk.
 - F5-TTS Spanish finishes synthesis. The worker reads the reference clip with soundfile instead of TorchCodec, and preloads the bundled cuDNN so a path that contains brackets does not abort the first convolution.
+- The read-selection hotkey retries UI Automation and keeps the last text window. Alt shortcuts no longer report an empty selection when the target app briefly opens its menu.
 
 ## [0.2.0] - 2026-11-26
 
