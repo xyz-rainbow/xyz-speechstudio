@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useState } from "react";
+import { createPortal } from "react-dom";
 import {
   AppWindow,
   ChevronLeft,
@@ -45,7 +46,12 @@ export const WindowPickerModal: React.FC<WindowPickerModalProps> = ({
     if (!open) return;
     setPage(1);
     setQuery("");
-  }, [open]);
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") onClose();
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [open, onClose]);
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -70,9 +76,15 @@ export const WindowPickerModal: React.FC<WindowPickerModalProps> = ({
 
   if (!open) return null;
 
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 backdrop-blur-sm p-4">
-      <GlassCard className="w-full max-w-3xl p-4 flex flex-col gap-3">
+  return createPortal(
+    <div
+      className="fixed inset-0 z-[70] flex items-center justify-center bg-black/75 backdrop-blur-sm p-3"
+      onClick={(e) => {
+        if (e.target === e.currentTarget) onClose();
+      }}
+    >
+      <div className="w-full max-w-[740px]" onClick={(e) => e.stopPropagation()}>
+        <GlassCard className="w-full max-h-[540px] p-3.5 flex flex-col gap-2.5 overflow-hidden">
         {/* Header */}
         <div className="flex items-center justify-between gap-2">
           <div className="flex items-center gap-2">
@@ -166,7 +178,7 @@ export const WindowPickerModal: React.FC<WindowPickerModalProps> = ({
               {t("subtitles.noApps")}
             </div>
           ) : (
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 px-4">
+            <div className="grid grid-cols-2 gap-2.5 px-4">
               {pageItems.map((app) => {
                 const key = rowKeyFn(app);
                 const isSelected = key === selectedKey;
@@ -186,7 +198,7 @@ export const WindowPickerModal: React.FC<WindowPickerModalProps> = ({
                     )}
                     style={{ backgroundColor: "var(--bg-input)" }}
                   >
-                    <div className="relative aspect-video w-full bg-black/90 flex items-center justify-center overflow-hidden">
+                    <div className="relative h-[132px] w-full bg-black/90 flex items-center justify-center overflow-hidden">
                       {app.thumbnail ? (
                         <img
                           src={app.thumbnail}
@@ -217,7 +229,7 @@ export const WindowPickerModal: React.FC<WindowPickerModalProps> = ({
                       )}
                     </div>
 
-                    <div className="flex items-center gap-2 px-3 py-2 border-t border-white/10">
+                    <div className="flex items-center gap-2 px-2.5 py-1.5 border-t border-white/10">
                       {app.icon ? (
                         <img src={app.icon} alt="" className="w-4 h-4 rounded-sm shrink-0" />
                       ) : (
@@ -258,6 +270,8 @@ export const WindowPickerModal: React.FC<WindowPickerModalProps> = ({
           </span>
         </div>
       </GlassCard>
-    </div>
+      </div>
+    </div>,
+    document.body
   );
 };

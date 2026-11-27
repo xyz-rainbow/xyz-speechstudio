@@ -4,9 +4,9 @@
 
 Aplicación local de escritorio en Windows para síntesis de voz, clonación de voz y transcripción — publicada por **Rainbow Technology**.
 
-[![CI](https://github.com/xyz-rainbow/xyz-speechstudio/actions/workflows/ci.yml/badge.svg)](https://github.com/xyz-rainbow/xyz-speechstudio/actions/workflows/ci.yml) [![Release v0.2.0](https://img.shields.io/badge/release-v0.2.0-39ff14?style=flat-square)](https://github.com/xyz-rainbow/xyz-speechstudio/releases/tag/v0.2.0) [![License: Proprietary](https://img.shields.io/badge/license-Proprietary-red?style=flat-square)](LICENSE) [![Windows](https://img.shields.io/badge/platform-Windows-0078d4?style=flat-square&logo=windows&logoColor=white)](https://www.microsoft.com/windows) [![Tauri](https://img.shields.io/badge/Tauri-2-24c8db?style=flat-square&logo=tauri&logoColor=white)](https://tauri.app/) [![Python](https://img.shields.io/badge/Python-3.12-3776ab?style=flat-square&logo=python&logoColor=white)](https://www.python.org/)
+[![CI](https://github.com/xyz-rainbow/xyz-speechstudio/actions/workflows/ci.yml/badge.svg)](https://github.com/xyz-rainbow/xyz-speechstudio/actions/workflows/ci.yml) [![Release v0.2.1](https://img.shields.io/badge/release-v0.2.1-39ff14?style=flat-square)](https://github.com/xyz-rainbow/xyz-speechstudio/releases/tag/v0.2.1) [![License: Proprietary](https://img.shields.io/badge/license-Proprietary-red?style=flat-square)](LICENSE) [![Windows](https://img.shields.io/badge/platform-Windows-0078d4?style=flat-square&logo=windows&logoColor=white)](https://www.microsoft.com/windows) [![Tauri](https://img.shields.io/badge/Tauri-2-24c8db?style=flat-square&logo=tauri&logoColor=white)](https://tauri.app/) [![Python](https://img.shields.io/badge/Python-3.12-3776ab?style=flat-square&logo=python&logoColor=white)](https://www.python.org/)
 
-Speech Studio `v0.2.0` es un shell de escritorio [Tauri 2](https://tauri.app/) (React + TypeScript + Rust) conectado a un orquestador FastAPI en Python, con **[CrispASR](https://github.com/CrispStrobe/CrispASR)** integrado (C++/CUDA y CPU en modo `--server` persistente en VRAM), un entorno Python unificado **`pytts`** y motor nativo CPU **eSpeak NG** (`espeakng-loader`). Windows 10/11 (x64) es la plataforma principal; **Ubuntu 24.04** permite compilar el shell y probar TTS/STT en desarrollo, mientras que Subtítulos en vivo, lectura por UI Automation y notificaciones toast son específicos de Windows.
+Speech Studio `v0.2.1` es un shell de escritorio [Tauri 2](https://tauri.app/) (React + TypeScript + Rust) conectado a un orquestador FastAPI en Python, con **[CrispASR](https://github.com/CrispStrobe/CrispASR)** integrado (C++/CUDA y CPU en modo `--server` persistente en VRAM), un entorno Python unificado **`pytts`** y motor nativo CPU **eSpeak NG** (`espeakng-loader`). Windows 10/11 (x64) es la plataforma principal; **Ubuntu 24.04** permite compilar el shell y probar TTS/STT en desarrollo, mientras que Subtítulos en vivo, lectura por UI Automation y notificaciones toast son específicos de Windows.
 
 ![Banner de Speech Studio](docs/assets/banner.svg)
 
@@ -27,7 +27,7 @@ Speech Studio `v0.2.0` es un shell de escritorio [Tauri 2](https://tauri.app/) (
 - **API local compatible con OpenAI y Endpoints externos** — `POST /v1/audio/speech` y `POST /v1/audio/transcriptions` (`127.0.0.1` o `0.0.0.0` con token Bearer obligatorio), además de plantillas para OpenAI, Groq, ElevenLabs y Deepgram con prueba de conexión y copia de cURL.
 - **Integración de escritorio en Windows** — ventana fija de `880×580` sin redimensionado, bandeja del sistema, diálogo de confirmación al cerrar (**Minimizar** o **Cerrar y Apagar**), inicio automático con el sistema (`ON | OFF`), medidor de VRAM NVIDIA, selectores GPU/CPU, atajo global UI Automation para leer el texto seleccionado, persistencia de estado entre pestañas y avisos toast al iniciar (`0%`) y completar (`100%`) descargas mediante `scripts/notify.ps1`.
 
-### Motores TTS verificados (`v0.2.0`)
+### Motores TTS verificados (`v0.2.1`)
 
 Los 10 motores TTS locales instalados han sido verificados de extremo a extremo generando audio real y comprobando su transcripción con NVIDIA Parakeet:
 
@@ -36,10 +36,11 @@ Los 10 motores TTS locales instalados han sido verificados de extremo a extremo 
 | **CrispASR** (C++/CUDA y CPU `--server`) | **Qwen3-TTS** (`1.7B Base`, `0.6B Base`, `CustomVoice`), **Kokoro 82M** (54 voces auto-empaquetadas a GGUF v3), **Piper**, **Chatterbox Turbo**, **CosyVoice3 0.5B** | Permanece cargado en VRAM entre pulsaciones de Play y se libera al pulsar **Eject**; el catálogo también incluye `Chatterbox Multilingual`, `F5-TTS GGUF F16`, `IndexTTS 1.5` y `Orpheus 3B` |
 | **Entorno unificado `pytts`** (`.venvs/pytts` / `runtime/envs/pytts`) | **Coqui XTTS v2**, **F5-TTS Spanish** (`F5TTS_Base` + recorte automático `<=11s` con transcripción emparejada), **Fish Speech 1.5** (`v1.5.1`), **KittenTTS 2 Mini** (ONNX + `voices_<lang>.npz` multilingüe) | Los cuatro motores Python comparten un único entorno virtual |
 | **Nativo en CPU** | **eSpeak NG** (`espeak-ng.dll` vía `espeakng-loader` / `ctypes`) | Corre directamente en el orquestador `core` sin servidores externos |
+| **Windows SAPI 5** | **SAPI 5 / Loquendo**, IVONA y voces OneCore | Usa las voces ya instaladas en Windows, incluidos los dialectos regionales |
 
 ## Requisitos
 
-- Windows 10 u 11 (x64). Instalador Inno Setup: **`SpeechStudio_0.2.0_Setup.exe`** ([GitHub Releases `v0.2.0`](https://github.com/xyz-rainbow/xyz-speechstudio/releases/tag/v0.2.0)), editor **Rainbow Technology** y ruta por defecto `C:\Program Files\Rainbow Technology\Speech Studio` (también disponible en modo portable).
+- Windows 10 u 11 (x64). Instalador Inno Setup: **`SpeechStudio_0.2.1_Setup.exe`** ([GitHub Releases `v0.2.1`](https://github.com/xyz-rainbow/xyz-speechstudio/releases/tag/v0.2.1)), editor **Rainbow Technology** y ruta por defecto `C:\Program Files\Rainbow Technology\Speech Studio` (también disponible en modo portable).
 - Binarios CrispASR CUDA (`cuda/`) y CPU (`cpu/`) en `runtime/bin/` (`scripts/fetch-crispasr.ps1`).
 - [`uv`](https://docs.astral.sh/uv/) y Python 3.12 de 64 bits (para que `installer/setup-env.ps1` prepare `runtime/envs/core` y `runtime/envs/pytts`).
 - Solo si compilas desde código fuente: [Node.js](https://nodejs.org/) 20+, Rust estable y [requisitos de Tauri 2 en Windows](https://v2.tauri.app/start/prerequisites/).
@@ -150,8 +151,8 @@ No subas `data/`, perfiles de voz, claves de API ni pesos de modelos; están exc
 
 ## Documentación
 
-- [CHANGELOG.md](CHANGELOG.md) — historial completo de cambios (`v0.2.0`).
-- [docs/releases/v0.2.0.md](docs/releases/v0.2.0.md) — notas de lanzamiento `v0.2.0`.
+- [CHANGELOG.md](CHANGELOG.md) — historial completo de cambios (`v0.2.1`).
+- [docs/releases/v0.2.1.md](docs/releases/v0.2.1.md) — notas de lanzamiento `v0.2.1`.
 - [docs/crispasr-research.md](docs/crispasr-research.md) — investigación de backends C++ en CrispASR y entorno unificado `pytts`.
 - [docs/README.md](docs/README.md) — especificación, problemas conocidos y notas de la app.
 

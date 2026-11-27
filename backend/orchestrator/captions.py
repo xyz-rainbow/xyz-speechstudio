@@ -5,16 +5,18 @@ from __future__ import annotations
 import asyncio
 import io
 import json
+import tempfile
+import uuid
 import wave
+from pathlib import Path
 from typing import Optional
 
 import websockets
 from fastapi import WebSocket, WebSocketDisconnect
 
-from .config import DEFAULT_TMP_DIR, load_settings
-from .downloader import BUILTIN_BY_ID
+from . import crispasr, downloader
+from .config import APP_ROOT, DEFAULT_TMP_DIR, load_settings
 from .external_providers import transcribe_external
-from .supervisor import supervisor
 
 PARTIAL_SECONDS = 1.0
 PAUSE_SECONDS = 0.4
@@ -63,16 +65,18 @@ def _selected_local_is_runnable() -> Optional[str]:
     settings = load_settings()
     if settings.stt_source != "local":
         return None
-    entry = BUILTIN_BY_ID.get(settings.active_stt_model)
+    entry = downloader.BUILTIN_BY_ID.get(settings.active_stt_model)
     if entry and entry.get("kind") == "stt" and not entry.get("runtime_supported", True):
         return (
             f"{entry.get('name', settings.active_stt_model)} is in the catalog, "
-            "but this build can only run faster-whisper locally."
+            "but this build cannot run it locally."
         )
     return None
 
 
-async def _proxy_local(ws: WebSocket) -> None:
+async def _proxy_local(ws: WebSocket, supervisor_inst=None) -> None:
+    if supervisor_inst is None:
+        from .main import supervisor as supervisor_inst
     blocked = _selected_local_is_runnable()
     if blocked:
         await _send(ws, "error", blocked)
@@ -84,7 +88,7 @@ async def _proxy_local(ws: WebSocket) -> None:
     except Exception as exc:
         await _send(ws, "error", str(exc))
         return
-    supervisor.live_captions_active = True
+    supervisor_inst.live_captions_active = True
     uri = f"ws://127.0.0.1:{handle.port}/stream"
     try:
         async with websockets.connect(uri, max_size=2**22) as upstream:
@@ -124,13 +128,15 @@ async def _proxy_local(ws: WebSocket) -> None:
         await _send(ws, "error", f"STT stream failed: {exc}")
 
 
-async def _run_endpoint(ws: WebSocket) -> None:
+async def _run_endpoint(ws: WebSocket, supervisor_inst=None) -> None:
+    if supervisor_inst is None:
+        from .main import supervisor as supervisor_inst
     settings = load_settings()
     ep = next((item for item in settings.external_endpoints if item.id == settings.active_stt_endpoint_id), None)
     if ep is None or ep.kind != "stt":
         await _send(ws, "error", "Select an STT endpoint in Models first.")
         return
-    supervisor.live_captions_active = True
+    supervisor_inst.live_captions_active = True
     language = "auto"
     pcm = bytearray()
     speech = False
@@ -208,12 +214,153 @@ async def _run_endpoint(ws: WebSocket) -> None:
         return
 
 
-async def handle_caption_socket(ws: WebSocket) -> None:
+async def _run_crispasr_local(
+    ws: WebSocket,
+    *,
+    model_id: str,
+    model_dir: Optional[Path],
+    device: str,
+    supervisor_inst=None,
+) -> None:
+    """Stream incoming 16 kHz mono PCM frames into CrispASR STT without blocking WS drain."""
+    if supervisor_inst is None:
+        from .main import supervisor as supervisor_inst
+    supervisor_inst.live_captions_active = True
+    language = "auto"
+    pcm = bytearray()
+    speech = False
+    last_voice = 0.0
+    last_partial = 0.0
+    loop = asyncio.get_running_loop()
+    transcribe_lock = asyncio.Lock()
+    inflight: set[asyncio.Task] = set()
+
+    async def run_clip(kind: str, payload: bytes) -> None:
+        if len(payload) < int(SAMPLE_RATE * 0.35) * 2:
+            return
+        async with transcribe_lock:
+            wav = _wav_bytes(payload)
+            DEFAULT_TMP_DIR.mkdir(parents=True, exist_ok=True)
+            tmp_path = Path(tempfile.gettempdir()) / f"ss_cap_{uuid.uuid4().hex[:10]}.wav"
+
+            def _exec() -> str:
+                tmp_path.write_bytes(wav)
+                try:
+                    res = crispasr.transcribe_stt(
+                        model_id=model_id,
+                        audio_path=tmp_path,
+                        model_dir=model_dir,
+                        language=language,
+                        device="cpu" if device == "cpu" else "gpu",
+                        app_root=APP_ROOT,
+                    )
+                    return str(res.get("text") or "").strip()
+                finally:
+                    try:
+                        tmp_path.unlink()
+                    except OSError:
+                        pass
+
+            try:
+                text = await asyncio.to_thread(_exec)
+                if text:
+                    await _send(ws, kind, text)
+            except WebSocketDisconnect:
+                return
+            except Exception as exc:
+                try:
+                    await _send(ws, "error", str(exc))
+                except Exception:
+                    pass
+
+    def schedule_clip(kind: str, payload: bytes) -> None:
+        task = asyncio.create_task(run_clip(kind, payload))
+        inflight.add(task)
+        task.add_done_callback(inflight.discard)
+
+    try:
+        while True:
+            message = await ws.receive()
+            if message.get("type") == "websocket.disconnect":
+                break
+            if message.get("text"):
+                try:
+                    body = json.loads(message["text"])
+                except json.JSONDecodeError:
+                    continue
+                if body.get("type") == "start":
+                    language = str(body.get("language") or "auto")
+                elif body.get("type") == "stop":
+                    if speech and pcm:
+                        await run_clip("final", bytes(pcm))
+                    if inflight:
+                        await asyncio.gather(*list(inflight), return_exceptions=True)
+                    try:
+                        await ws.close()
+                    except Exception:
+                        pass
+                    break
+                continue
+            chunk = message.get("bytes")
+            if not chunk:
+                continue
+            pcm.extend(chunk)
+            now = loop.time()
+            if _rms(chunk) >= 0.008:
+                speech = True
+                last_voice = now
+                if last_partial == 0.0:
+                    last_partial = now
+            if not speech:
+                if len(pcm) > SAMPLE_RATE * 2:
+                    del pcm[:-SAMPLE_RATE]
+                continue
+            seconds = len(pcm) / (SAMPLE_RATE * 2)
+            if now - last_partial >= 1.2 and seconds >= 0.35 and not transcribe_lock.locked():
+                last_partial = now
+                schedule_clip("partial", bytes(pcm))
+            elif now - last_voice >= 0.55 and seconds >= 0.35:
+                snapshot = bytes(pcm)
+                pcm.clear()
+                speech = False
+                last_partial = 0.0
+                schedule_clip("final", snapshot)
+            if len(pcm) > SAMPLE_RATE * 20 * 2:
+                del pcm[: SAMPLE_RATE * 5 * 2]
+    except WebSocketDisconnect:
+        return
+    finally:
+        for task in list(inflight):
+            if not task.done():
+                task.cancel()
+
+
+async def handle_caption_socket(
+    ws: WebSocket,
+    model_id: Optional[str] = None,
+    supervisor_inst=None,
+) -> None:
+    if supervisor_inst is None:
+        from .main import supervisor as supervisor_inst
     settings = load_settings()
     try:
         if settings.stt_source == "endpoint":
-            await _run_endpoint(ws)
+            await _run_endpoint(ws, supervisor_inst=supervisor_inst)
         else:
-            await _proxy_local(ws)
+            installed_stt = [m for m in downloader.build_catalog(settings) if m.kind == "stt" and m.installed]
+            target = (model_id or settings.active_stt_model or "").strip()
+            entry = next((m for m in installed_stt if m.id == target), None)
+            if entry is None and installed_stt:
+                entry = installed_stt[0]
+            if entry is not None and crispasr.is_available() and crispasr.stt_backend_for_model(entry.id):
+                await _run_crispasr_local(
+                    ws,
+                    model_id=entry.id,
+                    model_dir=Path(entry.install_dir) if entry.install_dir else None,
+                    device=settings.stt_device,
+                    supervisor_inst=supervisor_inst,
+                )
+            else:
+                await _proxy_local(ws, supervisor_inst=supervisor_inst)
     finally:
-        supervisor.live_captions_active = False
+        supervisor_inst.live_captions_active = False

@@ -19,6 +19,11 @@ static EXITING: AtomicBool = AtomicBool::new(false);
 
 pub fn shutdown_and_exit(app: &tauri::AppHandle) {
     EXITING.store(true, Ordering::SeqCst);
+    // Guarantee process exit even if WebView2 or COM teardown stalls.
+    std::thread::spawn(|| {
+        std::thread::sleep(std::time::Duration::from_millis(1500));
+        std::process::exit(0);
+    });
     audio_capture::stop_live_captions().ok();
     app.state::<BackendState>().shutdown();
     let _ = app.remove_tray_by_id(tray::TRAY_ID);
@@ -39,8 +44,8 @@ fn hide_main_window(app: tauri::AppHandle) {
 }
 
 #[tauri::command]
-fn quit_app(app: tauri::AppHandle) {
-    shutdown_and_exit(&app);
+async fn quit_app(app: tauri::AppHandle) {
+    let _ = tauri::async_runtime::spawn_blocking(move || shutdown_and_exit(&app));
 }
 
 #[tauri::command]
@@ -54,7 +59,7 @@ fn get_backend_info(state: State<BackendState>) -> BackendInfo {
 }
 
 #[tauri::command]
-fn toggle_overlay(app: tauri::AppHandle) -> Result<bool, String> {
+async fn toggle_overlay(app: tauri::AppHandle) -> Result<bool, String> {
     if let Some(win) = app.get_webview_window("overlay") {
         let visible = win.is_visible().map_err(|e| e.to_string())?;
         if visible {
@@ -66,34 +71,50 @@ fn toggle_overlay(app: tauri::AppHandle) -> Result<bool, String> {
             Ok(true)
         }
     } else {
-        let win = tauri::WebviewWindowBuilder::new(
+        let width = 620.0;
+        let height = 128.0;
+        let mut builder = tauri::WebviewWindowBuilder::new(
             &app,
             "overlay",
             tauri::WebviewUrl::App("index.html#/overlay".into()),
         )
         .title("Live Captions")
-        .inner_size(620.0, 128.0)
+        .inner_size(width, height)
         .decorations(false)
         .transparent(true)
         .always_on_top(true)
         .skip_taskbar(true)
         .resizable(true)
-        .shadow(false)
-        .build()
-        .map_err(|e| e.to_string())?;
+        .shadow(false);
+
+        if let Ok(Some(mon)) = app.primary_monitor() {
+            let scale = mon.scale_factor();
+            let mon_w = mon.size().width as f64 / scale;
+            let mon_h = mon.size().height as f64 / scale;
+            let mon_x = mon.position().x as f64 / scale;
+            let mon_y = mon.position().y as f64 / scale;
+            let x = mon_x + ((mon_w - width) / 2.0).max(0.0);
+            let y = mon_y + (mon_h - height - 80.0).max(0.0);
+            builder = builder.position(x, y);
+        } else {
+            builder = builder.center();
+        }
+
+        let win = builder.build().map_err(|e| e.to_string())?;
         let _ = win.show();
+        let _ = win.set_always_on_top(true);
         Ok(true)
     }
 }
 
 #[tauri::command]
-fn show_overlay(app: tauri::AppHandle) -> Result<(), String> {
+async fn show_overlay(app: tauri::AppHandle) -> Result<(), String> {
     if let Some(win) = app.get_webview_window("overlay") {
         win.show().map_err(|e| e.to_string())?;
         let _ = win.set_always_on_top(true);
         return Ok(());
     }
-    toggle_overlay(app).map(|_| ())
+    toggle_overlay(app).await.map(|_| ())
 }
 
 #[tauri::command]

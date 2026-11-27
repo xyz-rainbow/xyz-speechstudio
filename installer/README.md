@@ -14,7 +14,7 @@ Hace falta el `speech-studio.exe` de `npx tauri build` e Inno Setup 6.
 .\installer\windows\build.ps1
 ```
 
-El resultado queda en `installer\Output\SpeechStudio_0.2.0_Setup.exe`.
+El resultado queda en `installer\Output\SpeechStudio_0.2.1_Setup.exe`.
 
 Al instalar, `setup-env.ps1` crea con `uv` y Python 3.12 los entornos `runtime\envs\core` y el entorno unificado `runtime\envs\pytts` (PyTorch con `--torch-backend=auto`, `coqui-tts==0.28.0`, `f5-tts`, `fish-speech`, `onnxruntime` y `espeakng-loader`) desde `requirements-core.txt` y `requirements-pytts.txt`. Si `runtime\bin\cuda\` y `runtime\bin\cpu\` están en el payload (tras `scripts\fetch-crispasr.ps1`), Qwen3-TTS, Kokoro, Piper, Chatterbox, CosyVoice3, Parakeet y Whisper usan CrispASR siguiendo el selector GPU/CPU de la app. Hace falta `uv` en el equipo de destino y WebView2.
 

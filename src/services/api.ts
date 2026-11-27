@@ -446,6 +446,15 @@ export async function setModelRuntime(
   return parseErrorOrJson<{ settings: AppSettings }>(res);
 }
 
+export async function refreshSapi5Voices(
+  baseUrl: string
+): Promise<{ voices: { id: string; label: string }[]; languages: string[] }> {
+  const res = await fetch(`${baseUrl}/api/tts/sapi5/refresh`, {
+    method: "POST",
+  });
+  return parseErrorOrJson<{ voices: { id: string; label: string }[]; languages: string[] }>(res);
+}
+
 export async function fetchBuiltinVoices(
   baseUrl: string,
   modelId?: string,

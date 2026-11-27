@@ -71,29 +71,78 @@ interface TtsStudioViewProps {
   playerHandleRef?: React.MutableRefObject<ChunkedAudioPlayerHandle | null>;
 }
 
-/** ISO code → legacy display label still expected by Qwen/XTTS synthesize. */
+/** ISO/BCP-47 code → display label. Includes regional dialects for SAPI 5 / Loquendo. */
 const LANG_CODE_TO_LABEL: Record<string, string> = {
+  all: "All Languages",
   es: "Spanish",
+  "es-ES": "Spanish (Spain)",
+  "es-MX": "Spanish (Mexico)",
+  "es-AR": "Spanish (Argentina)",
+  "es-CL": "Spanish (Chile)",
+  "es-CO": "Spanish (Colombia)",
+  "es-US": "Spanish (US)",
+  "es-PE": "Spanish (Peru)",
+  "es-VE": "Spanish (Venezuela)",
   en: "English",
+  "en-US": "English (US)",
+  "en-GB": "English (UK)",
+  "en-AU": "English (Australia)",
+  "en-CA": "English (Canada)",
+  "en-IE": "English (Ireland)",
   fr: "French",
+  "fr-FR": "French (France)",
+  "fr-CA": "French (Canada)",
   de: "German",
+  "de-DE": "German (Germany)",
+  "de-AT": "German (Austria)",
+  "de-CH": "German (Switzerland)",
   it: "Italian",
+  "it-IT": "Italian (Italy)",
   pt: "Portuguese",
+  "pt-BR": "Portuguese (Brazil)",
+  "pt-PT": "Portuguese (Portugal)",
+  ca: "Catalan",
+  "ca-ES": "Catalan (Spain)",
+  gl: "Galician",
+  "gl-ES": "Galician (Spain)",
+  eu: "Basque",
+  "eu-ES": "Basque (Spain)",
   ja: "Japanese",
+  "ja-JP": "Japanese (Japan)",
   ko: "Korean",
+  "ko-KR": "Korean (Korea)",
   zh: "Chinese",
+  "zh-CN": "Chinese (Simplified)",
+  "zh-TW": "Chinese (Traditional)",
   ru: "Russian",
+  "ru-RU": "Russian (Russia)",
   hi: "Hindi",
+  "hi-IN": "Hindi (India)",
   ar: "Arabic",
+  "ar-SA": "Arabic (Saudi Arabia)",
   nl: "Dutch",
+  "nl-NL": "Dutch (Netherlands)",
   pl: "Polish",
+  "pl-PL": "Polish (Poland)",
   tr: "Turkish",
+  "tr-TR": "Turkish (Turkey)",
+  el: "Greek",
+  "el-GR": "Greek (Greece)",
+  ro: "Romanian",
+  "ro-RO": "Romanian (Romania)",
   da: "Danish",
+  "da-DK": "Danish (Denmark)",
   fi: "Finnish",
+  "fi-FI": "Finnish (Finland)",
   sv: "Swedish",
+  "sv-SE": "Swedish (Sweden)",
+  nb: "Norwegian",
+  "nb-NO": "Norwegian (Norway)",
   sw: "Swahili",
   cs: "Czech",
+  "cs-CZ": "Czech (Czechia)",
   hu: "Hungarian",
+  "hu-HU": "Hungarian (Hungary)",
 };
 
 const LABEL_TO_CODE: Record<string, string> = Object.fromEntries(
@@ -372,7 +421,15 @@ export const TtsStudioView: React.FC<TtsStudioViewProps> = ({
     return eng || "qwen";
   })();
   const visibleProfiles = usesCloneProfiles
-    ? profiles.filter((p) => p.engine === modelFamily || (modelFamily === "qwen" && p.engine === "qwen"))
+    ? profiles.filter((p) => {
+        if (p.engine === modelFamily || (modelFamily === "qwen" && p.engine === "qwen")) {
+          return true;
+        }
+        // Fish Speech clones from the reference wav. A profile tagged chatterbox
+        // (or another clone engine) is still a valid voice for the active model.
+        if (modelFamily === "fish" && p.ref_audio_path) return true;
+        return false;
+      })
     : [];
   const selectedProfile =
     visibleProfiles.find((p) => p.id === selectedProfileId) || visibleProfiles[0];
@@ -461,7 +518,9 @@ export const TtsStudioView: React.FC<TtsStudioViewProps> = ({
       return;
     }
     if (availableLanguages.length > 0 && !availableLanguages.includes(language)) {
-      setLanguage(availableLanguages[0]);
+      const base = language.split("(", 1)[0].trim().toLowerCase();
+      const partial = availableLanguages.find((lbl) => lbl.toLowerCase().startsWith(base));
+      setLanguage(partial || availableLanguages[0]);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps -- sync when catalog readiness or profile changes
   }, [selectedProfile?.id, usesCloneProfiles, availableLanguages]);

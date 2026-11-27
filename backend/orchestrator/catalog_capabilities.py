@@ -95,6 +95,12 @@ _ENGINE_DEFAULTS: dict[str, dict[str, Any]] = {
         "quant_policy": "binary",
         "languages": ["es", "en", "de", "fr", "it", "pt", "ru", "nl", "pl"],
     },
+    "sapi5": {
+        "install_mode": "shared_weights",
+        "voice_mode": "builtin_voices",
+        "quant_policy": "binary",
+        "languages": ["all", "es-ES", "en-US"],
+    },
     "kitten": {
         "install_mode": "shared_weights",
         "voice_mode": "builtin_voices",

@@ -4,9 +4,9 @@
 
 Local Windows desktop app for text-to-speech, voice cloning, and transcription — published by **Rainbow Technology**.
 
-[![CI](https://github.com/xyz-rainbow/xyz-speechstudio/actions/workflows/ci.yml/badge.svg)](https://github.com/xyz-rainbow/xyz-speechstudio/actions/workflows/ci.yml) [![Release v0.2.0](https://img.shields.io/badge/release-v0.2.0-39ff14?style=flat-square)](https://github.com/xyz-rainbow/xyz-speechstudio/releases/tag/v0.2.0) [![License: Proprietary](https://img.shields.io/badge/license-Proprietary-red?style=flat-square)](LICENSE) [![Windows](https://img.shields.io/badge/platform-Windows-0078d4?style=flat-square&logo=windows&logoColor=white)](https://www.microsoft.com/windows) [![Tauri](https://img.shields.io/badge/Tauri-2-24c8db?style=flat-square&logo=tauri&logoColor=white)](https://tauri.app/) [![Python](https://img.shields.io/badge/Python-3.12-3776ab?style=flat-square&logo=python&logoColor=white)](https://www.python.org/)
+[![CI](https://github.com/xyz-rainbow/xyz-speechstudio/actions/workflows/ci.yml/badge.svg)](https://github.com/xyz-rainbow/xyz-speechstudio/actions/workflows/ci.yml) [![Release v0.2.1](https://img.shields.io/badge/release-v0.2.1-39ff14?style=flat-square)](https://github.com/xyz-rainbow/xyz-speechstudio/releases/tag/v0.2.1) [![License: Proprietary](https://img.shields.io/badge/license-Proprietary-red?style=flat-square)](LICENSE) [![Windows](https://img.shields.io/badge/platform-Windows-0078d4?style=flat-square&logo=windows&logoColor=white)](https://www.microsoft.com/windows) [![Tauri](https://img.shields.io/badge/Tauri-2-24c8db?style=flat-square&logo=tauri&logoColor=white)](https://tauri.app/) [![Python](https://img.shields.io/badge/Python-3.12-3776ab?style=flat-square&logo=python&logoColor=white)](https://www.python.org/)
 
-Speech Studio `v0.2.0` is a [Tauri 2](https://tauri.app/) desktop shell (React + TypeScript + Rust) paired with a Python FastAPI orchestrator, bundled **[CrispASR](https://github.com/CrispStrobe/CrispASR)** (C++/CUDA & CPU, persistent `--server` VRAM mode), a unified **`pytts`** Python environment, and native CPU **eSpeak NG** (`espeakng-loader`). Windows 10/11 (x64) is the primary platform; **Ubuntu 24.04** can build and run the shell plus Python backend for TTS/STT development, while Live Captions, UI Automation read-selection, and Windows toasts remain Windows-only.
+Speech Studio `v0.2.1` is a [Tauri 2](https://tauri.app/) desktop shell (React + TypeScript + Rust) paired with a Python FastAPI orchestrator, bundled **[CrispASR](https://github.com/CrispStrobe/CrispASR)** (C++/CUDA & CPU, persistent `--server` VRAM mode), a unified **`pytts`** Python environment, and native CPU **eSpeak NG** (`espeakng-loader`). Windows 10/11 (x64) is the primary platform; **Ubuntu 24.04** can build and run the shell plus Python backend for TTS/STT development, while Live Captions, UI Automation read-selection, and Windows toasts remain Windows-only.
 
 ![Speech Studio banner](docs/assets/banner.svg)
 
@@ -27,7 +27,7 @@ Speech Studio `v0.2.0` is a [Tauri 2](https://tauri.app/) desktop shell (React +
 - **Optional OpenAI-compatible Local API & External Endpoints** — `POST /v1/audio/speech` and `POST /v1/audio/transcriptions` (`127.0.0.1` or `0.0.0.0` with required Bearer token), plus presets for OpenAI, Groq, ElevenLabs, and Deepgram with connection testing and cURL snippet generation.
 - **Windows desktop shell** — fixed non-resizable `880×580` window, system tray, close confirmation popup (**Minimize App** vs **Close & Shut Down**), single-line system autostart toggle, NVIDIA VRAM meter, GPU/CPU device toggles, global UI Automation read-selection hotkey, persistent tab state, and start (`0%`) / completion (`100%`) download toast alerts via `scripts/notify.ps1`.
 
-### Supported TTS Engines (`v0.2.0`)
+### Supported TTS Engines (`v0.2.1`)
 
 10 local TTS engines verified end-to-end with real audio synthesis and NVIDIA Parakeet transcription:
 
@@ -36,10 +36,11 @@ Speech Studio `v0.2.0` is a [Tauri 2](https://tauri.app/) desktop shell (React +
 | **CrispASR** (C++/CUDA & CPU `--server`) | **Qwen3-TTS** (`1.7B Base`, `0.6B Base`, `CustomVoice`), **Kokoro 82M** (54 voices auto-packed to GGUF v3), **Piper**, **Chatterbox Turbo**, **CosyVoice3 0.5B** | Stays warm in VRAM across Play calls; frees VRAM immediately on **Eject**; `Chatterbox Multilingual`, `F5-TTS GGUF F16`, `IndexTTS 1.5`, and `Orpheus 3B` are also cataloged |
 | **Unified `pytts`** (`.venvs/pytts` / `runtime/envs/pytts`) | **Coqui XTTS v2**, **F5-TTS Spanish** (`F5TTS_Base` + automatic `<=11s` reference clip & transcript matching), **Fish Speech 1.5** (`v1.5.1`), **KittenTTS 2 Mini** (ONNX + multilingual `voices_<lang>.npz`) | Runs all four Python engines in a single environment |
 | **Native CPU** | **eSpeak NG** (`espeak-ng.dll` via `espeakng-loader` / `ctypes`) | Runs directly inside the `core` orchestrator without external servers |
+| **Windows SAPI 5** | **SAPI 5 / Loquendo**, IVONA, and OneCore voices | Uses voices already installed on Windows, including regional dialects |
 
 ## Requirements
 
-- Windows 10 or 11 (x64). Inno Setup package: **`SpeechStudio_0.2.0_Setup.exe`** ([GitHub Releases `v0.2.0`](https://github.com/xyz-rainbow/xyz-speechstudio/releases/tag/v0.2.0)), publisher **Rainbow Technology**, default install directory `C:\Program Files\Rainbow Technology\Speech Studio` (plus Portable Mode).
+- Windows 10 or 11 (x64). Inno Setup package: **`SpeechStudio_0.2.1_Setup.exe`** ([GitHub Releases `v0.2.1`](https://github.com/xyz-rainbow/xyz-speechstudio/releases/tag/v0.2.1)), publisher **Rainbow Technology**, default install directory `C:\Program Files\Rainbow Technology\Speech Studio` (plus Portable Mode).
 - Bundled CrispASR CUDA (`cuda/`) and CPU (`cpu/`) binaries under `runtime/bin/` (`scripts/fetch-crispasr.ps1`).
 - [`uv`](https://docs.astral.sh/uv/) and 64-bit Python 3.12 (for `installer/setup-env.ps1` creating `runtime/envs/core` and `runtime/envs/pytts`).
 - From source only: [Node.js](https://nodejs.org/) 20+, Rust stable, and [Tauri 2 Windows prerequisites](https://v2.tauri.app/start/prerequisites/).
@@ -150,8 +151,8 @@ Do not commit `data/`, voice profiles, API keys, or model weights; they are igno
 
 ## Documentation
 
-- [CHANGELOG.md](CHANGELOG.md) — full change history (`v0.2.0`).
-- [docs/releases/v0.2.0.md](docs/releases/v0.2.0.md) — `v0.2.0` release notes.
+- [CHANGELOG.md](CHANGELOG.md) — full change history (`v0.2.1`).
+- [docs/releases/v0.2.1.md](docs/releases/v0.2.1.md) — `v0.2.1` release notes.
 - [docs/crispasr-research.md](docs/crispasr-research.md) — compatibility research across CrispASR C++ backends and unified `pytts`.
 - [docs/README.md](docs/README.md) — community spec, known issues, and app notes.
 

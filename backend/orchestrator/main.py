@@ -981,8 +981,17 @@ def load_xtts_worker(req: LoadQwenRequest):
 
 @app.post("/api/workers/stt/load")
 def load_stt_worker(req: LoadSttRequest):
+    from . import crispasr
+
+    s = load_settings()
+    target_id = req.model_id or s.active_stt_model
+    if crispasr.is_available() and crispasr.stt_backend_for_model(target_id):
+        entry = next((m for m in downloader.build_catalog(s) if m.kind == "stt" and m.id == target_id), None)
+        if entry is None or not entry.installed:
+            raise HTTPException(status_code=404, detail=f"STT model '{target_id}' is not installed.")
+        return supervisor.status_snapshot()
     ensure_stt_loaded(
-        model_id=req.model_id,
+        model_id=target_id,
         device=req.device,
         force_stop_captions=req.force_stop_captions,
     )
@@ -1024,7 +1033,11 @@ async def captions_stream(ws: WebSocket):
     from .captions import handle_caption_socket
 
     await ws.accept()
-    await handle_caption_socket(ws)
+    await handle_caption_socket(
+        ws,
+        model_id=ws.query_params.get("model_id"),
+        supervisor_inst=supervisor,
+    )
 
 
 @app.post("/api/endpoints/{endpoint_id}/test")
@@ -1163,10 +1176,14 @@ def _active_tts_catalog_entry(settings) -> Optional[downloader.CatalogModelEntry
     mid = (settings.active_tts_model or "").strip()
     if not mid:
         return None
-    for entry in downloader.build_catalog(settings):
-        if entry.kind != "tts":
-            continue
-        if entry.id == mid or entry.id.startswith(mid) or mid.startswith(entry.id):
+    tts_entries = [entry for entry in downloader.build_catalog(settings) if entry.kind == "tts"]
+    for entry in tts_entries:
+        if entry.id == mid:
+            return entry
+    # Quantified ids such as "qwen3-1.7b-base-q4" still need a family match.
+    # Exact id wins above so "fish-speech-1.5" cannot bind to a shorter sibling.
+    for entry in tts_entries:
+        if entry.id.startswith(mid) or mid.startswith(entry.id + "-"):
             return entry
     return None
 
@@ -1347,6 +1364,20 @@ def _run_tts(
     entry = _active_tts_catalog_entry(settings)
     tts_dev = "cpu" if settings.tts_device == "cpu" else "gpu"
     if entry is not None:
+        if entry.engine == "sapi5":
+            from . import sapi5_engine
+
+            try:
+                res = sapi5_engine.synthesize_tts(
+                    text=text,
+                    out_path=out_path,
+                    language=lang,
+                    voice=voice,
+                )
+                return res, entry.name
+            except Exception as exc:
+                raise HTTPException(status_code=500, detail=f"SAPI 5 / Loquendo failed: {exc}")
+
         if entry.engine == "espeak":
             from . import espeak_engine
 
@@ -1404,6 +1435,32 @@ def _run_tts(
                 timeout_s=180.0,
             )
             return res, entry.name
+
+        # The model picker decides the engine. A Chatterbox-tagged voice profile
+        # only supplies the reference clip; it must not reroute Fish Speech.
+        if entry.engine in ("fish", "fish-audio"):
+            if prof is None or not prof.ref_audio_path or not Path(prof.ref_audio_path).exists():
+                raise HTTPException(
+                    status_code=400,
+                    detail="Fish Speech needs a voice profile with a reference audio file.",
+                )
+            ref_p = (
+                Path(prof.ref_24k_path)
+                if prof.ref_24k_path and Path(prof.ref_24k_path).is_file()
+                else Path(prof.ref_audio_path)
+            )
+            res = _call_tts_worker(
+                lambda: ensure_fish_loaded(model_id=entry.id, force_stop_captions=force_stop_captions),
+                {
+                    "text": text,
+                    "lang": lang,
+                    "speaker_wav": str(ref_p),
+                    "ref_text": prof.ref_text,
+                    "out_path": str(out_path),
+                },
+                "Fish Speech 1.5",
+            )
+            return res, prof.name
 
     if prof is None:
         raise HTTPException(status_code=404, detail="Voice profile not found.")
@@ -1487,6 +1544,10 @@ def list_tts_builtin_voices(model_id: Optional[str] = None, language: Optional[s
     entry = _active_tts_catalog_entry(s)
     if entry is None:
         return {"voices": []}
+    if entry.engine == "sapi5":
+        from . import sapi5_engine
+
+        return {"voices": sapi5_engine.list_voices(language=language)}
     if entry.engine == "espeak":
         from . import espeak_engine
 
@@ -1505,6 +1566,17 @@ def list_tts_builtin_voices(model_id: Optional[str] = None, language: Optional[s
     }
 
 
+@app.post("/api/tts/sapi5/refresh")
+def refresh_sapi5_voices():
+    from . import sapi5_engine
+
+    sapi5_engine.discover_voices(force_refresh=True)
+    return {
+        "voices": sapi5_engine.list_voices("all"),
+        "languages": sapi5_engine.installed_languages(),
+    }
+
+
 def _resolve_tts_context(req: SynthesizeRequest):
     text = req.text.strip()
     if not text:
@@ -1516,7 +1588,7 @@ def _resolve_tts_context(req: SynthesizeRequest):
     entry = _active_tts_catalog_entry(settings) if settings.tts_source == "local" else None
     model_dir = Path(entry.install_dir) if entry and entry.install_dir else None
     builtin_ok = entry is not None and (
-        entry.engine in ("kitten", "espeak")
+        entry.engine in ("kitten", "espeak", "sapi5")
         or (
             crispasr.supports_engine(entry.engine, model_dir=model_dir)
             and (

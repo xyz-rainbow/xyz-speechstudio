@@ -274,8 +274,8 @@ BUILTIN_MODELS: list[dict[str, Any]] = [
         "variant_label": "Fish Speech 1.5",
         "repo_id": "fishaudio/fish-speech-1.5",
         "dir_names": ["fish-speech-1.5"],
-        "description": "Multilingual neural TTS from Fish Audio (catalog download; worker upcoming).",
-        "runtime_supported": False,
+        "description": "Multilingual neural TTS from Fish Audio. Runs on the Python Fish Speech worker, not CrispASR.",
+        "runtime_supported": True,
         "install_mode": "shared_weights",
         "voice_mode": "clone_profile",
         "quant_policy": "post_quantize",
@@ -848,6 +848,33 @@ BUILTIN_MODELS: list[dict[str, Any]] = [
         ],
     },
     {
+        "id": "windows-sapi5",
+        "name": "Windows SAPI 5 / Loquendo",
+        "kind": "tts",
+        "engine": "sapi5",
+        "family_id": "sapi5",
+        "family_name": "Windows SAPI 5 / Loquendo",
+        "variant_label": "32/64-bit + OneCore",
+        "repo_id": "local/windows-sapi5",
+        "dir_names": [],
+        "description": "Native Windows SAPI 5 (32-bit & 64-bit) and OneCore voices — automatically detects Loquendo TTS 7, IVONA, and system voices with all dialects.",
+        "runtime_supported": True,
+        "install_mode": "shared_weights",
+        "voice_mode": "builtin_voices",
+        "quant_policy": "binary",
+        "languages": ["all", "es-ES", "en-US"],
+        "quants": [
+            {
+                "id": "native",
+                "label": "Windows COM (32/64-bit + OneCore)",
+                "disk_mb": 0,
+                "vram_mib": 0,
+                "files": [],
+                "recommended": True,
+            },
+        ],
+    },
+    {
         "id": "kitten-tts-2-mini",
         "name": "KittenTTS 2 Mini",
         "kind": "tts",
@@ -1189,6 +1216,13 @@ def _detect_builtin_install(entry: dict[str, Any], settings: AppSettings) -> tup
     kind = entry["kind"]
     engine = entry["engine"]
 
+    if engine == "sapi5":
+        from . import sapi5_engine
+
+        if sapi5_engine.is_available():
+            return True, "native", None, False, 0
+        return False, None, None, False, 0
+
     if engine == "qwen":
         dir_names: list[str] = entry.get("dir_names", [mid])
         candidates: list[Path] = []
@@ -1357,6 +1391,11 @@ def resolve_stt_load_target(settings: AppSettings, model_id: str) -> tuple[str, 
 
 def _runtime_supported_for_builtin(m: dict) -> bool:
     """Honor catalog flag; promote CrispASR-ready engines when binary is present."""
+    engine = (m.get("engine") or "").lower()
+    if engine == "sapi5":
+        from . import sapi5_engine
+
+        return sapi5_engine.is_available()
     if m.get("runtime_supported", True):
         return True
     engine = (m.get("engine") or "").lower()
@@ -1366,7 +1405,9 @@ def _runtime_supported_for_builtin(m: dict) -> bool:
 
         if not is_available():
             return False
-        if engine in CRISPASR_READY_ENGINES or engine in {"fish", "fish-audio", "kitten"}:
+        # Fish Speech is a Python worker. Do not mark it ready just because
+        # the CrispASR binary exists; that sent synthesis down the Chatterbox path.
+        if engine in CRISPASR_READY_ENGINES or engine == "kitten":
             return True
         if engine == "onnx-asr" and ("parakeet" in mid or "moonshine" in mid):
             return True
@@ -1392,7 +1433,7 @@ def _runtimes_for_model(m: dict, settings: AppSettings) -> tuple[list[str], str]
             available = ["crispasr"]
         elif engine in ("xtts", "fish-audio", "fish", "kitten"):
             available = ["python"]
-        elif engine == "espeak":
+        elif engine in ("espeak", "sapi5"):
             available = []
     default_rt = available[0] if available else ""
     preferred = (settings.model_runtimes or {}).get(m["id"], "")
@@ -1410,6 +1451,12 @@ def build_catalog(settings: AppSettings) -> list[CatalogModelEntry]:
         rec_q = next((q for q in quants if q.recommended), quants[0] if quants else None)
         active_q = next((q for q in quants if q.id == q_id), rec_q)
         caps = capabilities_from_spec(m)
+        if m["engine"] == "sapi5":
+            from . import sapi5_engine
+
+            langs = sapi5_engine.installed_languages()
+            if langs:
+                caps.languages = langs
         avail_rt, active_rt = _runtimes_for_model(m, settings)
         entries.append(
             CatalogModelEntry(

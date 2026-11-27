@@ -4,7 +4,7 @@ use std::mem::{size_of, zeroed};
 use std::ptr::{self, null_mut};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Condvar, Mutex};
-use std::thread::{self, JoinHandle};
+use std::thread;
 use std::time::Duration;
 
 use tauri::{AppHandle, Emitter};
@@ -67,7 +67,7 @@ use super::{encode_rgba_png_data_url, AudioApp};
 
 struct Run {
     stop: Arc<AtomicBool>,
-    thread: Option<JoinHandle<()>>,
+    done: Arc<(Mutex<bool>, Condvar)>,
 }
 
 static RUN: Mutex<Option<Run>> = Mutex::new(None);
@@ -608,6 +608,11 @@ pub fn list_audio_apps() -> Result<Vec<AudioApp>, String> {
     list_audio_apps_inner()
 }
 
+// IAgileObject ({94EA2B94-E9CC-49E0-C0FF-EE64CA8F5B90}) is a marker interface required
+// by ActivateAudioInterfaceAsync when delivering MTA callbacks cleanly.
+const IID_IAGILEOBJECT: windows::core::GUID =
+    windows::core::GUID::from_u128(0x94ea2b94_e9cc_49e0_c0ff_ee64ca8f5b90);
+
 unsafe extern "system" fn handler_query(
     this: *mut core::ffi::c_void,
     iid: *const windows::core::GUID,
@@ -617,7 +622,10 @@ unsafe extern "system" fn handler_query(
         return HRESULT(0x80070057u32 as i32);
     }
     let iid = *iid;
-    if iid == IUnknown::IID || iid == IActivateAudioInterfaceCompletionHandler::IID {
+    if iid == IUnknown::IID
+        || iid == IActivateAudioInterfaceCompletionHandler::IID
+        || iid == IID_IAGILEOBJECT
+    {
         handler_add(this);
         *out = this;
         HRESULT(0)
@@ -818,24 +826,23 @@ impl Resampler {
 
 fn initialize_process_loopback_client(client: &IAudioClient) -> Result<(u32, usize, u16, u16), String> {
     // Process loopback devices (`VIRTUAL_AUDIO_DEVICE_PROCESS_LOOPBACK`) do not
-    // implement GetMixFormat() (`E_NOTIMPL`). Specify a concrete PCM format
-    // with AUTOCONVERTPCM instead.
+    // implement GetMixFormat() (`E_NOTIMPL`). Supply an explicit PCM format directly.
     let candidates = [
-        WAVEFORMATEX {
-            wFormatTag: 1,
-            nChannels: 1,
-            nSamplesPerSec: 16_000,
-            nAvgBytesPerSec: 32_000,
-            nBlockAlign: 2,
-            wBitsPerSample: 16,
-            cbSize: 0,
-        },
         WAVEFORMATEX {
             wFormatTag: 1,
             nChannels: 2,
             nSamplesPerSec: 48_000,
             nAvgBytesPerSec: 192_000,
             nBlockAlign: 4,
+            wBitsPerSample: 16,
+            cbSize: 0,
+        },
+        WAVEFORMATEX {
+            wFormatTag: 1,
+            nChannels: 1,
+            nSamplesPerSec: 16_000,
+            nAvgBytesPerSec: 32_000,
+            nBlockAlign: 2,
             wBitsPerSample: 16,
             cbSize: 0,
         },
@@ -846,12 +853,17 @@ fn initialize_process_loopback_client(client: &IAudioClient) -> Result<(u32, usi
 
     let mut last_err = String::from("WASAPI Initialize failed");
     for wfx in candidates {
-        for flags in [flags_with_convert, AUDCLNT_STREAMFLAGS_LOOPBACK] {
+        for (flags, buf_dur) in [
+            (AUDCLNT_STREAMFLAGS_LOOPBACK, 1_000_000i64),
+            (AUDCLNT_STREAMFLAGS_LOOPBACK, 0i64),
+            (flags_with_convert, 1_000_000i64),
+            (flags_with_convert, 0i64),
+        ] {
             let res = unsafe {
                 client.Initialize(
                     AUDCLNT_SHAREMODE_SHARED,
                     flags,
-                    0,
+                    buf_dur,
                     0,
                     &wfx as *const WAVEFORMATEX,
                     None,
@@ -873,113 +885,204 @@ fn initialize_process_loopback_client(client: &IAudioClient) -> Result<(u32, usi
     Err(last_err)
 }
 
+fn connect_ws_with_timeout(
+    ws_url: &str,
+) -> Result<tungstenite::WebSocket<std::net::TcpStream>, String> {
+    let without_scheme = ws_url
+        .strip_prefix("ws://")
+        .or_else(|| ws_url.strip_prefix("wss://"));
+    if let Some(rest) = without_scheme {
+        let authority = rest.split(['/', '?']).next().unwrap_or("");
+        if let Ok(addrs) = std::net::ToSocketAddrs::to_socket_addrs(&authority) {
+            for addr in addrs {
+                if let Ok(stream) = std::net::TcpStream::connect_timeout(&addr, Duration::from_secs(3)) {
+                    let _ = stream.set_read_timeout(Some(Duration::from_millis(40)));
+                    let (sock, _) = tungstenite::client(ws_url, stream).map_err(|e| e.to_string())?;
+                    return Ok(sock);
+                }
+            }
+        }
+    }
+    Err(format!("Could not connect to {ws_url}"))
+}
+
 fn capture_loop(
     app: AppHandle,
     pid: u32,
     ws_url: String,
     language: String,
     stop: Arc<AtomicBool>,
+    done: Arc<(Mutex<bool>, Condvar)>,
 ) {
+    struct DoneGuard(Arc<(Mutex<bool>, Condvar)>);
+    impl Drop for DoneGuard {
+        fn drop(&mut self) {
+            if let Ok(mut flag) = self.0 .0.lock() {
+                *flag = true;
+                self.0 .1.notify_all();
+            }
+        }
+    }
+    let _done_guard = DoneGuard(done);
+
     let result = (|| -> Result<(), String> {
         unsafe {
             let _ = CoInitializeEx(None, COINIT_MULTITHREADED);
         }
-        let client = activate_loopback(pid)?;
-        let (rate, channels, bits, block_align) = initialize_process_loopback_client(&client)?;
+        let client = activate_loopback(pid).map_err(|e| format!("WASAPI activate: {e}"))?;
+        if stop.load(Ordering::SeqCst) {
+            return Ok(());
+        }
+        let (rate, channels, bits, block_align) =
+            initialize_process_loopback_client(&client).map_err(|e| format!("WASAPI init: {e}"))?;
+        if stop.load(Ordering::SeqCst) {
+            return Ok(());
+        }
         let block = block_align as usize;
         let bytes_per_sample = (bits as usize / 8).max(2);
 
-        let capture: IAudioCaptureClient = unsafe { client.GetService().map_err(|e| e.to_string())? };
-        unsafe { client.Start().map_err(|e| e.to_string())? };
+        let capture: IAudioCaptureClient = unsafe {
+            client
+                .GetService()
+                .map_err(|e| format!("WASAPI service: {e}"))?
+        };
+        unsafe {
+            client
+                .Start()
+                .map_err(|e| format!("WASAPI start: {e}"))?
+        };
 
-        let (mut socket, _) = connect(ws_url.as_str()).map_err(|e| e.to_string())?;
-        if let tungstenite::stream::MaybeTlsStream::Plain(stream) = socket.get_mut() {
-            stream
-                .set_read_timeout(Some(Duration::from_millis(40)))
-                .map_err(|e| e.to_string())?;
-        }
-        socket
-            .send(Message::Text(format!(
-                "{{\"type\":\"start\",\"language\":{}}}",
-                serde_json::to_string(&language).unwrap_or_else(|_| "\"auto\"".into())
-            )))
-            .map_err(|e| e.to_string())?;
-        let socket = Arc::new(Mutex::new(socket));
-        let reader_stop = stop.clone();
-        let reader_app = app.clone();
-        let reader_socket = socket.clone();
-        let reader = thread::spawn(move || loop {
-            if reader_stop.load(Ordering::SeqCst) {
-                break;
-            }
-            let msg = {
-                let mut sock = reader_socket.lock().unwrap();
-                sock.read()
-            };
-            match msg {
-                Ok(Message::Text(text)) => emit_json(&reader_app, &text),
-                Ok(Message::Close(_)) => break,
-                Err(tungstenite::Error::Io(err))
-                    if err.kind() == ErrorKind::TimedOut || err.kind() == ErrorKind::WouldBlock => {}
-                Err(_) => break,
-                _ => {}
-            }
-        });
-
-        let mut resampler = Resampler::new(rate);
-        while !stop.load(Ordering::SeqCst) {
-            let frames = unsafe { capture.GetNextPacketSize().unwrap_or(0) };
-            if frames == 0 {
-                thread::sleep(Duration::from_millis(5));
-                continue;
-            }
-            let mut data = null_mut();
-            let mut count = 0u32;
-            let mut flags = 0u32;
-            if unsafe {
-                capture
-                    .GetBuffer(&mut data, &mut count, &mut flags, None, None)
-                    .is_err()
-            } {
-                break;
-            }
-            let mut mono = Vec::with_capacity(count as usize);
-            if flags & AUDCLNT_BUFFERFLAGS_SILENT.0 as u32 == 0 && !data.is_null() && block > 0 {
-                for frame in 0..count as usize {
-                    let mut sum = 0.0f32;
-                    for channel in 0..channels {
-                        let offset = frame * block + channel * bytes_per_sample;
-                        let sample_i16 = unsafe { *data.add(offset).cast::<i16>() };
-                        sum += sample_i16 as f32 / 32768.0;
-                    }
-                    mono.push(sum / channels as f32);
+        match connect_ws_with_timeout(ws_url.as_str()) {
+            Ok(sock) => capture_stream_loop(
+                app.clone(),
+                client,
+                capture,
+                rate,
+                channels,
+                block,
+                bytes_per_sample,
+                sock,
+                language,
+                stop,
+            ),
+            Err(_) => {
+                let (mut s, _) = connect(ws_url.as_str()).map_err(|e| e.to_string())?;
+                if let tungstenite::stream::MaybeTlsStream::Plain(stream) = s.get_mut() {
+                    let _ = stream.set_read_timeout(Some(Duration::from_millis(40)));
                 }
-            } else {
-                mono.resize(count as usize, 0.0);
-            }
-            unsafe { capture.ReleaseBuffer(count).ok() };
-            for frame in resampler.push_mono(&mono) {
-                let mut sock = socket.lock().unwrap();
-                if sock.send(Message::Binary(frame)).is_err() {
-                    stop.store(true, Ordering::SeqCst);
-                    break;
-                }
+                capture_stream_loop(
+                    app.clone(),
+                    client,
+                    capture,
+                    rate,
+                    channels,
+                    block,
+                    bytes_per_sample,
+                    s,
+                    language,
+                    stop,
+                )
             }
         }
-        unsafe { client.Stop().ok() };
-        {
-            let mut sock = socket.lock().unwrap();
-            let _ = sock.send(Message::Text("{\"type\":\"stop\"}".into()));
-            let _ = sock.close(None);
-        }
-        stop.store(true, Ordering::SeqCst);
-        let _ = reader.join();
-        Ok(())
     })();
     if let Err(err) = result {
         let payload = serde_json::json!({"type": "error", "text": err}).to_string();
         emit_json(&app, &payload);
     }
+}
+
+fn capture_stream_loop<S: std::io::Read + std::io::Write + Send + 'static>(
+    app: AppHandle,
+    client: IAudioClient,
+    capture: IAudioCaptureClient,
+    rate: u32,
+    channels: usize,
+    block: usize,
+    bytes_per_sample: usize,
+    mut socket: tungstenite::WebSocket<S>,
+    language: String,
+    stop: Arc<AtomicBool>,
+) -> Result<(), String> {
+    socket
+        .send(Message::Text(format!(
+            "{{\"type\":\"start\",\"language\":{}}}",
+            serde_json::to_string(&language).unwrap_or_else(|_| "\"auto\"".into())
+        )))
+        .map_err(|e| e.to_string())?;
+    let socket = Arc::new(Mutex::new(socket));
+    let reader_stop = stop.clone();
+    let reader_app = app.clone();
+    let reader_socket = socket.clone();
+    let reader = thread::spawn(move || loop {
+        if reader_stop.load(Ordering::SeqCst) {
+            break;
+        }
+        let msg = {
+            let mut sock = reader_socket.lock().unwrap();
+            sock.read()
+        };
+        match msg {
+            Ok(Message::Text(text)) => emit_json(&reader_app, &text),
+            Ok(Message::Close(_)) => break,
+            Err(tungstenite::Error::Io(err))
+                if err.kind() == ErrorKind::TimedOut || err.kind() == ErrorKind::WouldBlock =>
+            {
+                thread::sleep(Duration::from_millis(5));
+            }
+            Err(_) => break,
+            _ => {}
+        }
+    });
+
+    let mut resampler = Resampler::new(rate);
+    while !stop.load(Ordering::SeqCst) {
+        let frames = unsafe { capture.GetNextPacketSize().unwrap_or(0) };
+        if frames == 0 {
+            thread::sleep(Duration::from_millis(5));
+            continue;
+        }
+        let mut data = null_mut();
+        let mut count = 0u32;
+        let mut flags = 0u32;
+        if unsafe {
+            capture
+                .GetBuffer(&mut data, &mut count, &mut flags, None, None)
+                .is_err()
+        } {
+            break;
+        }
+        let mut mono = Vec::with_capacity(count as usize);
+        if flags & AUDCLNT_BUFFERFLAGS_SILENT.0 as u32 == 0 && !data.is_null() && block > 0 {
+            for frame in 0..count as usize {
+                let mut sum = 0.0f32;
+                for channel in 0..channels {
+                    let offset = frame * block + channel * bytes_per_sample;
+                    let sample_i16 = unsafe { *data.add(offset).cast::<i16>() };
+                    sum += sample_i16 as f32 / 32768.0;
+                }
+                mono.push(sum / channels as f32);
+            }
+        } else {
+            mono.resize(count as usize, 0.0);
+        }
+        unsafe { capture.ReleaseBuffer(count).ok() };
+        for frame in resampler.push_mono(&mono) {
+            let mut sock = socket.lock().unwrap();
+            if sock.send(Message::Binary(frame)).is_err() {
+                stop.store(true, Ordering::SeqCst);
+                break;
+            }
+        }
+    }
+    unsafe { client.Stop().ok() };
+    {
+        let mut sock = socket.lock().unwrap();
+        let _ = sock.send(Message::Text("{\"type\":\"stop\"}".into()));
+        let _ = sock.close(None);
+    }
+    stop.store(true, Ordering::SeqCst);
+    let _ = reader.join();
+    Ok(())
 }
 
 pub fn start_live_captions(
@@ -993,24 +1096,51 @@ pub fn start_live_captions(
     }
     stop_live_captions()?;
     let stop = Arc::new(AtomicBool::new(false));
+    let done = Arc::new((Mutex::new(false), Condvar::new()));
     let thread_stop = stop.clone();
-    let thread = thread::spawn(move || capture_loop(app, pid, ws_url, language, thread_stop));
-    *RUN.lock().unwrap() = Some(Run {
-        stop,
-        thread: Some(thread),
-    });
+    let thread_done = done.clone();
+    thread::spawn(move || capture_loop(app, pid, ws_url, language, thread_stop, thread_done));
+    *RUN.lock().unwrap() = Some(Run { stop, done });
     Ok(())
 }
 
 pub fn stop_live_captions() -> Result<(), String> {
-    let mut run = RUN.lock().unwrap();
-    if let Some(mut current) = run.take() {
+    let current = {
+        let mut run = RUN.lock().unwrap();
+        run.take()
+    };
+    if let Some(current) = current {
         current.stop.store(true, Ordering::SeqCst);
-        if let Some(thread) = current.thread.take() {
-            drop(run);
-            let _ = thread.join();
-            return Ok(());
+        let (lock, cv) = &*current.done;
+        if let Ok(guard) = lock.lock() {
+            let _ = cv.wait_timeout_while(guard, Duration::from_millis(400), |finished| !*finished);
         }
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn process_loopback_activates_and_initializes() {
+        unsafe {
+            let _ = CoInitializeEx(None, COINIT_MULTITHREADED);
+        }
+        let client = activate_loopback(std::process::id()).expect("activate_loopback");
+        let (rate, channels, bits, block_align) =
+            initialize_process_loopback_client(&client).expect("initialize_process_loopback_client");
+        assert!(rate > 0 && channels > 0 && bits >= 16 && block_align > 0);
+        let _capture: IAudioCaptureClient =
+            unsafe { client.GetService().expect("GetService(IAudioCaptureClient)") };
+        unsafe {
+            client.Start().expect("IAudioClient::Start");
+            client.Stop().expect("IAudioClient::Stop");
+        }
+        println!(
+            "LIVE_WASAPI_LOOPBACK_OK rate={} ch={} bits={} align={}",
+            rate, channels, bits, block_align
+        );
+    }
 }

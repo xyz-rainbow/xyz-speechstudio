@@ -126,6 +126,7 @@ export const SubtitlesView: React.FC<SubtitlesViewProps> = ({
     setBusy(true);
     setError("");
     try {
+      let chosenModelId = settings.active_stt_model;
       if (settings.stt_source === "local") {
         const cat = await fetchModelsCatalog(baseUrl);
         const runnable = cat.models.filter(
@@ -134,12 +135,16 @@ export const SubtitlesView: React.FC<SubtitlesViewProps> = ({
         if (runnable.length === 0) {
           throw new Error(t("subtitles.noSttInstalled"));
         }
-        const chosen =
+        chosenModelId =
           runnable.find((m) => m.id === settings.active_stt_model)?.id || runnable[0].id;
-        await loadSttWorker(baseUrl, chosen, settings.stt_device);
+        await loadSttWorker(baseUrl, chosenModelId, settings.stt_device);
         onAfterGpuAction();
       }
-      const wsUrl = baseUrl.replace(/^http/i, "ws") + "/api/captions/stream";
+      const query =
+        settings.stt_source === "local" && chosenModelId
+          ? `?model_id=${encodeURIComponent(chosenModelId)}`
+          : "";
+      const wsUrl = baseUrl.replace(/^http/i, "ws") + `/api/captions/stream${query}`;
       await showOverlayWindow();
       await startLiveCaptions(selectedRow.pid, wsUrl, "auto", selectedRow.stream_index);
       await setCaptionsLock(baseUrl, true);
@@ -172,7 +177,8 @@ export const SubtitlesView: React.FC<SubtitlesViewProps> = ({
   };
 
   return (
-    <GlassCard className="p-5 flex flex-col gap-3">
+    <>
+      <GlassCard className="p-5 flex flex-col gap-3">
       <div className="flex items-center justify-between flex-wrap gap-3">
         <div className="flex flex-wrap items-center gap-2">
           <span className="text-xs" style={{ color: "var(--text-secondary)" }}>
@@ -315,6 +321,7 @@ export const SubtitlesView: React.FC<SubtitlesViewProps> = ({
       )}
 
       {error && <p className="text-xs text-rose-300">{error}</p>}
+      </GlassCard>
 
       <WindowPickerModal
         open={pickerOpen}
@@ -326,6 +333,6 @@ export const SubtitlesView: React.FC<SubtitlesViewProps> = ({
         onSelect={setSelected}
         onClose={() => setPickerOpen(false)}
       />
-    </GlassCard>
+    </>
   );
 };

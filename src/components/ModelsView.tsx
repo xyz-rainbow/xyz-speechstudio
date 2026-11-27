@@ -10,6 +10,7 @@ import {
   Play,
   Plus,
   Power,
+  RefreshCw,
   Settings as SettingsIcon,
   Trash2,
   X,
@@ -26,6 +27,7 @@ import {
   loadSttWorker,
   loadXttsWorker,
   notify,
+  refreshSapi5Voices,
   removeInstalledModel,
   setModelRuntime,
   testExternalEndpoint,
@@ -328,6 +330,12 @@ export const ModelsView: React.FC<ModelsViewProps> = ({
           card.engine === "piper" ||
           card.engine === "kokoro" ||
           card.engine === "espeak" ||
+          card.engine === "sapi5" ||
+          card.engine === "chatterbox" ||
+          card.engine === "chatterbox-turbo" ||
+          card.engine === "cosyvoice3-tts" ||
+          card.engine === "orpheus" ||
+          card.engine === "indextts" ||
           card.engine === "f5" ||
           card.engine === "f5-tts" ||
           card.engine === "fish" ||
@@ -656,19 +664,52 @@ export const ModelsView: React.FC<ModelsViewProps> = ({
                                 )}
                                 {t("models.load")}
                               </button>
-                              <button
-                                type="button"
-                                disabled={!isLoaded || !!busyKey}
-                                onClick={() => handleEjectSingle(singleFamily)}
-                                className="inline-flex items-center justify-center rounded-xl border px-2 py-1 text-xs disabled:opacity-40 hover:border-rose-400/50 text-rose-300"
-                                style={{
-                                  borderColor: "var(--border-glass)",
-                                  backgroundColor: "var(--bg-elevated)",
-                                }}
-                                title={t("models.eject")}
-                              >
-                                <Power className="w-3 h-3" />
-                              </button>
+                              {card.engine === "sapi5" ? (
+                                <button
+                                  type="button"
+                                  disabled={!!busyKey}
+                                  onClick={async () => {
+                                    if (!baseUrl) return;
+                                    setBusyKey(`sapi-refresh-${card.id}`);
+                                    setError(null);
+                                    try {
+                                      await refreshSapi5Voices(baseUrl);
+                                      await refreshCatalog();
+                                    } catch (err) {
+                                      setError(err instanceof Error ? err.message : String(err));
+                                    } finally {
+                                      setBusyKey(null);
+                                    }
+                                  }}
+                                  className="inline-flex items-center justify-center rounded-xl border px-2 py-1 text-xs disabled:opacity-40 hover:border-cyan-400/50 text-cyan-300"
+                                  style={{
+                                    borderColor: "var(--border-glass)",
+                                    backgroundColor: "var(--bg-elevated)",
+                                  }}
+                                  title="Rescan Windows SAPI 5 / Loquendo voices"
+                                >
+                                  <RefreshCw
+                                    className={clsx(
+                                      "w-3 h-3",
+                                      busyKey === `sapi-refresh-${card.id}` && "animate-spin",
+                                    )}
+                                  />
+                                </button>
+                              ) : (
+                                <button
+                                  type="button"
+                                  disabled={!isLoaded || !!busyKey}
+                                  onClick={() => handleEjectSingle(singleFamily)}
+                                  className="inline-flex items-center justify-center rounded-xl border px-2 py-1 text-xs disabled:opacity-40 hover:border-rose-400/50 text-rose-300"
+                                  style={{
+                                    borderColor: "var(--border-glass)",
+                                    backgroundColor: "var(--bg-elevated)",
+                                  }}
+                                  title={t("models.eject")}
+                                >
+                                  <Power className="w-3 h-3" />
+                                </button>
+                              )}
                             </>
                           )}
                           {card.removable && (

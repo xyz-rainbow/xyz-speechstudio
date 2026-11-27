@@ -21,6 +21,26 @@ def test_no_hardcoded_external_model_or_mario_seed() -> None:
     assert not hasattr(profiles, "MARIO_SEED_DIR")
 
 
+def test_fish_speech_is_python_worker_not_crispasr() -> None:
+    fish = next(m for m in downloader.BUILTIN_MODELS if m["id"] == "fish-speech-1.5")
+    assert fish["engine"] == "fish-audio"
+    assert fish["runtime_supported"] is True
+
+    import backend.orchestrator.crispasr as crispasr
+
+    original = crispasr.is_available
+    crispasr.is_available = lambda *args, **kwargs: True
+    try:
+        hidden = {
+            "engine": "fish-audio",
+            "id": "fish-speech-1.5",
+            "runtime_supported": False,
+        }
+        assert downloader._runtime_supported_for_builtin(hidden) is False
+    finally:
+        crispasr.is_available = original
+
+
 def test_builtin_catalog_has_family_grouping_and_fish_audio() -> None:
     families = {entry.get("family_id") for entry in downloader.BUILTIN_MODELS}
     assert "qwen3-tts" in families
