@@ -6,7 +6,7 @@ Write-Host "   RAINBOW TECHNOLOGY - SPEECH STUDIO INSTALLER" -ForegroundColor Cy
 Write-Host "==============================================================================" -ForegroundColor Magenta
 Write-Host ""
 
-$repo = (Resolve-Path (Join-Path $PSScriptRoot "..\..")).Path
+$repo = (Resolve-Path -LiteralPath (Join-Path $PSScriptRoot "..\..")).Path
 $tauriConf = Get-Content -LiteralPath (Join-Path $repo "src-tauri\tauri.conf.json") -Raw | ConvertFrom-Json
 $appVersion = [string]$tauriConf.version
 if (-not $appVersion) {

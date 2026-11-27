@@ -332,6 +332,25 @@ def _crispasr_cache_dir() -> Path:
     return Path.home() / ".cache" / "crispasr"
 
 
+def normalize_wav_file(path: Path) -> None:
+    """Rewrite a WAV with a standard header so WebView fires `ended` and can chain chunks.
+
+    CrispASR (Kokoro in particular) sometimes returns a RIFF file the browser stalls on
+    at the last frame, so playback never advances to the next section.
+    """
+    try:
+        with wave.open(str(path), "rb") as src:
+            params = src.getparams()
+            frames = src.readframes(src.getnframes())
+    except (wave.Error, EOFError, OSError):
+        return
+    if not frames:
+        return
+    with wave.open(str(path), "wb") as dst:
+        dst.setparams(params)
+        dst.writeframes(frames)
+
+
 # Full 54-voice Kokoro catalog (matching onnx-community/Kokoro-82M-v1.0-ONNX).
 KOKORO_VOICES_BY_LANG: dict[str, list[str]] = {
     "es": ["ef_dora", "em_alex", "em_santa"],
@@ -1034,6 +1053,7 @@ def synthesize_tts(
                 raise InterruptedError("Synthesis stopped by user.")
             if resp.status_code == 200 and len(resp.content) > 44 and resp.content[:4] == b"RIFF":
                 out_path.write_bytes(resp.content)
+                normalize_wav_file(out_path)
                 elapsed = time.perf_counter() - t0
                 with wave.open(str(out_path), "rb") as wf:
                     sr = wf.getframerate()
@@ -1100,6 +1120,7 @@ def synthesize_tts(
         if tmp_ctx is not None:
             tmp_ctx.cleanup()
 
+    normalize_wav_file(out_path)
     with wave.open(str(out_path), "rb") as wf:
         sr = wf.getframerate()
         frames = wf.getnframes()

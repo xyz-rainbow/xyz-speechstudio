@@ -1747,7 +1747,12 @@ def get_session_chunk_audio(session_id: str, index: int):
     fp = PLAY_SESSION_DIR / f"{session_id}_chunk_{index:04d}.wav"
     if not fp.exists():
         raise HTTPException(status_code=404, detail="Chunk audio missing or cleared.")
-    return FileResponse(fp, media_type="audio/wav", filename=fp.name)
+    return FileResponse(
+        fp,
+        media_type="audio/wav",
+        filename=fp.name,
+        headers={"Cache-Control": "no-store"},
+    )
 
 
 @app.post("/api/tts/session/{session_id}/save")
