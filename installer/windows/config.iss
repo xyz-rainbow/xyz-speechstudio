@@ -9,7 +9,7 @@
 ; --- 1. DATOS DE LA APLICACIÓN ---
 #define MyAppName "Speech Studio"
 #ifndef MyAppVersion
-  #define MyAppVersion "0.2.2"
+  #define MyAppVersion "0.2.3"
 #endif
 #define MyAppPublisher "Rainbow Technology"
 #define MyAppURL "https://github.com/xyz-rainbow/xyz-speechstudio"

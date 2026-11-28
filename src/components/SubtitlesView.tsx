@@ -31,6 +31,46 @@ function rowKey(row: AudioAppRow): string {
   return row.stream_index == null ? String(row.pid) : `${row.pid}:${row.stream_index}`;
 }
 
+/** Resolve when native capture emits status=started, or reject on error/timeout. */
+function waitForCaptionLifecycle(timeoutMs: number): Promise<void> {
+  return new Promise((resolve, reject) => {
+    let settled = false;
+    let unlisten: (() => void) | undefined;
+    const timer = window.setTimeout(() => {
+      if (settled) return;
+      settled = true;
+      unlisten?.();
+      reject(new Error("Live captions start timed out waiting for capture."));
+    }, timeoutMs);
+
+    void listen<string>("caption", (ev) => {
+      if (settled) return;
+      let body: CaptionEvent;
+      try {
+        body = JSON.parse(ev.payload) as CaptionEvent;
+      } catch {
+        return;
+      }
+      if (body.type === "status" && (body.text === "started" || body.text === "ready")) {
+        settled = true;
+        window.clearTimeout(timer);
+        unlisten?.();
+        resolve();
+        return;
+      }
+      if (body.type === "error") {
+        settled = true;
+        window.clearTimeout(timer);
+        unlisten?.();
+        reject(new Error(body.text || "Live captions failed to start."));
+      }
+    }).then((fn) => {
+      unlisten = fn;
+      if (settled) fn();
+    });
+  });
+}
+
 interface SubtitlesViewProps {
   baseUrl: string;
   catalog: CatalogModelEntry[];
@@ -83,9 +123,12 @@ export const SubtitlesView: React.FC<SubtitlesViewProps> = ({
         return;
       }
       if (body.type === "final" && body.text.trim()) {
+        const line = body.text.trim();
         setLive("");
         setHistory((prev) => {
-          const next = [...prev, body.text.trim()];
+          // Drop duplicate consecutive finals (endpoint/CrispASR can restate the same clip).
+          if (prev[prev.length - 1] === line) return prev;
+          const next = [...prev, line];
           const cap = settings.captions_max_history || 20;
           return next.slice(-cap);
         });
@@ -129,6 +172,8 @@ export const SubtitlesView: React.FC<SubtitlesViewProps> = ({
     if (!baseUrl || !selectedRow) return;
     setBusy(true);
     setError("");
+    setRunning(false);
+    let armed = false;
     try {
       let chosenModelId = settings.active_stt_model;
       if (settings.stt_source === "local") {
@@ -150,14 +195,23 @@ export const SubtitlesView: React.FC<SubtitlesViewProps> = ({
           : "";
       const wsUrl = baseUrl.replace(/^http/i, "ws") + `/api/captions/stream${query}`;
       await showOverlayWindow();
-      await setCaptionsLock(baseUrl, true);
-      setRunning(true);
+
+      // Do not mark the session active until capture reports started (or times out).
+      // Lock only after start succeeds so a failed launch never looks "on".
+      const ready = waitForCaptionLifecycle(12_000);
       await startLiveCaptions(selectedRow.pid, wsUrl, "auto", selectedRow.stream_index);
+      await ready;
+      await setCaptionsLock(baseUrl, true);
+      armed = true;
+      setRunning(true);
       void notify(settings.notifications_enabled, t("toast.title"), t("toast.captionsOn"));
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
       setRunning(false);
-      await setCaptionsLock(baseUrl, false).catch(() => {});
+      await stopLiveCaptions().catch(() => {});
+      if (armed || baseUrl) {
+        await setCaptionsLock(baseUrl, false).catch(() => {});
+      }
       void notify(settings.notifications_enabled, t("toast.title"), t("toast.failed"));
     } finally {
       setBusy(false);

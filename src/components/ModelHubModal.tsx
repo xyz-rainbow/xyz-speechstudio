@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import {
   ArrowLeft,
   ChevronLeft,
@@ -34,6 +34,7 @@ import type {
 } from "../types";
 import { GlassCard } from "./GlassCard";
 import { LoquendoInstallControl } from "./LoquendoInstallControl";
+import { XyzIoquendoInstallControl } from "./XyzIoquendoInstallControl";
 
 interface ModelHubModalProps {
   open: boolean;
@@ -45,7 +46,9 @@ interface ModelHubModalProps {
   installedLanguages?: Record<string, string[]>;
   onClose: () => void;
   onRefreshCatalog: () => Promise<void>;
-  onRequestRemove: (entry: CatalogModelEntry) => void;
+  onRequestRemove: (entry: CatalogModelEntry, quantId?: string) => void;
+  onActivateQuant: (modelId: string, quantId: string) => Promise<void>;
+  activeModelId: string;
   onInstalledLanguagesChange?: (next: Record<string, string[]>) => void;
 }
 
@@ -101,6 +104,8 @@ export const ModelHubModal: React.FC<ModelHubModalProps> = ({
   onClose,
   onRefreshCatalog,
   onRequestRemove,
+  onActivateQuant,
+  activeModelId,
   onInstalledLanguagesChange,
 }) => {
   const { t } = useI18n();
@@ -143,6 +148,9 @@ export const ModelHubModal: React.FC<ModelHubModalProps> = ({
   const [localName, setLocalName] = useState("");
   const [importingLocal, setImportingLocal] = useState(false);
 
+  const onCloseRef = useRef(onClose);
+  onCloseRef.current = onClose;
+
   useEffect(() => {
     if (!open) return;
     setTab("featured");
@@ -152,6 +160,15 @@ export const ModelHubModal: React.FC<ModelHubModalProps> = ({
     setConvertToGguf(false);
     setError(null);
   }, [open, kind]);
+
+  useEffect(() => {
+    if (!open) return;
+    const onKeyDown = (ev: KeyboardEvent) => {
+      if (ev.key === "Escape") onCloseRef.current();
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [open]);
 
   const loadHub = async (query: string, page: number, readyOnly: boolean) => {
     if (!baseUrl) return;
@@ -423,7 +440,12 @@ export const ModelHubModal: React.FC<ModelHubModalProps> = ({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm p-4">
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm p-4"
+      role="dialog"
+      aria-modal="true"
+      aria-label={kind === "tts" ? t("models.ttsSection") : t("models.sttSection")}
+    >
       <GlassCard className="w-full max-w-3xl max-h-[88vh] p-4 flex flex-col gap-3 overflow-hidden">
         {/* Header */}
         <div className="flex flex-wrap items-center justify-between gap-2 shrink-0">
@@ -449,6 +471,7 @@ export const ModelHubModal: React.FC<ModelHubModalProps> = ({
           <button
             type="button"
             onClick={onClose}
+            aria-label={t("models.cancel")}
             className="p-1 rounded-lg opacity-70 hover:opacity-100"
           >
             <X className="w-4 h-4" />
@@ -518,6 +541,31 @@ export const ModelHubModal: React.FC<ModelHubModalProps> = ({
                   const chosenQId = quantChoice[variant.id] || recQuant?.id || "";
                   const quant =
                     variant.quants.find((q) => q.id === chosenQId) || recQuant;
+                  const isComputeMode = Boolean(quant?.compute_type);
+                  const isPostQuantUnavailable =
+                    variant.capabilities?.quant_policy === "post_quantize" &&
+                    Boolean(quant) &&
+                    quant.files.length === 0;
+                  const quantHeading = isComputeMode
+                    ? t("models.computeTypeLabel")
+                    : variant.capabilities?.quant_policy === "post_quantize"
+                      ? t("models.postQuantLabel")
+                      : variant.engine === "piper"
+                        ? t("models.voiceQualityLabel")
+                        : t("models.quantization");
+                  const canSwitchVariant =
+                    isComputeMode ||
+                    [
+                      "qwen",
+                      "chatterbox",
+                      "chatterbox-turbo",
+                      "indextts",
+                      "cosyvoice3-tts",
+                      "orpheus",
+                      "kokoro",
+                      "piper",
+                      "kitten",
+                    ].includes(variant.engine);
                   const activeJob = activeJobFor(variant.id);
                   const fitsVram =
                     !vram?.available || !quant || quant.vram_mib <= vram.total_mib - 400;
@@ -679,7 +727,7 @@ export const ModelHubModal: React.FC<ModelHubModalProps> = ({
                             className="text-[10px] font-mono"
                             style={{ color: "var(--text-muted)" }}
                           >
-                            {t("models.quantization")}
+                            {quantHeading}
                           </span>
                           <select
                             value={chosenQId}
@@ -703,12 +751,14 @@ export const ModelHubModal: React.FC<ModelHubModalProps> = ({
                               </option>
                             ))}
                           </select>
-                          {quant &&
-                            quant.files.length === 0 &&
-                            variant.capabilities?.quant_policy !== "binary" &&
-                            variant.quants.some((q) => q.files.length > 0) && (
+                          {isPostQuantUnavailable && (
                             <span className="text-[10px] text-amber-300/90">
-                              {t("models.postQuantHint")}
+                              {t("models.postQuantUnavailable")}
+                            </span>
+                          )}
+                          {!variant.runtime_supported && (
+                            <span className="text-[10px] text-amber-300/90">
+                              {t("models.runtimeUnavailable")}
                             </span>
                           )}
                         </div>
@@ -725,7 +775,9 @@ export const ModelHubModal: React.FC<ModelHubModalProps> = ({
                         </div>
                       )}
 
-                      {variant.id === "loquendo-tts7" ? (
+                      {variant.id === "xyz-ioquendo" ? (
+                        <XyzIoquendoInstallControl baseUrl={baseUrl} onRefresh={onRefreshCatalog} />
+                      ) : variant.id === "loquendo-tts7" ? (
                         <LoquendoInstallControl baseUrl={baseUrl} supported={variant.runtime_supported} onRefresh={onRefreshCatalog} />
                       ) : activeJob ? (
                         <div className="mt-auto flex flex-col gap-1.5 pt-1">
@@ -755,15 +807,32 @@ export const ModelHubModal: React.FC<ModelHubModalProps> = ({
                             {t("models.cancel")}
                           </button>
                         </div>
-                      ) : variant.installed ? (
+                      ) : variant.installed && variant.installed_quants.includes(chosenQId) ? (
                         <div className="mt-auto flex items-center justify-between gap-2 pt-1">
                           <span className="rounded-full px-2.5 py-0.5 text-[10px] font-mono bg-emerald-500/15 text-emerald-300 border border-emerald-500/35">
-                            {t("models.installedBadge")} · {variant.installed_quant}
+                            {activeModelId === `${variant.id}-${chosenQId}` ? t("models.active") : t("models.installedBadge")} · {chosenQId}
                           </span>
-                          {variant.removable && (
+                          {variant.runtime_supported && canSwitchVariant && (
                             <button
                               type="button"
-                              onClick={() => onRequestRemove(variant)}
+                              onClick={async () => {
+                                try {
+                                  setError(null);
+                                  await onActivateQuant(variant.id, chosenQId);
+                                } catch (err) {
+                                  setError(err instanceof Error ? err.message : String(err));
+                                }
+                              }}
+                              className="rounded-xl border px-2.5 py-1 text-xs text-cyan-200"
+                              style={{ borderColor: "var(--border-glass)" }}
+                            >
+                              {t("models.load")}
+                            </button>
+                          )}
+                          {variant.removable && !isComputeMode && (
+                            <button
+                              type="button"
+                              onClick={() => onRequestRemove(variant, chosenQId)}
                               className="inline-flex items-center gap-1 rounded-xl border px-2.5 py-1 text-xs text-rose-300 hover:border-rose-400/60"
                               style={{
                                 borderColor: "var(--border-glass)",
@@ -778,7 +847,11 @@ export const ModelHubModal: React.FC<ModelHubModalProps> = ({
                       ) : (
                         <button
                           type="button"
-                          disabled={installingId === variant.id}
+                          disabled={
+                            installingId === variant.id ||
+                            !variant.runtime_supported ||
+                            isPostQuantUnavailable
+                          }
                           onClick={async () => {
                             setError(null);
                             setInstallingId(variant.id);
@@ -791,7 +864,7 @@ export const ModelHubModal: React.FC<ModelHubModalProps> = ({
                               setInstallingId((cur) => (cur === variant.id ? null : cur));
                             }
                           }}
-                          className="mt-auto inline-flex items-center justify-center gap-1.5 rounded-xl border px-3 py-1.5 text-xs font-medium hover:border-cyan-400/60 text-cyan-200 disabled:opacity-50"
+                          className="mt-auto inline-flex items-center justify-center gap-1.5 rounded-xl border px-3 py-1.5 text-xs font-medium hover:border-cyan-400/60 text-cyan-200 disabled:opacity-45"
                           style={{
                             borderColor: "var(--border-glass)",
                             backgroundColor: "var(--bg-elevated)",

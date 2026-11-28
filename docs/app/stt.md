@@ -12,12 +12,12 @@ El VAD es el de faster-whisper (`vad_filter`, Silero). No hay un segundo motor d
 
 La pestaña Transcriber elige el modelo cargado, manda un archivo y muestra el texto. Su lista local son los STT instalados y con runtime, y la externa son los endpoints STT de ajustes. Las dos se actualizan al descargar o al guardar, también si la pestaña no estaba abierta. Profiles usa la misma ruta para rellenar el texto de referencia.
 
-Tamaños que el runtime acepta: `tiny`, `base`, `small`, `medium`, `large-v3-turbo`, en `int8`, `int8_float16` o `float16`. GPU o CPU sale de `stt_device`.
+Tamaños que el runtime acepta: `tiny`, `base`, `small`, `medium`, `large-v3-turbo`, en `int8`, `int8_float16` o `float16`. El selector STT permite alternar modos de cómputo directamente y `/api/stt/transcribe` resuelve el sufijo `-<compute_type>` al recargar el worker. `POST /api/stt/cancel` detiene procesos CrispASR STT activos y la vista Transcriber aborta la petición en curso. GPU o CPU sale de `stt_device`.
 
 `POST /v1/audio/transcriptions` hace lo mismo para un cliente externo, con la API local apagada por defecto.
 
 ## Pendiente
 
-Parakeet y Moonshine están en el catálogo con `runtime_supported: false`. El worker no los carga.
+Parakeet y Moonshine están en el catálogo con `runtime_supported: false` (bloqueados para descarga/activación) hasta disponer del worker ONNX/GGUF correspondiente.
 
 El camino en vivo local no usa `/transcribe`. El detalle, incluido el endpoint externo, está en [live-captions.md](live-captions.md).

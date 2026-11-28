@@ -1,6 +1,6 @@
 ====================================================================
   RAINBOW TECHNOLOGY - EXCLUSIVE ACCESS
-  SPEECH STUDIO v0.2.2 [INTERNAL MASTER RELEASE]
+  SPEECH STUDIO v0.2.3 [INTERNAL MASTER RELEASE]
 ====================================================================
 
 PROPRIETARY & CONFIDENTIAL SOFTWARE NOTICE:

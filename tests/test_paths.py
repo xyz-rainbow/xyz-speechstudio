@@ -2,7 +2,12 @@ from pathlib import Path
 
 import pytest
 
-from backend.orchestrator.paths import resolve_data_dir
+from backend.orchestrator.paths import (
+    ensure_user_dirs,
+    migrate_legacy_app_data,
+    resolve_cache_dir,
+    resolve_data_dir,
+)
 from backend.orchestrator.catalog_capabilities import resolve_runtime_python
 
 
@@ -51,3 +56,40 @@ def test_unified_legacy_runtime_is_available_after_partial_upgrade(tmp_path):
     unified.touch()
     (tmp_path / "runtime/envs").mkdir(parents=True)
     assert resolve_runtime_python(tmp_path, "fish", windows=False) == unified
+
+
+def test_paths_with_spaces_unicode_and_brackets(tmp_path):
+    root = tmp_path / "[Tools]" / "xyz-speech-studio"
+    fancy = root / "datos áéí" / "Speech Studio"
+    resolved = resolve_data_dir(root, environ={"SPEECHSTUDIO_DATA_DIR": str(fancy)})
+    assert resolved == fancy
+    created = ensure_user_dirs(fancy)
+    assert (fancy / "models").is_dir()
+    assert (fancy / "cache").is_dir()
+    assert fancy in created
+
+
+def test_cache_dir_uses_xdg_outside_portable(tmp_path):
+    home = tmp_path / "home"
+    app = tmp_path / "Program Files" / "Speech Studio"
+    app.mkdir(parents=True)
+    cache = resolve_cache_dir(app, platform="linux", environ={}, home=home)
+    assert cache == home / ".cache" / "speech-studio"
+
+
+def test_portable_keeps_cache_under_data(tmp_path):
+    (tmp_path / "portable.txt").touch()
+    cache = resolve_cache_dir(tmp_path, platform="win32", environ={})
+    assert cache == tmp_path / "data" / "cache"
+
+
+def test_migrate_report_does_not_move_files(tmp_path):
+    app = tmp_path / "app"
+    user = tmp_path / "user-data"
+    legacy = app / "data"
+    (legacy / "models").mkdir(parents=True)
+    (legacy / "settings.json").write_text("{}", encoding="utf-8")
+    report = migrate_legacy_app_data(app, user)
+    assert report["action"] == "prefer_legacy_until_settings_migrated"
+    assert (legacy / "settings.json").is_file()
+    assert not (user / "settings.json").exists()

@@ -29,7 +29,9 @@ interface ChunkedAudioPlayerProps {
   chunks: AudioChunkItem[];
   singleUrl?: string | null;
   isGenerating?: boolean;
+  /** Bumps on each new Play session — resets dual-buffer state and drops stale advances. */
   autoPlayNonce?: number;
+  playbackGeneration?: number;
   onPlaybackChange?: (state: PlaybackIslandState) => void;
   onEndedAll?: () => void;
 }
@@ -53,10 +55,34 @@ function knownDuration(node: HTMLAudioElement, item?: AudioChunkItem): number {
   return media || reported;
 }
 
+function releaseNode(node: HTMLAudioElement | null) {
+  if (!node) return;
+  try {
+    node.pause();
+  } catch {
+    /* ignore */
+  }
+  node.removeAttribute("data-src");
+  node.removeAttribute("src");
+  try {
+    node.load();
+  } catch {
+    /* ignore */
+  }
+}
+
 export const ChunkedAudioPlayer = React.forwardRef<
   ChunkedAudioPlayerHandle,
   ChunkedAudioPlayerProps
->(({ chunks, singleUrl, isGenerating = false, autoPlayNonce = 0, onPlaybackChange, onEndedAll }, ref) => {
+>(({
+  chunks,
+  singleUrl,
+  isGenerating = false,
+  autoPlayNonce = 0,
+  playbackGeneration = 0,
+  onPlaybackChange,
+  onEndedAll,
+}, ref) => {
   const aRef = useRef<HTMLAudioElement | null>(null);
   const bRef = useRef<HTMLAudioElement | null>(null);
   const trackRef = useRef<HTMLDivElement | null>(null);
@@ -66,6 +92,9 @@ export const ChunkedAudioPlayer = React.forwardRef<
   const wantPlayRef = useRef(false);
   const advancingRef = useRef(false);
   const pendingOffsetRef = useRef(0);
+  const generationRef = useRef(playbackGeneration);
+  generationRef.current = playbackGeneration;
+  const lastGenRef = useRef(playbackGeneration);
 
   const items: AudioChunkItem[] = useMemo(() => {
     if (singleUrl) {
@@ -144,6 +173,11 @@ export const ChunkedAudioPlayer = React.forwardRef<
     if (url) {
       node.preload = "auto";
       node.src = url;
+      try {
+        node.load();
+      } catch {
+        /* ignore */
+      }
     } else {
       node.removeAttribute("src");
       node.load();
@@ -171,7 +205,8 @@ export const ChunkedAudioPlayer = React.forwardRef<
   };
 
   const advanceFrom = useCallback(
-    (fromIndex: number) => {
+    (fromIndex: number, genAtCall?: number) => {
+      if (genAtCall != null && genAtCall !== generationRef.current) return;
       if (advancingRef.current) return;
       if (fromIndex !== indexRef.current) return;
       const list = itemsRef.current;
@@ -180,6 +215,7 @@ export const ChunkedAudioPlayer = React.forwardRef<
         wantPlayRef.current = false;
         setIsPlaying(false);
         setWaitingNext(false);
+        advancingRef.current = false;
         onEndedAll?.();
         return;
       }
@@ -189,7 +225,8 @@ export const ChunkedAudioPlayer = React.forwardRef<
       if (!list[nextIdx]?.audioUrl) {
         setCurrentIndex(nextIdx);
         if (wantPlayRef.current) setWaitingNext(true);
-        advancingRef.current = false;
+        // Stay "advancing" until the URL lands and the play effect clears the flag,
+        // so ended/timeupdate/interval cannot double-fire into the next gap.
         return;
       }
       setSlot((current) => {
@@ -202,23 +239,32 @@ export const ChunkedAudioPlayer = React.forwardRef<
     [onEndedAll]
   );
 
-  useEffect(() => {
-    if (!autoPlayNonce) return;
+  const resetPlayback = useCallback((autoPlay: boolean) => {
     setCurrentIndex(0);
     setSlot(0);
     slotRef.current = 0;
+    indexRef.current = 0;
     setChunkLocalTime(0);
     setWaitingNext(false);
+    setIsPlaying(false);
     pendingOffsetRef.current = 0;
     advancingRef.current = false;
-    wantPlayRef.current = true;
-    for (const node of [aRef.current, bRef.current]) {
-      if (!node) continue;
-      node.pause();
-      node.removeAttribute("data-src");
-      node.removeAttribute("src");
-    }
-  }, [autoPlayNonce]);
+    wantPlayRef.current = autoPlay;
+    releaseNode(aRef.current);
+    releaseNode(bRef.current);
+  }, []);
+
+  useEffect(() => {
+    if (playbackGeneration === lastGenRef.current) return;
+    lastGenRef.current = playbackGeneration;
+    resetPlayback(false);
+  }, [playbackGeneration, resetPlayback]);
+
+  useEffect(() => {
+    if (!autoPlayNonce) return;
+    lastGenRef.current = playbackGeneration;
+    resetPlayback(true);
+  }, [autoPlayNonce, playbackGeneration, resetPlayback]);
 
   useEffect(() => {
     if (!singleUrl) return;
@@ -230,18 +276,23 @@ export const ChunkedAudioPlayer = React.forwardRef<
   // Active element plays the current chunk. The other element preloads the next one
   // so the handoff does not wait for a fresh decode (~200 ms).
   useEffect(() => {
+    const gen = generationRef.current;
     const active = nodeFor(slot);
     const idle = nodeFor(slot === 0 ? 1 : 0);
     const current = items[currentIndex];
     const next = items[currentIndex + 1];
     if (idle) {
-      assignSrc(idle, next?.audioUrl || "");
-      applyGain(idle);
+      if (next?.audioUrl) {
+        assignSrc(idle, next.audioUrl);
+        applyGain(idle);
+      } else if ((idle.getAttribute("data-src") || "") !== "") {
+        releaseNode(idle);
+      }
     }
     if (!active) return;
     if (!current?.audioUrl) {
       if (wantPlayRef.current) setWaitingNext(true);
-      advancingRef.current = false;
+      // Keep advancingRef true while blocked on preload so interval/ended cannot race.
       return;
     }
     setWaitingNext(false);
@@ -251,7 +302,7 @@ export const ChunkedAudioPlayer = React.forwardRef<
       const dur = knownDuration(active, current);
       const atEnd = !switched && dur > 0.2 && active.currentTime >= dur - 0.08;
       if (atEnd) {
-        advanceFrom(currentIndex);
+        advanceFrom(currentIndex, gen);
       } else if (switched) {
         const offset = pendingOffsetRef.current;
         pendingOffsetRef.current = 0;
@@ -261,13 +312,16 @@ export const ChunkedAudioPlayer = React.forwardRef<
       }
     }
     advancingRef.current = false;
-  }, [slot, currentIndex, items, applyGain, advanceFrom]);
+  }, [slot, currentIndex, items, autoPlayNonce, applyGain, advanceFrom]);
 
   useEffect(() => {
     let lastTime = -1;
     let lastMove = performance.now();
+    const gen = generationRef.current;
     const id = window.setInterval(() => {
       if (!wantPlayRef.current) return;
+      if (gen !== generationRef.current) return;
+      if (advancingRef.current) return;
       const node = nodeFor(slotRef.current);
       if (!node) return;
       const idx = indexRef.current;
@@ -290,7 +344,7 @@ export const ChunkedAudioPlayer = React.forwardRef<
         ((dur > 0 && node.currentTime >= dur - 0.45) ||
           (dur === 0 && !node.paused && node.readyState >= 2));
       if (atEnd || stalledAtEnd) {
-        advanceFrom(idx);
+        advanceFrom(idx, gen);
         return;
       }
       if (node.paused && node.readyState >= 2 && !node.ended && node.currentTime < Math.max(0, dur - 0.08)) {
@@ -298,7 +352,14 @@ export const ChunkedAudioPlayer = React.forwardRef<
       }
     }, 40);
     return () => window.clearInterval(id);
-  }, [advanceFrom, slot]);
+  }, [advanceFrom, slot, playbackGeneration]);
+
+  useEffect(() => {
+    return () => {
+      releaseNode(aRef.current);
+      releaseNode(bRef.current);
+    };
+  }, []);
 
   useEffect(() => {
     onPlaybackChange?.({
@@ -359,16 +420,13 @@ export const ChunkedAudioPlayer = React.forwardRef<
       pause: () => {
         wantPlayRef.current = false;
         setWaitingNext(false);
+        setIsPlaying(false);
+        advancingRef.current = false;
         aRef.current?.pause();
         bRef.current?.pause();
       },
       playFromStart: () => {
-        pendingOffsetRef.current = 0;
-        setCurrentIndex(0);
-        setSlot(0);
-        slotRef.current = 0;
-        setChunkLocalTime(0);
-        wantPlayRef.current = true;
+        resetPlayback(true);
       },
       isPlaying: () => isPlaying || waitingNext,
       isPausedMidway: () => {
@@ -376,7 +434,7 @@ export const ChunkedAudioPlayer = React.forwardRef<
         return !!a && a.paused && !a.ended && (globalTime > 0 || currentIndex > 0);
       },
     }),
-    [togglePlay, isPlaying, waitingNext, globalTime, currentIndex]
+    [togglePlay, isPlaying, waitingNext, globalTime, currentIndex, resetPlayback]
   );
 
   const handleTrackSeek = (e: React.MouseEvent<HTMLDivElement>) => {
@@ -424,14 +482,14 @@ export const ChunkedAudioPlayer = React.forwardRef<
     setChunkLocalTime(node.currentTime);
     const dur = knownDuration(node, itemsRef.current[indexRef.current]);
     if (wantPlayRef.current && dur > 0.2 && node.currentTime >= dur - 0.03) {
-      advanceFrom(indexRef.current);
+      advanceFrom(indexRef.current, generationRef.current);
     }
   };
 
   const handleEnded = (which: 0 | 1) => () => {
     if (slotRef.current !== which) return;
     if (singleUrl) setIsPlaying(false);
-    advanceFrom(indexRef.current);
+    advanceFrom(indexRef.current, generationRef.current);
   };
 
   const handlePlay = (which: 0 | 1) => () => {
@@ -483,6 +541,7 @@ export const ChunkedAudioPlayer = React.forwardRef<
         type="button"
         onClick={togglePlay}
         disabled={!items[0]?.audioUrl && !activeUrl}
+        aria-label={isPlaying || waitingNext ? "Pause playback" : "Play audio"}
         className="w-7 h-7 rounded-full flex items-center justify-center border border-purple-400/50 bg-purple-500/20 hover:bg-purple-500/35 text-white shrink-0 transition-colors disabled:opacity-40"
       >
         {isPlaying || waitingNext ? (
@@ -496,6 +555,12 @@ export const ChunkedAudioPlayer = React.forwardRef<
         <div
           ref={trackRef}
           onClick={handleTrackSeek}
+          role="slider"
+          aria-label="Audio seekbar"
+          aria-valuemin={0}
+          aria-valuemax={Math.round(totalEstimated)}
+          aria-valuenow={Math.round(globalTime)}
+          tabIndex={0}
           className="relative h-2 w-full rounded-full bg-white/10 cursor-pointer overflow-hidden group"
         >
           <div
@@ -525,6 +590,7 @@ export const ChunkedAudioPlayer = React.forwardRef<
           onClick={() => setMuted((m) => !m)}
           className="p-1 rounded-lg hover:bg-white/10 text-cyan-300 transition-colors"
           title={muted ? "Unmute" : "Mute"}
+          aria-label={muted ? "Unmute" : "Mute"}
         >
           {muted || volume === 0 ? (
             <VolumeX className="w-3.5 h-3.5 text-rose-300" />
@@ -538,6 +604,7 @@ export const ChunkedAudioPlayer = React.forwardRef<
           max={1}
           step={0.05}
           value={muted ? 0 : volume}
+          aria-label="Playback volume"
           onChange={(e) => {
             const v = parseFloat(e.target.value);
             setVolume(v);

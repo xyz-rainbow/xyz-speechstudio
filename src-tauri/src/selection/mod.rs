@@ -43,6 +43,15 @@ impl SelectionPayload {
             code: "unavailable".into(),
         }
     }
+
+    /// macOS (and other platforms) without a selection backend.
+    #[cfg_attr(not(target_os = "macos"), allow(dead_code))]
+    pub(crate) fn unsupported() -> Self {
+        Self {
+            text: String::new(),
+            code: "unsupported".into(),
+        }
+    }
 }
 
 pub fn read_selection() -> SelectionPayload {
@@ -57,7 +66,12 @@ pub fn read_selection() -> SelectionPayload {
     {
         linux::read_primary_selection()
     }
-    #[cfg(not(any(windows, target_os = "linux")))]
+    #[cfg(target_os = "macos")]
+    {
+        // No Accessibility selection reader yet — distinct from Linux missing tools.
+        SelectionPayload::unsupported()
+    }
+    #[cfg(not(any(windows, target_os = "linux", target_os = "macos")))]
     {
         SelectionPayload::empty()
     }

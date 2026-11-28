@@ -1,0 +1,28 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: persona-api
+  namespace: speech-studio-persona
+  labels:
+    app.kubernetes.io/name: persona-api
+    app.kubernetes.io/part-of: speech-studio
+  annotations:
+    traefik.ingress.kubernetes.io/router.entrypoints: websecure
+    traefik.ingress.kubernetes.io/router.tls: "true"
+spec:
+  ingressClassName: traefik
+  tls:
+    - hosts:
+        - persona.example.internal
+      secretName: persona-tls
+  rules:
+    - host: persona.example.internal
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: persona-api
+                port:
+                  number: 80

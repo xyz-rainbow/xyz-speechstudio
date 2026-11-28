@@ -84,3 +84,6 @@ installer/Output/
 /runtime/bin/metal/
 /runtime/bin/*.staging-*/
 /runtime/bin/*.previous-*/
+
+# Local full xyz-Ioquendo draft manifest (excluded from public repo/release)
+packs/xyz-ioquendo/manifest.full.v1.json

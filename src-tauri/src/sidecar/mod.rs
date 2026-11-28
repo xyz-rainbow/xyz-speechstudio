@@ -224,12 +224,14 @@ impl BackendState {
         }
         let py_exe = core_venv_python(&self.app_root)
             .ok_or_else(|| {
-                "Python core env missing (runtime/envs/core or legacy .venvs/core)".to_string()
+                "Python core runtime missing. Expected runtime/python (installer payload), or runtime/envs/core, or legacy .venvs/core.".to_string()
             })?;
 
         let data_dir = crate::paths::data_dir(&self.app_root);
+        let cache_dir = crate::paths::cache_dir(&self.app_root);
+        crate::paths::ensure_user_dirs(&data_dir, &cache_dir)
+            .map_err(|e| format!("Failed creating data directory: {e}"))?;
         let tmp_dir = data_dir.join("tmp");
-        fs::create_dir_all(&tmp_dir).map_err(|e| format!("Failed creating data directory: {e}"))?;
         let stderr_file = File::create(tmp_dir.join("orchestrator.stderr.log"))
             .map_err(|e| format!("Failed creating stderr log: {e}"))?;
 
@@ -254,6 +256,7 @@ impl BackendState {
             .env("SPEECHSTUDIO_DESKTOP", "1")
             .env("PYTHONUTF8", "1")
             .env("SPEECHSTUDIO_DATA_DIR", &data_dir)
+            .env("SPEECHSTUDIO_CACHE_DIR", &cache_dir)
             .stdout(Stdio::piped())
             .stderr(Stdio::from(stderr_file));
 
@@ -396,6 +399,9 @@ mod windows_lifecycle {
             let h = CreateJobObjectW(None, None)
                 .map_err(|e| format!("CreateJobObjectW failed: {e}"))?;
             let mut limits: JOBOBJECT_EXTENDED_LIMIT_INFORMATION = std::mem::zeroed();
+            // Kill the orchestrator and its non-breakaway children when the app exits.
+            // BREAKAWAY_OK is intentional so optional GPU helpers can leave the job when required;
+            // CrispASR/worker children should stay in-job unless they explicitly break away.
             limits.BasicLimitInformation.LimitFlags = JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE | JOB_OBJECT_LIMIT_BREAKAWAY_OK;
             SetInformationJobObject(
                 h,

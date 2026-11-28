@@ -113,6 +113,7 @@ export interface VoiceProfile {
   ref_duration_s?: number;
   ref_trimmed?: boolean;
   ref_text: string;
+  ref_original_text?: string;
   spk_path: string;
   rvq_path: string;
   ready: boolean;
@@ -206,6 +207,7 @@ export interface CatalogModelEntry {
   quants: QuantOption[];
   installed: boolean;
   installed_quant: string | null;
+  installed_quants: string[];
   install_dir: string | null;
   external: boolean;
   removable: boolean;

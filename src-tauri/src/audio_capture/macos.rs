@@ -85,7 +85,16 @@ JSON.stringify(out);
         serde_json::from_slice(&output.stdout).unwrap_or_default();
 
     let mut seen = std::collections::HashSet::new();
-    let mut apps = Vec::new();
+    // Shared virtual loopback (BlackHole, etc.) — not per-application isolation.
+    let mut apps = vec![AudioApp {
+        pid: 0,
+        name: "System loopback (shared virtual device)".into(),
+        app_name: Some("System loopback".into()),
+        stream_index: None,
+        thumbnail: None,
+        icon: None,
+        has_audio: true,
+    }];
     for row in raw_rows {
         if !seen.insert(row.pid) {
             continue;
@@ -106,7 +115,7 @@ JSON.stringify(out);
             has_audio: false,
         });
     }
-    apps.sort_by_key(|a| a.name.to_lowercase());
+    apps[1..].sort_by_key(|a| a.name.to_lowercase());
     Ok(apps)
 }
 
@@ -153,9 +162,9 @@ pub fn start_live_captions(
     ws_url: String,
     language: String,
 ) -> Result<(), String> {
-    if pid == 0 {
-        return Err("Pick an application first".into());
-    }
+    // pid 0 = shared system loopback device (not per-app capture).
+    // Window PIDs are listed for UX context only; capture always uses the virtual device.
+    let _ = pid;
     stop_live_captions()?;
     let stop = Arc::new(AtomicBool::new(false));
     let thread_stop = stop.clone();
@@ -229,6 +238,8 @@ fn capture_loop(app: AppHandle, ws_url: String, language: String, stop: Arc<Atom
             let _ = child.wait();
             return Err(e.to_string());
         }
+        // UI waits for this before marking the session active.
+        emit_json(&app, r#"{"type":"status","text":"started"}"#);
 
         let socket = Arc::new(Mutex::new(socket));
         let reader_stop = stop.clone();

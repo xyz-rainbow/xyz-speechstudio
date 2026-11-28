@@ -11,6 +11,7 @@ import subprocess
 import hashlib
 import platform as host_platform
 import re
+import shutil
 import sys
 import threading
 import time
@@ -115,8 +116,6 @@ def asset_rank(name: str, platform: str) -> Optional[int]:
             return 0
         if lowered.endswith(".msi"):
             return 1
-        if lowered.endswith(".exe"):
-            return 2
         return None
     if platform == "darwin":
         if lowered.endswith(".dmg"):
@@ -135,22 +134,49 @@ def asset_rank(name: str, platform: str) -> Optional[int]:
     return None
 
 
+_ARCH_ALIASES = {
+    "amd64": "x64",
+    "x86_64": "x64",
+    "x64": "x64",
+    "intel": "x64",
+    "aarch64": "arm64",
+    "arm64": "arm64",
+    "apple-silicon": "arm64",
+}
+
+
+def _normalize_arch(raw: Optional[str] = None) -> str:
+    value = (raw or host_platform.machine()).strip().lower()
+    return _ARCH_ALIASES.get(value, value)
+
+
 def pick_asset(assets: list[ReleaseAsset], platform: str, architecture: Optional[str] = None) -> Optional[ReleaseAsset]:
-    architecture = (architecture or host_platform.machine()).lower()
-    aliases = {"amd64": "x64", "x86_64": "x64", "aarch64": "arm64"}
-    architecture = aliases.get(architecture, architecture)
-    compatible = []
+    architecture = _normalize_arch(architecture)
+    choices: list[tuple[int, int, ReleaseAsset]] = []
     for asset in assets:
-        labels = set(re.findall(r"(?<![a-z0-9])(x86_64|amd64|x64|aarch64|arm64|i686|x86)(?![a-z0-9])", asset.name.lower()))
-        architectures = {aliases.get(label, label) for label in labels}
-        if not architectures or architecture in architectures:
-            compatible.append(asset)
-    ranked = [(asset_rank(asset.name, platform), asset) for asset in compatible]
-    choices = [(rank, asset) for rank, asset in ranked if rank is not None]
+        rank = asset_rank(asset.name, platform)
+        if rank is None:
+            continue
+        labels = set(
+            re.findall(
+                r"(?<![a-z0-9])(x86_64|amd64|x64|intel|aarch64|arm64|universal|i686|x86)(?![a-z0-9])",
+                asset.name.lower(),
+            )
+        )
+        if "universal" in labels and platform == "darwin":
+            arch_priority = 1 if architecture in {"x64", "arm64"} else None
+        else:
+            explicit = {_ARCH_ALIASES.get(label, label) for label in labels if label != "universal"}
+            if explicit:
+                arch_priority = 0 if architecture in explicit else None
+            else:
+                arch_priority = 2
+        if arch_priority is not None:
+            choices.append((rank, arch_priority, asset))
     if not choices:
         return None
-    choices.sort(key=lambda item: item[0])
-    return choices[0][1]
+    choices.sort(key=lambda item: (item[0], item[1]))
+    return choices[0][2]
 
 
 def safe_asset_name(name: str) -> str:
@@ -202,9 +228,14 @@ def parse_release(payload: dict) -> ReleaseInfo:
     )
 
 
-def summarize(release: ReleaseInfo, current: str, platform: str) -> dict:
+def summarize(
+    release: ReleaseInfo,
+    current: str,
+    platform: str,
+    architecture: Optional[str] = None,
+) -> dict:
     latest = release.tag[1:] if release.tag[:1] in {"v", "V"} else release.tag
-    chosen = pick_asset(release.assets, platform)
+    chosen = pick_asset(release.assets, platform, architecture=architecture)
     asset = None
     if chosen is not None:
         asset = {"name": chosen.name, "size": chosen.size}
@@ -217,6 +248,7 @@ def summarize(release: ReleaseInfo, current: str, platform: str) -> dict:
         "html_url": release.html_url,
         "update_available": version_is_newer(latest, current),
         "platform": platform,
+        "architecture": _normalize_arch(architecture),
         "asset": asset,
     }
 
@@ -255,9 +287,14 @@ def load_release(force: bool = False) -> ReleaseInfo:
     return release
 
 
-def check_latest(current: str, force: bool = False, platform: Optional[str] = None) -> dict:
+def check_latest(
+    current: str,
+    force: bool = False,
+    platform: Optional[str] = None,
+    architecture: Optional[str] = None,
+) -> dict:
     release = load_release(force=force)
-    return summarize(release, current.strip(), platform or sys.platform)
+    return summarize(release, current.strip(), platform or sys.platform, architecture=architecture)
 
 
 def _open_url(url: str) -> None:
@@ -285,61 +322,119 @@ def open_release_page(current: str) -> str:
     return url
 
 
-def _download(asset: ReleaseAsset) -> Path:
+def _parse_sha256sums(text: str) -> dict[str, str]:
+    sums: dict[str, str] = {}
+    for raw_line in text.splitlines():
+        line = raw_line.strip()
+        if not line:
+            continue
+        match = re.match(r"^([0-9a-fA-F]{64})\s+\*?(.+)$", line)
+        if not match:
+            continue
+        digest_hex = match.group(1).lower()
+        filename = Path(match.group(2).strip()).name
+        sums[filename] = digest_hex
+        sums[filename.replace(" ", ".")] = digest_hex
+    return sums
+
+
+def _fetch_expected_digest(
+    asset: ReleaseAsset,
+    release_assets: Optional[list[ReleaseAsset]] = None,
+) -> Optional[str]:
+    if asset.digest:
+        if not isinstance(asset.digest, str) or not re.fullmatch(r"sha256:[0-9a-fA-F]{64}", asset.digest):
+            raise UpdateError("bad-digest")
+        return asset.digest.split(":", 1)[1].lower()
+    if not release_assets:
+        return None
+    sums_asset = next(
+        (item for item in release_assets if item.name.lower() == "sha256sums.txt"),
+        None,
+    )
+    if sums_asset is None or not asset_url_allowed(sums_asset.url):
+        return None
+    try:
+        response = httpx.get(
+            sums_asset.url,
+            headers={"User-Agent": "speech-studio"},
+            timeout=20.0,
+            follow_redirects=True,
+        )
+        if not asset_url_allowed(str(response.url)):
+            raise UpdateError("bad-url")
+        response.raise_for_status()
+    except httpx.HTTPError as exc:
+        raise UpdateError("github") from exc
+    parsed = _parse_sha256sums(response.text)
+    return parsed.get(asset.name) or parsed.get(asset.name.replace(" ", "."))
+
+
+def _download(
+    asset: ReleaseAsset,
+    release_assets: Optional[list[ReleaseAsset]] = None,
+) -> Path:
     if not asset_url_allowed(asset.url):
         raise UpdateError("bad-url")
     name = safe_asset_name(asset.name)
     if asset.size > MAX_ASSET_BYTES:
         raise UpdateError("too-large")
-    expected_digest = None
-    if asset.digest:
-        if not isinstance(asset.digest, str) or not re.fullmatch(r"sha256:[0-9a-fA-F]{64}", asset.digest):
-            raise UpdateError("bad-digest")
-        expected_digest = asset.digest.split(":", 1)[1].lower()
+    expected_digest = _fetch_expected_digest(asset, release_assets)
     cache_dir = Path(tempfile_dir())
     cache_dir.mkdir(parents=True, exist_ok=True)
     dest_dir = Path(tempfile.mkdtemp(prefix="download-", dir=cache_dir))
     dest = dest_dir / name
     partial = dest.with_suffix(dest.suffix + ".part")
-    written = 0
-    digest = hashlib.sha256()
     _set_progress("downloading", 0, asset.size)
     try:
-        with httpx.stream(
-            "GET",
-            asset.url,
-            headers={"User-Agent": "speech-studio", "Accept": "application/octet-stream"},
-            timeout=180.0,
-            follow_redirects=True,
-        ) as response:
-            if not asset_url_allowed(str(response.url)):
-                raise UpdateError("bad-url")
-            response.raise_for_status()
-            with partial.open("wb") as handle:
-                for chunk in response.iter_bytes():
-                    if _cancel_download.is_set():
-                        raise UpdateError("cancelled")
-                    written += len(chunk)
-                    if written > MAX_ASSET_BYTES:
-                        raise UpdateError("too-large")
-                    handle.write(chunk)
-                    digest.update(chunk)
-                    _set_progress("downloading", written, asset.size)
-        if _cancel_download.is_set():
-            raise UpdateError("cancelled")
-        _set_progress("verifying", written, asset.size)
-        if written == 0 or (asset.size > 0 and written != asset.size):
-            raise UpdateError("size-mismatch")
-        if expected_digest and digest.hexdigest() != expected_digest:
-            raise UpdateError("digest-mismatch")
-        partial.replace(dest)
+        for attempt in range(2):
+            written = 0
+            digest = hashlib.sha256()
+            try:
+                with httpx.stream(
+                    "GET",
+                    asset.url,
+                    headers={"User-Agent": "speech-studio", "Accept": "application/octet-stream"},
+                    timeout=180.0,
+                    follow_redirects=True,
+                ) as response:
+                    if not asset_url_allowed(str(response.url)):
+                        raise UpdateError("bad-url")
+                    response.raise_for_status()
+                    with partial.open("wb") as handle:
+                        for chunk in response.iter_bytes():
+                            if _cancel_download.is_set():
+                                raise UpdateError("cancelled")
+                            written += len(chunk)
+                            if written > MAX_ASSET_BYTES:
+                                raise UpdateError("too-large")
+                            handle.write(chunk)
+                            digest.update(chunk)
+                            _set_progress("downloading", written, asset.size)
+                if _cancel_download.is_set():
+                    raise UpdateError("cancelled")
+                _set_progress("verifying", written, asset.size)
+                if written == 0 or (asset.size > 0 and written != asset.size):
+                    raise UpdateError("size-mismatch")
+                if expected_digest and digest.hexdigest() != expected_digest:
+                    raise UpdateError("digest-mismatch")
+                partial.replace(dest)
+                return dest
+            except httpx.TransportError as exc:
+                partial.unlink(missing_ok=True)
+                if attempt == 0 and not _cancel_download.is_set():
+                    _set_progress("downloading", 0, asset.size)
+                    continue
+                raise UpdateError("github") from exc
     except UpdateError:
         partial.unlink(missing_ok=True)
+        shutil.rmtree(dest_dir, ignore_errors=True)
         raise
     except (httpx.HTTPError, OSError) as exc:
         partial.unlink(missing_ok=True)
+        shutil.rmtree(dest_dir, ignore_errors=True)
         raise UpdateError("github") from exc
-    return dest
+    raise UpdateError("github")
 
 
 def tempfile_dir() -> str:
@@ -369,12 +464,21 @@ def _launch(path: Path, platform: str) -> None:
     subprocess.Popen(["xdg-open", str(path)], start_new_session=True)  # noqa: S603
 
 
-def install_latest(current: str, platform: Optional[str] = None) -> dict:
+def install_latest(
+    current: str,
+    platform: Optional[str] = None,
+    architecture: Optional[str] = None,
+) -> dict:
     if not _install_lock.acquire(blocking=False):
         raise UpdateError("busy")
     try:
         _cancel_download.clear()
-        return _install_latest(current, platform)
+        return _install_latest(current, platform, architecture=architecture)
+    except UpdateError as exc:
+        progress = download_progress()
+        phase = "cancelled" if exc.code == "cancelled" else "failed"
+        _set_progress(phase, progress["downloaded"], progress["total"])
+        raise
     except Exception:
         progress = download_progress()
         _set_progress("failed", progress["downloaded"], progress["total"])
@@ -383,23 +487,30 @@ def install_latest(current: str, platform: Optional[str] = None) -> dict:
         _install_lock.release()
 
 
-def _install_latest(current: str, platform: Optional[str] = None) -> dict:
+def _install_latest(
+    current: str,
+    platform: Optional[str] = None,
+    architecture: Optional[str] = None,
+) -> dict:
     plat = platform or sys.platform
     release = load_release(force=False)
-    summary = summarize(release, current.strip(), plat)
+    summary = summarize(release, current.strip(), plat, architecture=architecture)
     if not summary["update_available"]:
         raise UpdateError("already-current")
-    chosen = pick_asset(release.assets, plat)
+    chosen = pick_asset(release.assets, plat, architecture=architecture)
     if chosen is None:
         raise UpdateError("no-asset")
-    path = _download(chosen)
+    path = _download(chosen, release.assets)
     if _cancel_download.is_set():
+        shutil.rmtree(path.parent, ignore_errors=True)
         raise UpdateError("cancelled")
     _launch(path, plat)
     _set_progress("launched", chosen.size, chosen.size)
     return {
         "launched": True,
+        "completed": False,
         "asset_name": chosen.name,
         "platform": plat,
         "quits_app": plat == "win32",
+        "installer_path": str(path),
     }

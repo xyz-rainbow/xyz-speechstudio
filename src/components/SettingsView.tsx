@@ -580,6 +580,27 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
               {t("settings.chunkToggleHint")}
             </span>
 
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-[11px] font-mono">
+              <div
+                className="rounded-xl border px-2.5 py-1.5 flex items-center justify-between gap-2"
+                style={{ borderColor: "var(--border-glass)", backgroundColor: "var(--bg-input)" }}
+              >
+                <span style={{ color: "var(--text-muted)" }}>{t("settings.activeTtsLabel")}</span>
+                <span className="truncate text-purple-300" title={draft.active_tts_model || "-"}>
+                  {draft.active_tts_model || "—"}
+                </span>
+              </div>
+              <div
+                className="rounded-xl border px-2.5 py-1.5 flex items-center justify-between gap-2"
+                style={{ borderColor: "var(--border-glass)", backgroundColor: "var(--bg-input)" }}
+              >
+                <span style={{ color: "var(--text-muted)" }}>{t("settings.activeSttLabel")}</span>
+                <span className="truncate text-cyan-300" title={draft.active_stt_model || "-"}>
+                  {draft.active_stt_model || "—"}
+                </span>
+              </div>
+            </div>
+
             <div className={clsx("flex flex-wrap items-center justify-between gap-2 transition-opacity", !chunkOn && "opacity-40 pointer-events-none")}>
               <div className="flex items-center gap-2.5 flex-1 min-w-[240px]">
                 <input

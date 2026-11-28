@@ -243,6 +243,8 @@ def ensure_qwen_loaded(
     settings = load_settings()
     dev = device or settings.tts_device
     target_req = model_id or settings.active_tts_model
+    if (target_req or "").strip().startswith("xyz-ioquendo"):
+        target_req = "qwen3-1.7b-base-Q4_K_M"
     talker, codec, resolved_id = resolve_qwen_gguf(settings, model_id=target_req)
 
     existing = supervisor.active_workers.get("qwen")
@@ -434,13 +436,25 @@ def ensure_kitten_loaded(
 ) -> WorkerHandle:
     settings = load_settings()
     dev = device or settings.tts_device
+    requested_id = model_id or settings.active_tts_model or "kitten-tts-2-mini"
     entry = _active_tts_catalog_entry(
-        settings.model_copy(update={"active_tts_model": model_id or "kitten-tts-2-mini"})
+        settings.model_copy(update={"active_tts_model": requested_id})
     )
     if entry is None or not entry.install_dir:
         raise FileNotFoundError("KittenTTS 2 Mini is not installed. Download it from Models.")
-    resolved_id = entry.id
     model_dir = Path(entry.install_dir)
+    selected_quant = next(
+        (
+            q for q in entry.quants
+            if requested_id == f"{entry.id}-{q.id}" and q.id in entry.installed_quants
+        ),
+        None,
+    ) or next(
+        (q for q in entry.quants if q.id == entry.installed_quant and q.id in entry.installed_quants),
+        None,
+    )
+    resolved_id = f"{entry.id}-{selected_quant.id}" if selected_quant else entry.id
+    model_file = selected_quant.files[0] if (selected_quant and selected_quant.files) else ""
 
     existing = supervisor.active_workers.get("kitten")
     if existing and existing.process.poll() is None and existing.device == dev and existing.model_id == resolved_id:
@@ -452,10 +466,13 @@ def ensure_kitten_loaded(
         family="kitten",
         model_id=resolved_id,
         device=dev,
-        vram_est_mib=250,
+        vram_est_mib=selected_quant.vram_mib if selected_quant else 250,
     )
     with httpx.Client(timeout=180.0) as client:
-        resp = client.post(f"http://127.0.0.1:{handle.port}/load", json={"model_dir": str(model_dir)})
+        resp = client.post(
+            f"http://127.0.0.1:{handle.port}/load",
+            json={"model_dir": str(model_dir), "model_file": model_file or None},
+        )
         if resp.status_code >= 400:
             supervisor.eject("kitten")
             raise HTTPException(status_code=500, detail=f"KittenTTS worker load failed: {resp.text}")
@@ -673,6 +690,16 @@ app.add_middleware(
     allow_headers=["*"],
 )
 app.add_middleware(DesktopAccessMiddleware)
+
+from .voice_pack_routes import router as voice_pack_router  # noqa: E402
+
+app.include_router(voice_pack_router)
+
+from . import persona_routes
+from . import voice_design_routes
+
+app.include_router(persona_routes.router)
+app.include_router(voice_design_routes.router)
 
 
 def _update_http(exc: updates.UpdateError) -> HTTPException:
@@ -929,7 +956,7 @@ def inspect_app_state():
 
 
 @app.delete("/api/models/{model_id}")
-def delete_installed_model(model_id: str):
+def delete_installed_model(model_id: str, quant_id: Optional[str] = None):
     s = load_settings()
     # Cancel any active download for this model so file handles are released before rmtree.
     for job in download_manager.list_jobs():
@@ -949,8 +976,15 @@ def delete_installed_model(model_id: str):
         supervisor.eject("stt")
         supervisor.live_captions_active = False
 
+    target = next((entry for entry in downloader.build_catalog(s) if entry.id == model_id), None)
+    if target and target.kind == "tts" and target.install_dir:
+        from . import crispasr
+
+        if crispasr.server_manager.uses_model_under(Path(target.install_dir)):
+            crispasr.server_manager.eject()
+
     try:
-        return downloader.remove_installed_model(s, model_id)
+        return downloader.remove_installed_model(s, model_id, quant_id=quant_id)
     except PermissionError as exc:
         raise HTTPException(status_code=403, detail=str(exc))
     except FileNotFoundError as exc:
@@ -1235,6 +1269,29 @@ def _active_tts_catalog_entry(settings) -> Optional[downloader.CatalogModelEntry
     return None
 
 
+def _resolve_execution_tts_entry(
+    settings,
+    entry: Optional[downloader.CatalogModelEntry],
+) -> tuple[Optional[downloader.CatalogModelEntry], Optional[str]]:
+    if entry is not None and entry.id == "xyz-ioquendo":
+        qwen_entry = next(
+            (e for e in downloader.build_catalog(settings) if e.id == "qwen3-1.7b-base"),
+            None,
+        )
+        if qwen_entry is None or not qwen_entry.installed:
+            raise HTTPException(
+                status_code=400,
+                detail="xyz-Ioquendo requires Qwen3-TTS 1.7B Base (Q4_K_M) installed in Models.",
+            )
+        preferred = (
+            "Q4_K_M"
+            if "Q4_K_M" in qwen_entry.installed_quants
+            else qwen_entry.installed_quant
+        )
+        return qwen_entry, preferred
+    return entry, None
+
+
 def _run_crispasr_tts(
     *,
     entry: Optional[downloader.CatalogModelEntry],
@@ -1248,10 +1305,60 @@ def _run_crispasr_tts(
     ref_text: Optional[str] = None,
     device: str = "gpu",
     force_stop_captions: bool = False,
+    preferred_quant: Optional[str] = None,
 ) -> tuple[dict, str]:
     from . import audio_prep, crispasr
 
     model_dir = Path(entry.install_dir) if (entry and entry.install_dir) else None
+    selected_model_path = None
+    selected_codec_path = None
+    if entry is not None and model_dir is not None:
+        active_id = load_settings().active_tts_model
+        selected_quant = (
+            next(
+                (
+                    quant
+                    for quant in entry.quants
+                    if preferred_quant
+                    and quant.id == preferred_quant
+                    and quant.id in entry.installed_quants
+                ),
+                None,
+            )
+            or next(
+                (
+                    quant
+                    for quant in entry.quants
+                    if active_id == f"{entry.id}-{quant.id}"
+                    and quant.id in entry.installed_quants
+                ),
+                None,
+            )
+            or next(
+                (
+                    quant
+                    for quant in entry.quants
+                    if entry.installed_quant
+                    and quant.id == entry.installed_quant
+                    and quant.id in entry.installed_quants
+                ),
+                None,
+            )
+        )
+        if selected_quant and selected_quant.files:
+            selected_model_path = model_dir / selected_quant.files[0]
+            if engine in ("chatterbox", "chatterbox-turbo", "indextts", "cosyvoice3-tts") and len(selected_quant.files) > 1:
+                selected_codec_path = model_dir / selected_quant.files[1]
+            if not selected_model_path.is_file() or (
+                selected_codec_path is not None and not selected_codec_path.is_file()
+            ):
+                raise HTTPException(status_code=409, detail="Selected model quantization is incomplete.")
+            if (engine or "").strip().lower() in ("qwen", "qwen3-tts") and selected_model_path.name.lower().startswith(
+                ("qwen-talker-", "qwen-tokenizer-")
+            ):
+                # Legacy Serveurperso qwen-talker-* GGUFs are incompatible with CrispASR qwen3-tts.
+                selected_model_path = None
+                selected_codec_path = None
     dev = "cpu" if device == "cpu" else "gpu"
     if dev == "gpu":
         total_mib, free_mib = query_nvidia_vram()
@@ -1282,6 +1389,8 @@ def _run_crispasr_tts(
             out_path=out_path,
             language=lang,
             model_dir=model_dir,
+            model_path=selected_model_path,
+            codec_path=selected_codec_path,
             voice=voice,
             ref_audio=prepped_ref,
             ref_text=ref_text,
@@ -1443,6 +1552,7 @@ def _run_tts(
             except Exception as exc:
                 raise HTTPException(status_code=500, detail=f"eSpeak NG failed: {exc}")
 
+        entry, preferred_quant = _resolve_execution_tts_entry(settings, entry)
         model_dir = Path(entry.install_dir) if entry.install_dir else None
         voice_mode = entry.capabilities.voice_mode if entry.capabilities else "clone_profile"
         prefer_crispasr = (entry.active_runtime or "crispasr") != "python"
@@ -1460,6 +1570,7 @@ def _run_tts(
                     voice=voice,
                     device=tts_dev,
                     force_stop_captions=force_stop_captions,
+                    preferred_quant=preferred_quant,
                 )
             if prof is not None and prof.ref_audio_path and Path(prof.ref_audio_path).exists():
                 ref_p = Path(prof.ref_24k_path) if prof.ref_24k_path and Path(prof.ref_24k_path).is_file() else Path(prof.ref_audio_path)
@@ -1477,6 +1588,7 @@ def _run_tts(
                     ref_text=ref_text_eff,
                     device=tts_dev,
                     force_stop_captions=force_stop_captions,
+                    preferred_quant=preferred_quant,
                 )
         if entry.engine == "kitten":
             res = _call_tts_worker(
@@ -1701,12 +1813,25 @@ def _supports_profileless_tts(entry, device: str = "gpu") -> bool:
     )
 
 
+def _resolve_profile(profile_id: str, settings: Optional[AppSettings] = None):
+    """Resolve a user profile or a non-editable pack:<voice> reference."""
+    if not profile_id:
+        return None
+    from . import voice_packs
+
+    s = settings or load_settings()
+    pack_prof = voice_packs.resolve_profile_like(resolved_models_dir(s), profile_id)
+    if pack_prof is not None:
+        return pack_prof
+    return profiles.get_profile(profile_id)
+
+
 def _resolve_tts_context(req: SynthesizeRequest):
     text = req.text.strip()
     if not text:
         raise HTTPException(status_code=400, detail="Input text is empty.")
     settings = load_settings()
-    prof = profiles.get_profile(req.profile_id)
+    prof = _resolve_profile(req.profile_id, settings)
     entry = _active_tts_catalog_entry(settings) if settings.tts_source == "local" else None
     builtin_ok = _supports_profileless_tts(entry, settings.tts_device)
     if settings.tts_source == "local" and prof is None and not builtin_ok:
@@ -1716,6 +1841,11 @@ def _resolve_tts_context(req: SynthesizeRequest):
     if lang.lower() == "auto":
         lang = "Spanish"
     return text, settings, prof, lang
+
+
+def _safe_filename_tag(raw: str) -> str:
+    cleaned = re.sub(r"[^a-zA-Z0-9._-]+", "_", (raw or "api").strip()).strip("._-")
+    return cleaned[:64] or "api"
 
 
 def _concat_wav_files(chunk_paths: list[Path], out_path: Path) -> tuple[float, int]:
@@ -1825,7 +1955,7 @@ def tts_session_chunk(session_id: str, index: int, force_stop_captions: bool = F
             "rtf": 0.0,
         }
 
-    prof = profiles.get_profile(profile_id)
+    prof = _resolve_profile(profile_id)
     res, speaker_label = _run_tts(
         prof=prof,
         text=chunk_text,
@@ -1885,7 +2015,7 @@ def tts_session_save(session_id: str, force_stop_captions: bool = False):
         seed = sess["seed"]
         force = force_stop_captions or sess["force_stop_captions"]
 
-    prof = profiles.get_profile(profile_id)
+    prof = _resolve_profile(profile_id)
     chunk_paths: list[Path] = []
     extra_elapsed = 0.0
     for idx, chunk_text in enumerate(chunks):
@@ -1912,7 +2042,8 @@ def tts_session_save(session_id: str, force_stop_captions: bool = False):
     out_dir = resolved_outputs_dir(settings)
     ts = time.strftime("%Y%m%d_%H%M%S")
     pid_tag = prof.id if prof else "api"
-    fname = f"{ts}_{pid_tag}_{uuid.uuid4().hex[:6]}.wav"
+    file_tag = _safe_filename_tag(pid_tag)
+    fname = f"{ts}_{file_tag}_{uuid.uuid4().hex[:6]}.wav"
     out_path = out_dir / fname
     dur_s, sr = _concat_wav_files(chunk_paths, out_path)
 
@@ -1988,7 +2119,8 @@ def tts_synthesize(req: SynthesizeRequest):
     out_dir = resolved_outputs_dir(settings)
     ts = time.strftime("%Y%m%d_%H%M%S")
     pid_tag = prof.id if prof else "api"
-    fname = f"{ts}_{pid_tag}_{uuid.uuid4().hex[:6]}.wav"
+    file_tag = _safe_filename_tag(pid_tag)
+    fname = f"{ts}_{file_tag}_{uuid.uuid4().hex[:6]}.wav"
     out_path = out_dir / fname
     res, speaker_label = _run_tts(
         prof=prof,
@@ -2081,10 +2213,21 @@ def _run_stt(audio_path: Path, language: Optional[str] = None, model_id: Optiona
     from . import crispasr
 
     stt_dev = "cpu" if settings.stt_device == "cpu" else "gpu"
-    stt_entry = next(
-        (m for m in downloader.build_catalog(settings) if m.kind == "stt" and m.id == target_id),
-        None,
-    )
+    stt_catalog = [m for m in downloader.build_catalog(settings) if m.kind == "stt"]
+    stt_entry = next((m for m in stt_catalog if m.id == target_id), None)
+    if stt_entry is None:
+        stt_entry = next(
+            (
+                m for m in stt_catalog
+                if any(target_id == f"{m.id}-{q.id}" for q in m.quants)
+            ),
+            None,
+        )
+    if stt_entry is not None and not stt_entry.runtime_supported:
+        raise HTTPException(
+            status_code=501,
+            detail=f"STT model '{stt_entry.name}' does not have a supported local runtime yet.",
+        )
     stt_dir = Path(stt_entry.install_dir) if (stt_entry and stt_entry.install_dir) else None
     stt_key = (stt_entry.engine if stt_entry else target_id) or target_id
     if (crispasr.stt_backend_for_model(stt_key) or crispasr.stt_backend_for_model(target_id)) and crispasr.is_available(device=stt_dev):
@@ -2097,6 +2240,8 @@ def _run_stt(audio_path: Path, language: Optional[str] = None, model_id: Optiona
                 device=stt_dev,
             )
             return {**res, "source": "local", "model": target_id}
+        except InterruptedError as exc:
+            raise HTTPException(status_code=499, detail=str(exc))
         except Exception as exc:
             raise HTTPException(status_code=500, detail=f"CrispASR STT failed: {exc}")
 
@@ -2117,6 +2262,14 @@ def stt_transcribe_file(req: TranscribeFileRequest):
     return _run_stt(Path(req.audio_path), language=req.language, model_id=req.model_id)
 
 
+@app.post("/api/stt/cancel")
+def stt_cancel():
+    from . import crispasr
+
+    cancelled = crispasr.cancel_stt()
+    return {"cancelled": cancelled}
+
+
 # --- OpenAI-compatible Local API Endpoints ---
 
 
@@ -2129,7 +2282,7 @@ def openai_speech(request: Request, req: SpeechRequest):
     if not text:
         raise HTTPException(status_code=400, detail="'input' must not be empty.")
 
-    prof = profiles.get_profile(req.voice)
+    prof = _resolve_profile(req.voice, s)
     if prof is None and s.tts_source == "local":
         entry = _active_tts_catalog_entry(s)
         builtin_ok = _supports_profileless_tts(entry, s.tts_device)

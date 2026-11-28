@@ -1,60 +1,65 @@
 # Live Captions
 
-Los subtítulos usan el STT que esté elegido en Modelos: un faster-whisper local o un endpoint externo. En Windows la captura WASAPI está en el código. En Linux el listado sale de `pactl list sink-inputs` y el audio de `parec --monitor-stream` a 16 kHz mono s16le, con el mismo socket de 100 ms. Ninguna de las dos sesiones se ha oído con audio real.
+Los subtítulos usan el STT elegido en Modelos (faster-whisper local, CrispASR STT si hay binario, o endpoint externo).
 
-## Ahora
+## Captura por sistema
 
-La pestaña Subtitles lista las ventanas abiertas con vista previa visual en un modal paginado 2×2 estilo Discord (flechas laterales izquierda/derecha, puntos de página abajo, icono de app y miniatura de ventana vía `PrintWindow` en Windows, `wmctrl`+`import` en Linux X11 y `CGWindowListCopyWindowInfo`+`screencapture` en macOS) además de las sesiones de audio activas. El historial de la sesión se corta en `captions_max_history` (5–200, por defecto 20).
+| SO | Mecanismo | Requisitos | Estado |
+| --- | --- | --- | --- |
+| **Windows** | WASAPI process loopback (`VIRTUAL_AUDIO_DEVICE_PROCESS_LOOPBACK` + árbol de procesos) → 16 kHz mono s16le | App con audio real | Código listo; sesión real Edge/Discord aún por confirmar en cada máquina |
+| **Linux** | `pactl list sink-inputs` + `parec --monitor-stream=<index>` 16 kHz mono | `pulseaudio-utils` / PipeWire | Código listo; sesión PipeWire/Pulse real pendiente |
+| **macOS** | `ffmpeg -f avfoundation` sobre dispositivo de **loopback virtual compartido** (p. ej. BlackHole) | BlackHole (o similar) + `ffmpeg` | Código listo; **no** captura por aplicación; el selector ofrece «System loopback» (pid 0) y ventanas solo como contexto UX |
 
-Rust abre el loopback del árbol de procesos en Windows (`VIRTUAL_AUDIO_DEVICE_PROCESS_LOOPBACK` + `PROCESS_LOOPBACK_MODE_INCLUDE_TARGET_PROCESS_TREE`) inicializando `IAudioClient` directamente con `WAVEFORMATEX` 16 kHz mono / 48 kHz estéreo PCM + `AUDCLNT_STREAMFLAGS_AUTOCONVERTPCM` (ya que el endpoint de loopback por proceso no implementa `GetMixFormat`), remuestrea a 16 kHz mono s16le y manda un frame binario cada 100 ms. En macOS está habilitado con `ffmpeg -f avfoundation` (requiere dispositivo virtual tipo BlackHole). El cliente siempre entra por el orquestador:
+`live_captions_supported` es verdadero en Win/Linux/macOS para que la pestaña muestre errores de captura en vez del aviso genérico de plataforma.
+
+## Flujo
 
 ```text
-WASAPI Process Loopback
+Captura nativa (WASAPI / parec / ffmpeg)
         │
         ▼
-Rust  resample 16 kHz mono s16le
+Rust  frames 100 ms  (16 kHz mono s16le)
         │  ws://{orquestador}/api/captions/stream
         ▼
-orquestador  lee stt_source al conectar
-        ├─ local     proxy a ws://127.0.0.1:{stt}/stream
+orquestador  (stt_source al conectar)
+        ├─ local     proxy worker STT  o  CrispASR clip STT
         └─ endpoint  WAV temporal + transcribe_external
         │
         ▼
-JSON partial | final | error
+JSON partial | final | error | status
         │
         ▼
-evento Tauri "caption"  →  overlay y pestaña Subtitles
+evento Tauri "caption"  →  overlay + pestaña Subtitles
 ```
 
-En local, el orquestador carga el modelo activo con `ensure_stt_loaded` (el tamaño elegido, o un directorio Hugging Face que ya tenga `model.bin`) y reenvía el socket. Parakeet y Moonshine siguen en el catálogo con `runtime_supported: false`: el socket responde un error y no cambia a whisper por debajo.
+### Arranque (anti-carrera)
 
-En endpoint, el mismo PCM se junta en ventanas. Cada ventana se escribe como WAV y pasa por `transcribe_external`: OpenAI-compatible (`/audio/transcriptions`) o Deepgram (`/listen`). El archivo es `data/tmp/captions-endpoint.wav` y se borra al terminar la llamada.
+1. UI prepara STT / overlay.
+2. Llama `start_live_captions` (hilo nativo).
+3. **No** marca `running` ni `captions/lock` hasta recibir `{"type":"status","text":"started"}` (emitido tras WASAPI/`parec`/`ffmpeg` + WebSocket `start`).
+4. Si llega `error` o timeout (~12 s), UI limpia, para captura y no deja la sesión “activa”.
 
-Tiempos, en los dos caminos:
+### Partial vs final
 
-1. **Línea viva.** Con voz (RMS cerca de 0.015), cada segundo sale un `partial` y sustituye la frase en pantalla.
-2. **Frase cerrada.** Tras unos 400 ms de pausa, y al menos 0.3 s de voz, sale un `final`. El overlay se queda con esa frase. La pestaña la añade al historial y vacía la línea viva.
+| Tipo | Cuándo | UI |
+| --- | --- | --- |
+| `partial` | ~1 s con voz (RMS) | Línea viva; overlay en itálica |
+| `final` | ~400 ms de pausa tras ≥0.3 s de voz | Historial (sin duplicar consecutivos); overlay sólido |
+| `error` | fallo captura/STT | Toast / texto error; `running=false` |
+| `status` | `started` | Solo lifecycle UI |
 
-El worker local usa faster-whisper con `beam_size` 1, `vad_filter`, `condition_on_previous_text` falso y `without_timestamps`. El idioma del mensaje `start` es `auto` salvo que el JSON traiga otro. `POST /transcribe` sigue siendo el de archivos.
+Silencio: no emite partial/final. Parar: `stop_live_captions` + `captions/lock=false`. Cambiar fuente/STT: solo aplica en la **siguiente** sesión.
 
-`POST /api/captions/lock` marca `live_captions_active` mientras la captura está abierta. Al cerrar el socket el orquestador lo apaga. Salir de la app para la captura.
+## Comprobado en código (2026-11-28)
 
-El overlay (`index.html#/overlay`) escucha el mismo evento. En reposo muestra "—". Se puede fijar, cambiar opacidad y cambiar el tamaño de letra.
-
-Comprobado en esta pasada: `cargo check` del crate Tauri, `tsc --noEmit` del frontend y `py_compile` de `captions.py` y `stt_worker.py`. `websockets` 17.4 ya está en `.venvs/core` y `.venvs/stt`.
-
-## Acordado
-
-El STT de los subtítulos es el de Modelos en el momento de pulsar Iniciar. Cambiar de modelo o de endpoint vale para la siguiente sesión, no a mitad de una.
-
-Un frame de 100 ms son 3200 bytes. El worker local no escribe un WAV. El endpoint sí, porque esas APIs reciben un archivo.
-
-## Acordado
-
-En Linux cada sink-input es una fila. Si un proceso tiene varios, el nombre lleva ` #` y el índice. Al iniciar se captura ese índice si sigue perteneciendo al mismo pid; no se cambia a otro stream del mismo proceso. Parar manda SIGTERM en cuanto el pid de `parec` existe, también si el paro llegó antes de publicarlo. Si faltan `pactl` o `parec`, el error lo dice. macOS sigue sin captura. `live_captions_supported` es verdadero en Linux para que la pestaña muestre ese error en vez del aviso de plataforma. Una sesión PipeWire o PulseAudio no se ha oído.
+- Race UI: `SubtitlesView` espera `status=started` antes de `setRunning(true)`.
+- Emit `started` en `audio_capture/{windows,linux,macos}.rs` tras el `start` del socket.
+- Overlay distingue partial / final / error.
+- `pytest tests/test_captions_helpers.py` (RMS/WAV/idioma).
+- Sesión con audio real: **no** verificada en este agente (Windows/Linux/macOS desktop).
 
 ## Pendiente
 
-- Una sesión real en Windows (Edge, Discord u otra app) que confirme que el PCM no llega en silencio y que el texto aparece en el overlay.
-- Una sesión real en Linux con PipeWire o PulseAudio. Desde esta máquina no se ha lanzado `parec`.
-- Parakeet y Moonshine no transcriben en vivo hasta que tengan runtime.
+- Sesión real Windows (Edge/Discord) y Linux PipeWire.
+- macOS con BlackHole instalado.
+- Parakeet/Moonshine en vivo cuando el runtime CrispASR STT esté completo.

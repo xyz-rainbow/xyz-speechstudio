@@ -991,6 +991,7 @@ fn capture_loop(
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 fn capture_stream_loop<S: std::io::Read + std::io::Write + Send + 'static>(
     app: AppHandle,
     client: IAudioClient,
@@ -1009,6 +1010,8 @@ fn capture_stream_loop<S: std::io::Read + std::io::Write + Send + 'static>(
             serde_json::to_string(&language).unwrap_or_else(|_| "\"auto\"".into())
         )))
         .map_err(|e| e.to_string())?;
+    // UI waits for this before marking the session active (avoids false "running" on start failure).
+    emit_json(&app, r#"{"type":"status","text":"started"}"#);
     let socket = Arc::new(Mutex::new(socket));
     let reader_stop = stop.clone();
     let reader_app = app.clone();

@@ -1,0 +1,80 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: persona-api
+  namespace: speech-studio-persona
+  labels:
+    app.kubernetes.io/name: persona-api
+    app.kubernetes.io/part-of: speech-studio
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: persona-api
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: persona-api
+        app.kubernetes.io/part-of: speech-studio
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        fsGroup: 1000
+      containers:
+        - name: persona-api
+          image: registry.example.internal/speech-studio/persona:v1
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: http
+              containerPort: 8080
+          env:
+            - name: PERSONA_DATA_DIR
+              value: "/data"
+            - name: PERSONA_MAX_UPLOAD_BYTES
+              value: "52428800"
+            - name: PERSONA_AUTOSTART_APP
+              value: "1"
+            - name: PERSONA_WRITE_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: persona-secrets
+                  key: PERSONA_WRITE_TOKEN
+          readinessProbe:
+            httpGet:
+              path: /v1/health
+              port: http
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /v1/health
+              port: http
+            initialDelaySeconds: 15
+            periodSeconds: 20
+          resources:
+            requests:
+              cpu: "100m"
+              memory: "128Mi"
+            limits:
+              cpu: "500m"
+              memory: "512Mi"
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          volumeMounts:
+            - name: persona-data
+              mountPath: /data
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: persona-data
+          persistentVolumeClaim:
+            claimName: persona-data-pvc
+        - name: tmp
+          emptyDir: {}

@@ -1,5 +1,6 @@
-# Prepares the Speech Studio uv environments next to the installed app.
-# core and unified pytts (torch + coqui-tts + f5-tts + fish-speech + onnx/espeak) are created.
+﻿# DEVELOPER / REPAIR ONLY — not the end-user install path.
+# End users get runtime/python from installer/windows/build.ps1 (no system Python/uv).
+# This script creates runtime/envs/{core,stt,pytts} with uv for local repair or optional engines.
 param(
     [Parameter(Mandatory = $true)]
     [string]$AppRoot

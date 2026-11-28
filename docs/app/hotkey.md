@@ -2,25 +2,36 @@
 
 ## Ahora
 
-El hotkey lee el texto seleccionado en otra aplicación y lo manda a Synthesize como un Play. En Windows la lectura la hace UI Automation en `src-tauri/src/selection/windows.rs` y no toca el portapapeles. En Linux solo lee la selección primaria: `wl-paste --primary --no-newline` y, si no hay texto, `xclip -o -selection primary`. El portapapeles queda fuera de esa cadena. Si faltan las dos herramientas, un toast pide instalar `wl-clipboard` o `xclip`. Si la selección primaria está vacía, el toast es el de siempre. El atajo guardado se registra al arrancar también en Linux.
+El hotkey lee el texto seleccionado en otra aplicación y lo manda a Synthesize como un Play. El atajo se registra al arrancar desde `settings.json` (`read_hotkey`) en **Windows, Linux y macOS**.
 
-Al grabarlo en Ajustes se guarda la tecla física, `KeyboardEvent.code`, más los modificadores. Ejemplos: `Ctrl+Alt+KeyM`, `Alt+Shift+Digit7`, `Super+Slash`. No se traduce al carácter que pinta el teclado. En un teclado español, `/` es Shift+7, así que el atajo queda `Alt+Shift+Digit7` si se pulsó esa tecla.
+| SO | Lectura de selección | Portapapeles | Si falla |
+| --- | --- | --- | --- |
+| **Windows** | UI Automation (`selection/windows.rs`), con hook de foco para no perder la selección tras Alt | No se usa | Toast `hotkey.noSelection` |
+| **Linux** | Solo selección primaria: `wl-paste --primary` → fallback `xclip -selection primary` | No se usa | Sin tools → `unavailable` + toast de instalar tools; vacío → `noSelection` |
+| **macOS** | Aún sin Accessibility reader | — | Código `unsupported` + toast `settings.hotkeyUnsupported` |
 
-Hace falta al menos un modificador. Escape a solas cancela la grabación. Escape con un modificador sí se puede guardar. Si Windows rechaza la combinación, el error aparece bajo el campo y no se escribe en `settings.json`.
+### Comportamiento UI (2026-11-28)
 
-`global-hotkey` registra esa cadena. Los nombres de `code` (`KeyM`, `Digit7`, `Slash`, `NumpadDivide`) coinciden con los que el parser ya acepta.
+- Primer intento y siguientes: mismo handler; Windows reintenta UI Automation 3× (~40 ms) tras el focus hook.
+- `empty` / sin texto: toast, **no** cambia a Synthesize.
+- `unavailable` (Linux sin tools): toast de herramientas.
+- `unsupported` (macOS): toast de no disponible.
+- Texto OK: pestaña Synthesize + evento de habla; mismo texto pausa/reanuda; texto nuevo corta y empieza.
 
-Pulsar el atajo otra vez con el mismo texto pausa o sigue. Con otro texto, corta y empieza. Si no hay selección, un toast lo dice.
+Al grabarlo en Ajustes se guarda la tecla física (`KeyboardEvent.code` + modificadores), p. ej. `Ctrl+Alt+KeyM`, `Alt+Shift+Digit7`. Hace falta al menos un modificador. Si el SO rechaza la combinación, el error aparece bajo el campo y no se escribe en settings.
 
-La bandeja tiene abrir, mostrar/ocultar, subtítulos y salir. Las etiquetas cambian con el idioma. En Windows el clic izquierdo muestra la ventana. En Linux ese clic abre el menú y también muestra la ventana; la entrada «Open Speech Studio» hace lo mismo. En macOS el clic primario abre el menú. Cerrar la ventana la oculta. Salir para el backend. Una segunda instancia solo trae la ventana al frente.
+## Bandeja
 
-La lectura de la selección y el hotkey de este documento están en el `.exe` compilado el 24 de noviembre de 2026. El clic de la bandeja en Linux está en el código y no se ha probado en Ubuntu.
+Abrir, mostrar/ocultar, subtítulos y salir. Cerrar la ventana oculta; salir para el backend. Segunda instancia trae la ventana al frente.
 
-## Acordado
+## Comprobado en código
 
-Cerrar la ventana no sale de la app: la oculta. Salir, desde la bandeja, para el backend. Windows sigue con UI Automation. Linux no lee el portapapeles. macOS sigue sin esta lectura.
+- Registro de atajo al arrancar también en macOS (antes solo Win/Linux).
+- Toasts diferenciados empty / unavailable / unsupported.
+- Lectura real de selección en apps de terceros: **no** ejecutada en este agente (hace falta escritorio con foco).
 
 ## Pendiente
 
-- Probar la bandeja en GNOME (extensión AppIndicator) y en KDE.
-- Probar la selección primaria en Wayland y en X11. Desde esta máquina no se ha leído una selección real.
+- Probar selección primaria Wayland/X11 y bandeja GNOME/KDE.
+- Implementar lectura macOS vía Accessibility API.
+- Probar primer atajo justo tras arranque en Windows con texto en Notepad/Edge.

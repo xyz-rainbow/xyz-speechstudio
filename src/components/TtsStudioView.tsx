@@ -13,6 +13,7 @@ import {
   Loader2,
   Play,
   Save,
+  Sparkles,
   Trash2,
 } from "lucide-react";
 import { clsx } from "clsx";
@@ -49,6 +50,15 @@ import {
   type PlaybackIslandState,
 } from "./ChunkedAudioPlayer";
 import { GlassCard } from "./GlassCard";
+import { VoiceDesignModal } from "./VoiceDesignModal";
+import {
+  applyChunkResult,
+  shouldDiscardSynth,
+} from "../lib/chunkedPlayback";
+import {
+  fetchXyzIoquendoVoices,
+  type PackVoiceListItem,
+} from "../lib/xyzIoquendo";
 
 interface TtsStudioViewProps {
   baseUrl: string;
@@ -65,6 +75,7 @@ interface TtsStudioViewProps {
   notificationsEnabled: boolean;
   onOpenModels?: () => void;
   onOpenProfiles?: () => void;
+  onProfilesChange?: (next: VoiceProfile[]) => void;
   onCatalogChange?: (models: CatalogModelEntry[]) => void;
   onInstalledLanguagesChange?: (next: Record<string, string[]>) => void;
   onPlaybackStateChange?: (state: PlaybackIslandState) => void;
@@ -74,6 +85,34 @@ interface TtsStudioViewProps {
 /** ISO/BCP-47 code → display label. Includes regional dialects for SAPI 5 / Loquendo. */
 const LANG_CODE_TO_LABEL: Record<string, string> = {
   all: "All Languages",
+  af: "Afrikaans",
+  am: "Amharic",
+  ar: "Arabic",
+  "ar-SA": "Arabic (Saudi Arabia)",
+  az: "Azerbaijani",
+  bg: "Bulgarian",
+  bn: "Bengali",
+  bs: "Bosnian",
+  ca: "Catalan",
+  "ca-ES": "Catalan (Spain)",
+  cmn: "Chinese (Mandarin)",
+  cs: "Czech",
+  "cs-CZ": "Czech (Czechia)",
+  cy: "Welsh",
+  da: "Danish",
+  "da-DK": "Danish (Denmark)",
+  de: "German",
+  "de-DE": "German (Germany)",
+  "de-AT": "German (Austria)",
+  "de-CH": "German (Switzerland)",
+  el: "Greek",
+  "el-GR": "Greek (Greece)",
+  en: "English",
+  "en-US": "English (US)",
+  "en-GB": "English (UK)",
+  "en-AU": "English (Australia)",
+  "en-CA": "English (Canada)",
+  "en-IE": "English (Ireland)",
   es: "Spanish",
   "es-ES": "Spanish (Spain)",
   "es-MX": "Spanish (Mexico)",
@@ -83,66 +122,90 @@ const LANG_CODE_TO_LABEL: Record<string, string> = {
   "es-US": "Spanish (US)",
   "es-PE": "Spanish (Peru)",
   "es-VE": "Spanish (Venezuela)",
-  en: "English",
-  "en-US": "English (US)",
-  "en-GB": "English (UK)",
-  "en-AU": "English (Australia)",
-  "en-CA": "English (Canada)",
-  "en-IE": "English (Ireland)",
+  et: "Estonian",
+  eu: "Basque",
+  "eu-ES": "Basque (Spain)",
+  fa: "Persian",
+  fi: "Finnish",
+  "fi-FI": "Finnish (Finland)",
+  fil: "Filipino",
   fr: "French",
   "fr-FR": "French (France)",
   "fr-CA": "French (Canada)",
-  de: "German",
-  "de-DE": "German (Germany)",
-  "de-AT": "German (Austria)",
-  "de-CH": "German (Switzerland)",
-  it: "Italian",
-  "it-IT": "Italian (Italy)",
-  pt: "Portuguese",
-  "pt-BR": "Portuguese (Brazil)",
-  "pt-PT": "Portuguese (Portugal)",
-  ca: "Catalan",
-  "ca-ES": "Catalan (Spain)",
+  ga: "Irish",
   gl: "Galician",
   "gl-ES": "Galician (Spain)",
-  eu: "Basque",
-  "eu-ES": "Basque (Spain)",
-  ja: "Japanese",
-  "ja-JP": "Japanese (Japan)",
-  ko: "Korean",
-  "ko-KR": "Korean (Korea)",
-  zh: "Chinese",
-  "zh-CN": "Chinese (Simplified)",
-  "zh-TW": "Chinese (Traditional)",
-  ru: "Russian",
-  "ru-RU": "Russian (Russia)",
+  gu: "Gujarati",
+  he: "Hebrew",
   hi: "Hindi",
   "hi-IN": "Hindi (India)",
-  ar: "Arabic",
-  "ar-SA": "Arabic (Saudi Arabia)",
+  hr: "Croatian",
+  hu: "Hungarian",
+  "hu-HU": "Hungarian (Hungary)",
+  hy: "Armenian",
+  id: "Indonesian",
+  is: "Icelandic",
+  it: "Italian",
+  "it-IT": "Italian (Italy)",
+  ja: "Japanese",
+  "ja-JP": "Japanese (Japan)",
+  jv: "Javanese",
+  ka: "Georgian",
+  kk: "Kazakh",
+  km: "Khmer",
+  kn: "Kannada",
+  ko: "Korean",
+  "ko-KR": "Korean (Korea)",
+  lo: "Lao",
+  lt: "Lithuanian",
+  lv: "Latvian",
+  mk: "Macedonian",
+  ml: "Malayalam",
+  mn: "Mongolian",
+  mr: "Marathi",
+  ms: "Malay",
+  mt: "Maltese",
+  my: "Burmese",
+  nb: "Norwegian",
+  "nb-NO": "Norwegian (Norway)",
+  ne: "Nepali",
   nl: "Dutch",
   "nl-NL": "Dutch (Netherlands)",
   pl: "Polish",
   "pl-PL": "Polish (Poland)",
-  tr: "Turkish",
-  "tr-TR": "Turkish (Turkey)",
-  el: "Greek",
-  "el-GR": "Greek (Greece)",
+  ps: "Pashto",
+  pt: "Portuguese",
+  "pt-BR": "Portuguese (Brazil)",
+  "pt-PT": "Portuguese (Portugal)",
   ro: "Romanian",
   "ro-RO": "Romanian (Romania)",
-  da: "Danish",
-  "da-DK": "Danish (Denmark)",
-  fi: "Finnish",
-  "fi-FI": "Finnish (Finland)",
+  ru: "Russian",
+  "ru-RU": "Russian (Russia)",
+  si: "Sinhala",
+  sk: "Slovak",
+  sl: "Slovenian",
+  so: "Somali",
+  sq: "Albanian",
+  sr: "Serbian",
+  su: "Sundanese",
   sv: "Swedish",
   "sv-SE": "Swedish (Sweden)",
-  nb: "Norwegian",
-  "nb-NO": "Norwegian (Norway)",
   sw: "Swahili",
-  cs: "Czech",
-  "cs-CZ": "Czech (Czechia)",
-  hu: "Hungarian",
-  "hu-HU": "Hungarian (Hungary)",
+  ta: "Tamil",
+  te: "Telugu",
+  th: "Thai",
+  tr: "Turkish",
+  "tr-TR": "Turkish (Turkey)",
+  uk: "Ukrainian",
+  ur: "Urdu",
+  uz: "Uzbek",
+  vi: "Vietnamese",
+  wuu: "Chinese (Wu)",
+  yue: "Chinese (Cantonese)",
+  zh: "Chinese",
+  "zh-CN": "Chinese (Simplified)",
+  "zh-TW": "Chinese (Traditional)",
+  zu: "Zulu",
 };
 
 const LABEL_TO_CODE: Record<string, string> = Object.fromEntries(
@@ -178,6 +241,7 @@ export const TtsStudioView: React.FC<TtsStudioViewProps> = ({
   notificationsEnabled,
   onOpenModels,
   onOpenProfiles,
+  onProfilesChange,
   onCatalogChange,
   onInstalledLanguagesChange,
   onPlaybackStateChange,
@@ -195,6 +259,8 @@ export const TtsStudioView: React.FC<TtsStudioViewProps> = ({
   const [playChunks, setPlayChunks] = useState<AudioChunkItem[]>([]);
   const [isGeneratingSession, setIsGeneratingSession] = useState(false);
   const [autoPlayNonce, setAutoPlayNonce] = useState(0);
+  const [playbackGeneration, setPlaybackGeneration] = useState(0);
+  const [prefetchWarning, setPrefetchWarning] = useState<string | null>(null);
   const [lastStats, setLastStats] = useState<{ dur: number; elapsed: number; rtf: number } | null>(
     null
   );
@@ -205,6 +271,8 @@ export const TtsStudioView: React.FC<TtsStudioViewProps> = ({
   const [langBusy, setLangBusy] = useState(false);
   const [builtinVoices, setBuiltinVoices] = useState<{ id: string; label: string }[]>([]);
   const [selectedBuiltinVoice, setSelectedBuiltinVoice] = useState<string>("");
+  const [packVoices, setPackVoices] = useState<PackVoiceListItem[]>([]);
+  const [voiceDesignOpen, setVoiceDesignOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement | null>(null);
   const dropdownRef = useRef<HTMLDivElement | null>(null);
   const langMenuRef = useRef<HTMLDivElement | null>(null);
@@ -354,8 +422,10 @@ export const TtsStudioView: React.FC<TtsStudioViewProps> = ({
       cancelled = true;
     };
   }, [baseUrl, usesBuiltinVoices, activeEntry?.id, language]);
+  const isXyzIoquendoModel = !isEndpointMode && activeEntry?.id === "xyz-ioquendo";
   const showLangTrash =
     !isEndpointMode &&
+    activeEntry?.id !== "xyz-ioquendo" &&
     (installMode === "per_language_checkpoint" || installMode === "voices_pack");
 
   const readyLanguageCodes = React.useMemo(() => {
@@ -382,36 +452,74 @@ export const TtsStudioView: React.FC<TtsStudioViewProps> = ({
   const availableLanguages = React.useMemo(() => {
     if (isEndpointMode) return FALLBACK_LANGUAGES;
     if (readyLanguageCodes.length > 0) {
-      return readyLanguageCodes.map(labelForCode);
+      const labels = readyLanguageCodes.map(labelForCode);
+      return isXyzIoquendoModel ? ["All Languages", ...labels] : labels;
     }
     // Shared clone engines without caps metadata: keep legacy list.
     if (installMode === "shared_weights" && usesCloneProfiles) {
       return FALLBACK_LANGUAGES;
     }
     return [];
-  }, [isEndpointMode, readyLanguageCodes, installMode, usesCloneProfiles]);
+  }, [isEndpointMode, isXyzIoquendoModel, readyLanguageCodes, installMode, usesCloneProfiles]);
 
   const localOptions: {
     id: string;
+    baseId: string;
     name: string;
     subtitle: string;
     engine: string;
     runtime_supported: boolean;
-  }[] = React.useMemo(
-    () =>
-      catalogTts.map((m) => ({
-        id: m.id,
-        name: m.name,
-        subtitle: `${m.installed_quant || m.quants[0]?.id || m.engine} · ~${(
-          m.vram_mib / 1024
-        ).toFixed(1)} GB${!m.runtime_supported ? " · no runtime" : ""}`,
-        engine: m.engine,
-        runtime_supported: m.runtime_supported,
-      })),
-    [catalogTts]
-  );
+  }[] = React.useMemo(() => {
+    const qwenBaseEntry = catalog.find((c) => c.id === "qwen3-1.7b-base");
+    const qwenBaseReady = Boolean(qwenBaseEntry?.installed && qwenBaseEntry?.runtime_supported);
+    return catalogTts.flatMap((m) => {
+      if (m.id === "xyz-ioquendo") {
+        return [
+          {
+            id: "xyz-ioquendo",
+            baseId: "xyz-ioquendo",
+            name: "xyz-Ioquendo",
+            subtitle: qwenBaseReady
+              ? "Qwen3-TTS Base · voice pack"
+              : "Requiere Qwen3-TTS 1.7B Base Q4_K_M",
+            engine: "qwen",
+            runtime_supported: qwenBaseReady,
+          },
+        ];
+      }
+      if (m.installed_quants.length > 1) {
+        return m.installed_quants.map((qid) => {
+          const q = m.quants.find((opt) => opt.id === qid);
+          return {
+            id: `${m.id}-${qid}`,
+            baseId: m.id,
+            name: `${m.name} · ${qid}`,
+            subtitle: `${q?.label || qid} · ~${((q?.vram_mib ?? m.vram_mib) / 1024).toFixed(1)} GB${!m.runtime_supported ? " · no runtime" : ""}`,
+            engine: m.engine,
+            runtime_supported: m.runtime_supported,
+          };
+        });
+      }
+      const singleQid = m.installed_quant || m.quants[0]?.id || "";
+      return [
+        {
+          id: singleQid && m.installed_quants.includes(singleQid) ? `${m.id}-${singleQid}` : m.id,
+          baseId: m.id,
+          name: singleQid && m.installed ? `${m.name} · ${singleQid}` : m.name,
+          subtitle: `${singleQid || m.engine} · ~${(
+            m.vram_mib / 1024
+          ).toFixed(1)} GB${!m.runtime_supported ? " · no runtime" : ""}`,
+          engine: m.engine,
+          runtime_supported: m.runtime_supported,
+        },
+      ];
+    });
+  }, [catalog, catalogTts]);
 
-  const activeLocal = localOptions.find((m) => m.id === activeEntry?.id) || localOptions[0];
+  const activeLocal =
+    localOptions.find((m) => m.id === settings.active_tts_model) ||
+    localOptions.find((m) => m.baseId === activeEntry?.id) ||
+    localOptions[0];
   const modelFamily = (() => {
     const eng = activeEntry?.engine || activeLocal?.engine || "";
     if (eng === "xtts" || (activeLocal?.id || activeModelId).startsWith("xtts")) return "xtts";
@@ -420,7 +528,7 @@ export const TtsStudioView: React.FC<TtsStudioViewProps> = ({
     if (eng === "fish" || eng === "fish-audio") return "fish";
     return eng || "qwen";
   })();
-  const visibleProfiles = usesCloneProfiles
+  const userCloneProfiles = usesCloneProfiles
     ? profiles.filter((p) => {
         if (p.engine === modelFamily || (modelFamily === "qwen" && p.engine === "qwen")) {
           return true;
@@ -431,14 +539,53 @@ export const TtsStudioView: React.FC<TtsStudioViewProps> = ({
         return false;
       })
     : [];
+  const packAsProfiles: VoiceProfile[] = isXyzIoquendoModel
+    ? packVoices.map((v) => ({
+        id: v.id,
+        name: v.label || v.name,
+        language: v.locale,
+        engine: "qwen",
+        ref_audio_path: "",
+        ref_text: "",
+        spk_path: "",
+        rvq_path: "",
+        ready: true,
+        created_at: 0,
+        updated_at: 0,
+      }))
+    : [];
+  const visibleProfiles = usesCloneProfiles
+    ? isXyzIoquendoModel
+      ? packAsProfiles
+      : userCloneProfiles
+    : [];
   const selectedProfile =
     visibleProfiles.find((p) => p.id === selectedProfileId) || visibleProfiles[0];
 
+  useEffect(() => {
+    if (!baseUrl || !isXyzIoquendoModel) {
+      setPackVoices([]);
+      return;
+    }
+    let cancelled = false;
+    void fetchXyzIoquendoVoices(baseUrl, language)
+      .then((list) => {
+        if (!cancelled) setPackVoices(list);
+      })
+      .catch(() => {
+        // Routes land when main.py includes voice_pack_routes; soft-fail until then.
+        if (!cancelled) setPackVoices([]);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [baseUrl, isXyzIoquendoModel, language]);
+
   const selectorLabel = isEndpointMode
-    ? `${t("models.externalGroup")} · ${activeEp ? activeEp.name : t("transcriber.unconfigured")}`
+    ? `${activeEp ? activeEp.name : t("transcriber.unconfigured")}`
     : activeLocal
-      ? `${t("models.local")} · ${activeLocal.name}`
-      : `${t("models.local")} · ${t("models.noLocalInstalled")}`;
+      ? activeLocal.name
+      : t("models.noLocalInstalled");
 
   const selectLocalModel = async (id: string) => {
     setMenuOpen(false);
@@ -508,25 +655,48 @@ export const TtsStudioView: React.FC<TtsStudioViewProps> = ({
   ]);
 
   useEffect(() => {
-    if (usesCloneProfiles && selectedProfile) {
-      const profLang = (selectedProfile.language || "").trim();
-      if (profLang && profLang.toLowerCase() !== "auto") {
-        setLanguage(profLang);
-      } else if (availableLanguages.length > 0 && !availableLanguages.includes(language)) {
-        setLanguage(availableLanguages[0]);
-      }
-      return;
-    }
     if (availableLanguages.length > 0 && !availableLanguages.includes(language)) {
       const base = language.split("(", 1)[0].trim().toLowerCase();
       const partial = availableLanguages.find((lbl) => lbl.toLowerCase().startsWith(base));
       setLanguage(partial || availableLanguages[0]);
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- sync when catalog readiness or profile changes
-  }, [selectedProfile?.id, usesCloneProfiles, availableLanguages]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- only sync when supported language list changes
+  }, [availableLanguages]);
 
   const synthTokenRef = useRef(0);
+  const playbackGenRef = useRef(0);
   const lastSpokenRef = useRef("");
+
+  const beginNewPlaybackGeneration = () => {
+    playbackGenRef.current += 1;
+    setPlaybackGeneration(playbackGenRef.current);
+    return playbackGenRef.current;
+  };
+
+  // Switching model, source, or voice invalidates any live chunked playback/prefetch immediately.
+  useEffect(() => {
+    if (!sessionIdRef.current && !isGeneratingSession) return;
+    synthTokenRef.current += 1;
+    prefetchAbortRef.current?.abort();
+    prefetchAbortRef.current = null;
+    playerRef.current?.pause();
+    sessionIdRef.current = null;
+    sessionSigRef.current = "";
+    setPlayChunks([]);
+    setIsGeneratingSession(false);
+    setPrefetchWarning(null);
+    beginNewPlaybackGeneration();
+    if (baseUrl) {
+      void cancelTtsSynthesis(baseUrl);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- reset when voice/model target changes
+  }, [
+    settings.tts_source,
+    settings.active_tts_model,
+    settings.active_tts_endpoint_id,
+    selectedProfile?.id,
+    selectedBuiltinVoice,
+  ]);
 
   const canSynthesize =
     !busyMode &&
@@ -579,6 +749,15 @@ export const TtsStudioView: React.FC<TtsStudioViewProps> = ({
         playerRef.current?.pause();
         const abort = new AbortController();
         prefetchAbortRef.current = abort;
+        setPrefetchWarning(null);
+
+        // Drop prior server session + UI playlist before starting a new generation.
+        if (baseUrl) void clearPlaySession(baseUrl);
+        sessionIdRef.current = null;
+        sessionSigRef.current = "";
+        setPlayChunks([]);
+        setIsGeneratingSession(false);
+        const gen = beginNewPlaybackGeneration();
 
         const started = await startPlaySession(baseUrl, {
           profile_id: profileId,
@@ -587,7 +766,8 @@ export const TtsStudioView: React.FC<TtsStudioViewProps> = ({
           voice: voiceParam,
           force_stop_captions: forceStopCaptions,
         });
-        if (myToken !== synthTokenRef.current || abort.signal.aborted) return;
+        if (shouldDiscardSynth(myToken, synthTokenRef.current, abort.signal.aborted)) return;
+        if (gen !== playbackGenRef.current) return;
 
         const initialChunks: AudioChunkItem[] = started.chunks.map((chunkText, idx) => ({
           index: idx,
@@ -606,18 +786,17 @@ export const TtsStudioView: React.FC<TtsStudioViewProps> = ({
           forceStopCaptions,
           abort.signal
         );
-        if (myToken !== synthTokenRef.current || abort.signal.aborted) return;
+        if (shouldDiscardSynth(myToken, synthTokenRef.current, abort.signal.aborted)) return;
+        if (gen !== playbackGenRef.current) return;
 
         setPlayChunks((prev) =>
-          prev.map((item) =>
-            item.index === 0
-              ? {
-                  ...item,
-                  audioUrl: `${baseUrl}${firstRes.audio_url}`,
-                  durationS: firstRes.duration_s,
-                }
-              : item
-          )
+          applyChunkResult(
+            prev,
+            0,
+            { audioUrl: `${baseUrl}${firstRes.audio_url}`, durationS: firstRes.duration_s },
+            gen,
+            playbackGenRef.current,
+          ),
         );
         setLastStats({
           dur: firstRes.duration_s,
@@ -633,40 +812,54 @@ export const TtsStudioView: React.FC<TtsStudioViewProps> = ({
             let totalDur = firstRes.duration_s;
             let totalElapsed = firstRes.elapsed_s;
             for (let i = 1; i < started.chunks.length; i++) {
-              if (myToken !== synthTokenRef.current || abort.signal.aborted) return;
-              const chunkRes = await synthesizeSessionChunk(
-                baseUrl,
-                started.session_id,
-                i,
-                forceStopCaptions,
-                abort.signal
-              );
-              if (myToken !== synthTokenRef.current || abort.signal.aborted) return;
-              totalDur += chunkRes.duration_s;
-              totalElapsed += chunkRes.elapsed_s;
-              setPlayChunks((prev) =>
-                prev.map((item) =>
-                  item.index === i
-                    ? {
-                        ...item,
-                        audioUrl: `${baseUrl}${chunkRes.audio_url}`,
-                        durationS: chunkRes.duration_s,
-                      }
-                    : item
-                )
-              );
-              setLastStats({
-                dur: totalDur,
-                elapsed: totalElapsed,
-                rtf: totalDur > 0 ? totalElapsed / totalDur : 0,
-              });
+              if (shouldDiscardSynth(myToken, synthTokenRef.current, abort.signal.aborted)) return;
+              if (gen !== playbackGenRef.current) return;
+              try {
+                const chunkRes = await synthesizeSessionChunk(
+                  baseUrl,
+                  started.session_id,
+                  i,
+                  forceStopCaptions,
+                  abort.signal
+                );
+                if (shouldDiscardSynth(myToken, synthTokenRef.current, abort.signal.aborted)) return;
+                if (gen !== playbackGenRef.current) return;
+                totalDur += chunkRes.duration_s;
+                totalElapsed += chunkRes.elapsed_s;
+                setPlayChunks((prev) =>
+                  applyChunkResult(
+                    prev,
+                    i,
+                    {
+                      audioUrl: `${baseUrl}${chunkRes.audio_url}`,
+                      durationS: chunkRes.duration_s,
+                    },
+                    gen,
+                    playbackGenRef.current,
+                  ),
+                );
+                setLastStats({
+                  dur: totalDur,
+                  elapsed: totalElapsed,
+                  rtf: totalDur > 0 ? totalElapsed / totalDur : 0,
+                });
+              } catch (chunkErr) {
+                if (chunkErr instanceof DOMException && chunkErr.name === "AbortError") return;
+                // Keep playing ready prefix; surface a recoverable warning for the rest.
+                const message =
+                  chunkErr instanceof Error ? chunkErr.message : String(chunkErr);
+                if (gen === playbackGenRef.current && myToken === synthTokenRef.current) {
+                  setPrefetchWarning(message);
+                }
+                return;
+              }
             }
           })()
             .catch(() => {
-              // Aborted or failed mid-prefetch.
+              // Aborted outer promise.
             })
             .finally(() => {
-              if (myToken === synthTokenRef.current) {
+              if (myToken === synthTokenRef.current && gen === playbackGenRef.current) {
                 setIsGeneratingSession(false);
                 onAfterGpuAction();
               }
@@ -916,15 +1109,15 @@ export const TtsStudioView: React.FC<TtsStudioViewProps> = ({
   return (
     <div className="flex-1 min-h-0 flex flex-col gap-2.5">
       <GlassCard className="flex-1 min-h-0 p-4 flex flex-col gap-2.5">
-        <div className="flex flex-wrap items-center justify-end gap-2 shrink-0">
-          <div className="flex flex-wrap items-center gap-2">
+        <div className="flex flex-wrap items-center justify-end gap-1.5 shrink-0">
+          <div className="flex flex-wrap items-center gap-1.5">
             {/* Unified Glass Dropdown: Local + Externo */}
             <div className="relative" ref={menuRef}>
               <button
                 type="button"
                 onClick={() => setMenuOpen((v) => !v)}
                 title={selectorLabel}
-                className="w-[225px] inline-flex items-center justify-between gap-1.5 rounded-xl px-2.5 py-1.5 text-xs font-mono border transition-colors hover:brightness-110"
+                className="w-[175px] inline-flex items-center justify-between gap-1.5 rounded-xl px-2.5 py-1.5 text-xs font-mono border transition-colors hover:brightness-110"
                 style={{
                   backgroundColor: "var(--bg-input)",
                   borderColor: isEndpointMode
@@ -1055,7 +1248,7 @@ export const TtsStudioView: React.FC<TtsStudioViewProps> = ({
                 <select
                   value={selectedProfile?.id || ""}
                   onChange={(e) => onSelectProfileId(e.target.value)}
-                  className="rounded-xl border px-2.5 py-1.5 text-xs font-medium outline-none"
+                  className="max-w-[165px] truncate rounded-xl border px-2 py-1.5 text-xs font-medium outline-none"
                   style={{
                     backgroundColor: "var(--bg-input)",
                     borderColor: "var(--border-glass)",
@@ -1067,12 +1260,12 @@ export const TtsStudioView: React.FC<TtsStudioViewProps> = ({
                   ) : (
                     visibleProfiles.map((p) => (
                       <option key={p.id} value={p.id}>
-                        {p.name} ({p.engine})
+                        {isXyzIoquendoModel ? p.name : `${p.name} (${p.engine})`}
                       </option>
                     ))
                   )}
                 </select>
-                {visibleProfiles.length === 0 && onOpenProfiles && (
+                {visibleProfiles.length === 0 && !isXyzIoquendoModel && onOpenProfiles && (
                   <button
                     type="button"
                     onClick={onOpenProfiles}
@@ -1083,6 +1276,17 @@ export const TtsStudioView: React.FC<TtsStudioViewProps> = ({
                     }}
                   >
                     {t("synthesize.createProfileCta")}
+                  </button>
+                )}
+                {modelFamily === "qwen" && !isXyzIoquendoModel && (
+                  <button
+                    type="button"
+                    onClick={() => setVoiceDesignOpen(true)}
+                    title={t("voiceDesign.title")}
+                    className="whitespace-nowrap inline-flex items-center gap-1 rounded-xl border border-purple-400/45 bg-purple-500/15 px-2.5 py-1.5 text-xs font-medium text-purple-200 hover:bg-purple-500/25"
+                  >
+                    <Sparkles className="w-3 h-3" />
+                    {t("profiles.voiceDesignBtn")}
                   </button>
                 )}
               </div>
@@ -1127,7 +1331,7 @@ export const TtsStudioView: React.FC<TtsStudioViewProps> = ({
                 type="button"
                 onClick={() => setLangMenuOpen((o) => !o)}
                 disabled={availableLanguages.length === 0 && !isEndpointMode}
-                className="rounded-xl border px-2.5 py-1.5 text-xs outline-none flex items-center gap-1.5 min-w-[7rem]"
+                className="rounded-xl border px-2.5 py-1.5 text-xs outline-none flex items-center gap-1 min-w-[5.5rem] max-w-[130px]"
                 style={{
                   backgroundColor: "var(--bg-input)",
                   borderColor: "var(--border-glass)",
@@ -1295,12 +1499,19 @@ export const TtsStudioView: React.FC<TtsStudioViewProps> = ({
                 chunks={playChunks}
                 isGenerating={isGeneratingSession}
                 autoPlayNonce={autoPlayNonce}
+                playbackGeneration={playbackGeneration}
                 onPlaybackChange={onPlaybackStateChange}
               />
             );
           }
           return null;
         })()}
+
+        {prefetchWarning && (
+          <p className="text-xs text-amber-300 shrink-0">
+            {prefetchWarning}
+          </p>
+        )}
 
         <div className="flex flex-wrap items-center justify-between gap-3 shrink-0 pt-0.5">
           <div className="flex items-center gap-2">
@@ -1313,7 +1524,11 @@ export const TtsStudioView: React.FC<TtsStudioViewProps> = ({
                   playerRef.current?.pause();
                   setBusyMode(null);
                   setIsGeneratingSession(false);
-                  if (baseUrl) void cancelTtsSynthesis(baseUrl);
+                  setPrefetchWarning(null);
+                  beginNewPlaybackGeneration();
+                  if (baseUrl) {
+                    void cancelTtsSynthesis(baseUrl);
+                  }
                 }}
               >
                 <Loader2 className="w-4 h-4 animate-spin" />
@@ -1353,10 +1568,15 @@ export const TtsStudioView: React.FC<TtsStudioViewProps> = ({
               setText("");
               setPlayChunks([]);
               setIsGeneratingSession(false);
+              setPrefetchWarning(null);
               setLastStats(null);
               sessionIdRef.current = null;
               sessionSigRef.current = "";
-              if (baseUrl) void clearPlaySession(baseUrl);
+              beginNewPlaybackGeneration();
+              if (baseUrl) {
+                void cancelTtsSynthesis(baseUrl);
+                void clearPlaySession(baseUrl);
+              }
             }}
             className="ml-auto mr-2 inline-flex items-center gap-1.5 rounded-full border px-3.5 py-2 text-sm font-medium transition-colors disabled:opacity-40 hover:border-rose-400/50"
             style={{
@@ -1403,6 +1623,20 @@ export const TtsStudioView: React.FC<TtsStudioViewProps> = ({
           />
         </GlassCard>
       </button>
+
+      <VoiceDesignModal
+        open={voiceDesignOpen}
+        baseUrl={baseUrl}
+        defaultLanguage={language}
+        onClose={() => setVoiceDesignOpen(false)}
+        onOpenModels={onOpenModels}
+        onSaved={(created) => {
+          if (onProfilesChange) {
+            onProfilesChange([...profiles, created]);
+          }
+          onSelectProfileId(created.id);
+        }}
+      />
     </div>
   );
 };

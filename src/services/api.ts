@@ -225,7 +225,14 @@ export async function openUpdateRelease(baseUrl: string, current: string): Promi
 export async function installUpdate(
   baseUrl: string,
   current: string,
-): Promise<{ launched: boolean; quits_app: boolean; platform: string; asset_name: string }> {
+): Promise<{
+  launched: boolean;
+  completed?: boolean;
+  quits_app: boolean;
+  platform: string;
+  asset_name: string;
+  installer_path?: string;
+}> {
   const res = await fetch(`${baseUrl}/api/updates/install`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -601,14 +608,24 @@ export async function transcribeAudioFile(
     audio_path: string;
     language?: string;
     model_id?: string;
-  }
+  },
+  signal?: AbortSignal
 ): Promise<TranscribeResponse> {
   const res = await fetch(`${baseUrl}/api/stt/transcribe`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(payload),
+    signal,
   });
   return parseErrorOrJson<TranscribeResponse>(res);
+}
+
+export async function cancelSttTranscription(baseUrl: string): Promise<void> {
+  try {
+    await fetch(`${baseUrl}/api/stt/cancel`, { method: "POST" });
+  } catch {
+    /* ignore cancel race if backend already stopped */
+  }
 }
 
 export async function fetchHistory(baseUrl: string): Promise<GenerationRecord[]> {
@@ -676,11 +693,16 @@ export async function cancelModelDownload(baseUrl: string, jobId: string): Promi
   await parseErrorOrJson(res);
 }
 
-export async function removeInstalledModel(baseUrl: string, modelId: string): Promise<void> {
-  const res = await fetch(`${baseUrl}/api/models/${encodeURIComponent(modelId)}`, {
+export async function removeInstalledModel(
+  baseUrl: string,
+  modelId: string,
+  quantId?: string,
+): Promise<{ remaining?: string[] }> {
+  const query = quantId ? `?quant_id=${encodeURIComponent(quantId)}` : "";
+  const res = await fetch(`${baseUrl}/api/models/${encodeURIComponent(modelId)}${query}`, {
     method: "DELETE",
   });
-  await parseErrorOrJson(res);
+  return parseErrorOrJson<{ remaining?: string[] }>(res);
 }
 
 export async function uninstallLanguagePack(

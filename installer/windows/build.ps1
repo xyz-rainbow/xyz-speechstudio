@@ -50,6 +50,28 @@ Copy-Item -LiteralPath (Join-Path $repo "scripts\fetch-crispasr.ps1") -Destinati
 if (Test-Path -LiteralPath (Join-Path $repo "scripts\speechstudio.cmd")) {
     Copy-Item -LiteralPath (Join-Path $repo "scripts\speechstudio.cmd") -Destination (Join-Path $payload "scripts\speechstudio.cmd")
 }
+# Vertical voice-pack slice only (never copy manifest.full.v1.json into installer payload).
+$packSrc = Join-Path $repo "packs\xyz-ioquendo"
+if (Test-Path -LiteralPath $packSrc) {
+    $packDst = Join-Path $payload "packs\xyz-ioquendo"
+    New-Item -ItemType Directory -Force -Path $packDst | Out-Null
+    foreach ($metaName in @("manifest.vertical.v1.json", "schema.v1.json", "README.md")) {
+        $srcMeta = Join-Path $packSrc $metaName
+        if (Test-Path -LiteralPath $srcMeta) {
+            Copy-Item -LiteralPath $srcMeta -Destination (Join-Path $packDst $metaName)
+        }
+    }
+    foreach ($relVoice in @("es-ES\alvaro", "en-GB\alfie")) {
+        $vSrc = Join-Path $packSrc (Join-Path "voices" $relVoice)
+        if (Test-Path -LiteralPath $vSrc) {
+            $vDst = Join-Path $packDst (Join-Path "voices" $relVoice)
+            New-Item -ItemType Directory -Force -Path $vDst | Out-Null
+            Get-ChildItem -LiteralPath $vSrc -Force | ForEach-Object {
+                Copy-Item -LiteralPath $_.FullName -Destination (Join-Path $vDst $_.Name) -Recurse -Force
+            }
+        }
+    }
+}
 # CrispASR: GPU (cuda/) + CPU (cpu/) follow the in-app device selector.
 $crispasrSrc = Join-Path $repo "runtime\bin"
 $crispasrDst = Join-Path $payload "runtime\bin"
@@ -72,18 +94,21 @@ foreach ($variant in $variants) {
             $packed++
         }
 }
-# Legacy flat layout (pre cuda/cpu split) — still ship if present.
-Get-ChildItem -LiteralPath $crispasrSrc -File -ErrorAction SilentlyContinue |
-    Where-Object { $_.Name -match '^(crispasr\.exe|crispasr)$' -or $_.Extension -in '.dll', '.so', '.dylib' } |
-    ForEach-Object {
-        Copy-Item -LiteralPath $_.FullName -Destination (Join-Path $crispasrDst $_.Name)
-        $packed++
-    }
-if ($packed -gt 0) {
-    Write-Host "[INFO] CrispASR empaquetado ($packed archivos; $($variants -join ', '))" -ForegroundColor Green
-} else {
-    Write-Host "[WARN] Sin crispasr en runtime\bin\cuda|cpu — ejecuta scripts\fetch-crispasr.ps1" -ForegroundColor Yellow
+# Legacy flat layout (pre cuda/cpu split) — only use if cpu/ was not packed.
+$cpuPacked = Test-Path -LiteralPath (Join-Path $crispasrDst "cpu\crispasr.exe")
+if (-not $cpuPacked) {
+    Get-ChildItem -LiteralPath $crispasrSrc -File -ErrorAction SilentlyContinue |
+        Where-Object { $_.Name -match '^(crispasr\.exe|crispasr)$' -or $_.Extension -in '.dll', '.so', '.dylib' } |
+        ForEach-Object {
+            Copy-Item -LiteralPath $_.FullName -Destination (Join-Path $crispasrDst $_.Name)
+            $packed++
+        }
+    $cpuPacked = Test-Path -LiteralPath (Join-Path $crispasrDst "crispasr.exe")
 }
+if (-not $cpuPacked) {
+    throw "Missing CrispASR CPU binary in runtime\bin\cpu; run .\scripts\fetch-crispasr.ps1 -Variant cpu first."
+}
+Write-Host "[INFO] CrispASR empaquetado ($packed archivos; $($variants -join ', '))" -ForegroundColor Green
 $stagedInstaller = Join-Path $payload "installer"
 New-Item -ItemType Directory -Force -Path $stagedInstaller | Out-Null
 Copy-Item -LiteralPath (Join-Path $repo "installer\setup-env.ps1") -Destination $stagedInstaller
@@ -92,14 +117,25 @@ Get-ChildItem -LiteralPath (Join-Path $repo "installer") -Filter "requirements-*
 }
 
 # uv is a build-time dependency. The installed app carries this interpreter.
+# Native tools often write progress to stderr; do not treat that as a terminating error.
 $buildPython = Join-Path $repo 'data\tmp\installer-core\Scripts\python.exe'
-if (-not (Test-Path -LiteralPath $buildPython)) {
-    & uv venv --managed-python --python 3.12 (Join-Path $repo 'data\tmp\installer-core')
-    if ($LASTEXITCODE -ne 0) { throw 'Could not create the core packaging environment' }
+$prevEap = $ErrorActionPreference
+$ErrorActionPreference = 'Continue'
+try {
+    if (-not (Test-Path -LiteralPath $buildPython)) {
+        & uv venv --managed-python --python 3.12 (Join-Path $repo 'data\tmp\installer-core')
+        if ($LASTEXITCODE -ne 0) { throw 'Could not create the core packaging environment' }
+    }
+    & uv pip install --python $buildPython -r (Join-Path $repo 'installer\requirements-core.txt') -r (Join-Path $repo 'installer\requirements-stt-cpu.txt')
+    if ($LASTEXITCODE -ne 0) { throw 'Could not install core packaging dependencies' }
+} finally {
+    $ErrorActionPreference = $prevEap
 }
-& uv pip install --python $buildPython -r (Join-Path $repo 'installer\requirements-core.txt') -r (Join-Path $repo 'installer\requirements-stt-cpu.txt')
-if ($LASTEXITCODE -ne 0) { throw 'Could not install core packaging dependencies' }
-& $buildPython (Join-Path $repo 'scripts\package_runtime.py') --output (Join-Path $payload 'runtime\python')
+$runtimeOut = Join-Path $payload 'runtime\python'
+if (Test-Path -LiteralPath $runtimeOut) {
+    Remove-Item -LiteralPath $runtimeOut -Recurse -Force
+}
+& $buildPython (Join-Path $repo 'scripts\package_runtime.py') --output $runtimeOut
 if ($LASTEXITCODE -ne 0) { throw 'Could not package the standalone core runtime' }
 
 $isccCandidates = @(

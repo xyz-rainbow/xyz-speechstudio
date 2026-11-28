@@ -47,6 +47,7 @@ class CatalogModelEntry(BaseModel):
     quants: list[QuantOption] = Field(default_factory=list)
     installed: bool = False
     installed_quant: Optional[str] = None
+    installed_quants: list[str] = Field(default_factory=list)
     install_dir: Optional[str] = None
     external: bool = False
     removable: bool = False
@@ -235,6 +236,41 @@ BUILTIN_MODELS: list[dict[str, Any]] = [
                     "qwen-talker-1.7b-customvoice-BF16.gguf",
                     "qwen-tokenizer-12hz-BF16.gguf",
                 ],
+            },
+        ],
+    },
+    {
+        "id": "qwen3-1.7b-voicedesign",
+        "name": "Qwen3-TTS 1.7B VoiceDesign",
+        "kind": "tts",
+        "engine": "qwen",
+        "family_id": "qwen3-tts",
+        "family_name": "Qwen3-TTS",
+        "variant_label": "1.7B VoiceDesign (Prompt)",
+        "repo_id": "cstr/qwen3-tts-1.7b-voicedesign-GGUF",
+        "dir_names": ["qwen3-1.7b-voicedesign"],
+        "description": "Design a synthetic voice from text instructions (pitch, timbre, emotion) via CrispASR --instruct.",
+        "runtime_supported": True,
+        "install_mode": "shared_weights",
+        "voice_mode": "builtin_voices",
+        "quant_policy": "gguf",
+        "languages": ["es", "en", "zh", "ja", "ko", "de", "fr", "ru", "pt", "it"],
+        "quants": [
+            {
+                "id": "q8_0",
+                "label": "GGUF Q8_0 (Balanced)",
+                "disk_mb": 1948,
+                "vram_mib": 2600,
+                "files": ["qwen3-tts-12hz-1.7b-voicedesign-q8_0.gguf"],
+                "recommended": True,
+            },
+            {
+                "id": "f16",
+                "label": "GGUF F16 (Full Precision)",
+                "disk_mb": 3661,
+                "vram_mib": 4400,
+                "files": ["qwen3-tts-12hz-1.7b-voicedesign-f16.gguf"],
+                "recommended": False,
             },
         ],
     },
@@ -721,46 +757,30 @@ BUILTIN_MODELS: list[dict[str, Any]] = [
         "engine": "kokoro",
         "family_id": "kokoro",
         "family_name": "Kokoro",
-        "variant_label": "82M ONNX",
-        "repo_id": "onnx-community/Kokoro-82M-v1.0-ONNX",
+        "variant_label": "82M GGUF",
+        "repo_id": "cstr/kokoro-82m-GGUF",
         "dir_names": ["kokoro-82m"],
-        "description": "Fast multilingual TTS (StyleTTS2-derived ONNX). All 54 voices resolved via CrispASR.",
+        "description": "Fast multilingual TTS (Kokoro 82M GGUF). All 54 voices resolved via CrispASR.",
         "runtime_supported": True,
         "install_mode": "shared_weights",
         "voice_mode": "builtin_voices",
-        "quant_policy": "onnx",
+        "quant_policy": "gguf",
         "languages": ["en", "es", "fr", "hi", "it", "ja", "pt", "zh"],
         "quants": [
             {
-                "id": "fp16",
-                "label": "ONNX FP16",
-                "disk_mb": 163,
+                "id": "f16",
+                "label": "GGUF F16",
+                "disk_mb": 156,
                 "vram_mib": 400,
-                "files": ["onnx/model_fp16.onnx"],
+                "files": ["kokoro-82m-f16.gguf"],
                 "recommended": True,
             },
             {
-                "id": "quantized",
-                "label": "ONNX quantized",
-                "disk_mb": 92,
-                "vram_mib": 300,
-                "files": ["onnx/model_quantized.onnx"],
-                "recommended": False,
-            },
-            {
-                "id": "fp32",
-                "label": "ONNX FP32",
-                "disk_mb": 326,
-                "vram_mib": 500,
-                "files": ["onnx/model.onnx"],
-                "recommended": False,
-            },
-            {
-                "id": "q4",
-                "label": "ONNX Q4",
-                "disk_mb": 50,
-                "vram_mib": 250,
-                "files": ["onnx/model_q4.onnx"],
+                "id": "q8_0",
+                "label": "GGUF Q8_0",
+                "disk_mb": 135,
+                "vram_mib": 320,
+                "files": ["kokoro-82m-q8_0.gguf"],
                 "recommended": False,
             },
         ],
@@ -772,47 +792,30 @@ BUILTIN_MODELS: list[dict[str, Any]] = [
         "engine": "piper",
         "family_id": "piper",
         "family_name": "Piper",
-        "variant_label": "Community voices",
-        "repo_id": "rhasspy/piper-voices",
+        "variant_label": "GGUF Voices (CrispASR)",
+        "repo_id": "LocalAI-Community/piper-voices-GGUF",
         "dir_names": ["piper"],
-        "description": "Lightweight VITS voices (CrispASR GGUF voices resolved per selected language).",
-        "runtime_supported": False,
+        "description": "Lightweight VITS GGUF voices running natively on CrispASR.",
+        "runtime_supported": True,
         "install_mode": "shared_weights",
         "voice_mode": "builtin_voices",
-        "quant_policy": "onnx",
+        "quant_policy": "gguf",
         "languages": ["es", "en", "de", "fr", "it", "pt", "ru", "nl", "pl"],
         "quants": [
             {
                 "id": "medium",
-                "label": "Quality medium",
+                "label": "GGUF F16 (Medium · ES + EN)",
                 "disk_mb": 60,
                 "vram_mib": 200,
-                "files": [
-                    "en/en_US/lessac/medium/en_US-lessac-medium.onnx",
-                    "en/en_US/lessac/medium/en_US-lessac-medium.onnx.json",
-                ],
+                "files": ["piper-es_ES-davefx-medium-f16.gguf", "piper-en_US-lessac-medium-f16.gguf"],
                 "recommended": True,
             },
             {
                 "id": "low",
-                "label": "Quality low",
+                "label": "GGUF F16 (Compact · ES)",
                 "disk_mb": 30,
-                "vram_mib": 150,
-                "files": [
-                    "en/en_US/lessac/low/en_US-lessac-low.onnx",
-                    "en/en_US/lessac/low/en_US-lessac-low.onnx.json",
-                ],
-                "recommended": False,
-            },
-            {
-                "id": "high",
-                "label": "Quality high",
-                "disk_mb": 100,
-                "vram_mib": 250,
-                "files": [
-                    "en/en_US/lessac/high/en_US-lessac-high.onnx",
-                    "en/en_US/lessac/high/en_US-lessac-high.onnx.json",
-                ],
+                "vram_mib": 160,
+                "files": ["piper-es_ES-mls_10246-low-f16.gguf"],
                 "recommended": False,
             },
         ],
@@ -891,6 +894,40 @@ BUILTIN_MODELS: list[dict[str, Any]] = [
         "quant_policy": "binary",
         "languages": [],
         "quants": [{"id": "native", "label": "Windows SAPI 5", "disk_mb": 0, "vram_mib": 0, "files": [], "recommended": True}],
+    },
+    {
+        "id": "xyz-ioquendo",
+        "name": "xyz-Ioquendo",
+        "kind": "tts",
+        "engine": "qwen",
+        "family_id": "xyz-ioquendo",
+        "family_name": "xyz-Ioquendo",
+        "variant_label": "Qwen3 reference pack",
+        "repo_id": "local/xyz-ioquendo",
+        "dir_names": ["voice-packs/xyz-ioquendo"],
+        "description": (
+            "Reference voice pack for Qwen3-TTS 1.7B Base Q4_K_M cloning. "
+            "Independent of Qwen weights. Not an official Loquendo product; "
+            "redistribution pending license review."
+        ),
+        "runtime_supported": True,
+        "install_mode": "voices_pack",
+        "voice_mode": "clone_profile",
+        "quant_policy": "binary",
+        "languages": ["es", "en"],
+        "quants": [
+            {
+                "id": "references",
+                "label": "Reference pack (vertical)",
+                "disk_mb": 1,
+                "vram_mib": 0,
+                "files": [],
+                "recommended": True,
+            }
+        ],
+        "depends_on_model_id": "qwen3-1.7b-base",
+        "depends_on_quant_id": "Q4_K_M",
+        "pack_kind": "reference_pack",
     },
     {
         "id": "kitten-tts-2-mini",
@@ -1227,12 +1264,23 @@ def _dir_size_mb(folder: Path) -> int:
     return max(1, round(total / (1024 * 1024))) if total > 0 else 0
 
 
-def _detect_builtin_install(entry: dict[str, Any], settings: AppSettings) -> tuple[bool, Optional[str], Optional[Path], bool, int]:
+def _detect_builtin_install(
+    entry: dict[str, Any], settings: AppSettings, *, qwen_quant: Optional[str] = None
+) -> tuple[bool, Optional[str], Optional[Path], bool, int]:
     """Return (installed, installed_quant, install_dir, external, disk_mb)."""
     models_root = resolved_models_dir(settings)
     mid = entry["id"]
     kind = entry["kind"]
     engine = entry["engine"]
+
+    if mid == "xyz-ioquendo":
+        from . import voice_packs
+
+        pack_dir = voice_packs.pack_install_dir(models_root)
+        if voice_packs.is_pack_installed(models_root):
+            disk_mb = _dir_size_mb(pack_dir) if pack_dir.is_dir() else 1
+            return True, "references", pack_dir, False, disk_mb
+        return False, None, pack_dir if pack_dir.exists() else None, False, 0
 
     if engine == "sapi5":
         from . import sapi5_engine
@@ -1256,20 +1304,23 @@ def _detect_builtin_install(entry: dict[str, Any], settings: AppSettings) -> tup
         for base_dir in candidates:
             if not base_dir.is_dir():
                 continue
-            for q in entry["quants"]:
-                if all((base_dir / f).is_file() for f in q.get("files", [])):
-                    meta_q = q["id"]
-                    mf = _meta_file(base_dir)
-                    if mf.is_file():
-                        try:
-                            meta_q = json.loads(mf.read_text(encoding="utf-8")).get("quant") or meta_q
-                        except Exception:
-                            pass
+            quants = entry["quants"]
+            if qwen_quant is None:
+                try:
+                    saved_quant = json.loads(_meta_file(base_dir).read_text(encoding="utf-8")).get("quant")
+                except (OSError, ValueError, AttributeError):
+                    saved_quant = None
+                quants = sorted(quants, key=lambda q: q["id"] != saved_quant)
+            for q in quants:
+                if qwen_quant is not None and q["id"] != qwen_quant:
+                    continue
+                q_files = q.get("files") or []
+                if q_files and all((base_dir / f).is_file() for f in q_files):
                     size_mb = sum(
                         max(1, round((base_dir / f).stat().st_size / (1024 * 1024)))
                         for f in q["files"]
                     )
-                    return True, meta_q, base_dir, False, size_mb
+                    return True, q["id"], base_dir, False, size_mb
         return False, None, None, False, 0
 
     if kind == "stt":
@@ -1297,7 +1348,8 @@ def _detect_builtin_install(entry: dict[str, Any], settings: AppSettings) -> tup
 
     # Other TTS (xtts-v2, fish-speech-1.5, f5-tts, kokoro, piper, kitten, etc.)
     tts_dirs = [models_root / "tts" / dn for dn in entry.get("dir_names", [mid])]
-    weight_exts = {".pth", ".pt", ".safetensors", ".gguf", ".onnx"}
+    quant_policy = (entry.get("quant_policy") or "").strip().lower()
+    weight_exts = {".gguf"} if quant_policy == "gguf" else {".pth", ".pt", ".safetensors", ".gguf", ".onnx"}
     for tts_dir in tts_dirs:
         if not tts_dir.is_dir():
             continue
@@ -1308,10 +1360,17 @@ def _detect_builtin_install(entry: dict[str, Any], settings: AppSettings) -> tup
                 meta_q = json.loads(mf.read_text(encoding="utf-8")).get("quant")
             except Exception:
                 meta_q = None
+        matched_quants = []
         for q in entry.get("quants", []):
             q_files = q.get("files") or []
             if q_files and all((tts_dir / f).is_file() for f in q_files):
-                return True, meta_q or q["id"], tts_dir, False, _dir_size_mb(tts_dir)
+                matched_quants.append(q["id"])
+        if matched_quants:
+            chosen_q = meta_q if meta_q in matched_quants else matched_quants[0]
+            return True, chosen_q, tts_dir, False, _dir_size_mb(tts_dir)
+        has_quant_files_spec = any(q.get("files") for q in entry.get("quants", []))
+        if has_quant_files_spec and quant_policy in ("gguf", "onnx", "post_quantize", "checkpoint"):
+            continue
         has_weight = any(
             p.is_file() and p.suffix.lower() in weight_exts
             for p in tts_dir.rglob("*")
@@ -1347,18 +1406,30 @@ def resolve_xtts_dir(settings: AppSettings, model_id: Optional[str] = None) -> t
 def resolve_qwen_paths(settings: AppSettings, model_id: Optional[str] = None) -> tuple[Path, Path, str]:
     """Find best installed Qwen3-TTS (talker_gguf, codec_gguf, resolved_model_id)."""
     preferred_id = model_id or settings.active_tts_model or "qwen3-1.7b-base"
-    for suffix in ("-Q8_0", "-Q4_K_M", "-BF16", "-F32"):
-        if preferred_id.endswith(suffix):
-            preferred_id = preferred_id[: -len(suffix)]
+    preferred_quant = None
+    for entry in BUILTIN_MODELS:
+        if entry["engine"] != "qwen":
+            continue
+        for quant in entry["quants"]:
+            if preferred_id == f"{entry['id']}-{quant['id']}":
+                preferred_id = entry["id"]
+                preferred_quant = quant["id"]
+                break
+        if preferred_quant is not None:
             break
 
-    order = [BUILTIN_BY_ID[preferred_id]] if preferred_id in BUILTIN_BY_ID else []
+    order = [BUILTIN_BY_ID[preferred_id]] if BUILTIN_BY_ID.get(preferred_id, {}).get("engine") == "qwen" else []
     for m in BUILTIN_MODELS:
         if m["engine"] == "qwen" and m["id"] != preferred_id:
             order.append(m)
 
     for entry in order:
-        installed, q_id, install_dir, _, _ = _detect_builtin_install(entry, settings)
+        requested_quant = preferred_quant if entry["id"] == preferred_id else None
+        install = _detect_builtin_install(entry, settings, qwen_quant=requested_quant)
+        if not install[0] and requested_quant is not None:
+            # Legacy settings may name a default quant that was never downloaded.
+            install = _detect_builtin_install(entry, settings)
+        installed, q_id, install_dir, _, _ = install
         if installed and install_dir and q_id:
             for q in entry["quants"]:
                 if q["id"] == q_id:
@@ -1388,12 +1459,22 @@ def resolve_qwen_paths(settings: AppSettings, model_id: Optional[str] = None) ->
 def resolve_stt_load_target(settings: AppSettings, model_id: str) -> tuple[str, Optional[str], int]:
     """Return (whisper_model_arg, compute_type_override, vram_est_mib)."""
     entry = BUILTIN_BY_ID.get(model_id)
+    selected_quant = None
+    if entry is None:
+        entry = next(
+            (candidate for candidate in BUILTIN_MODELS
+             if candidate["kind"] == "stt" and model_id.startswith(candidate["id"] + "-")
+             and any(model_id == f"{candidate['id']}-{q['id']}" for q in candidate.get("quants", []))),
+            None,
+        )
+        if entry is not None:
+            selected_quant = model_id[len(entry["id"]) + 1:]
     if entry and entry["kind"] == "stt":
         installed, q_id, install_dir, _, _ = _detect_builtin_install(entry, settings)
         compute_type: Optional[str] = None
         vram_est = entry["quants"][0]["vram_mib"] if entry.get("quants") else 350
         for q in entry.get("quants", []):
-            if q["id"] == q_id:
+            if q["id"] == (selected_quant or q_id):
                 compute_type = q.get("compute_type")
                 vram_est = q["vram_mib"]
                 break
@@ -1412,7 +1493,7 @@ def resolve_stt_load_target(settings: AppSettings, model_id: str) -> tuple[str, 
 
 
 def _runtime_supported_for_builtin(m: dict) -> bool:
-    """Honor catalog flag; promote CrispASR-ready engines when binary is present."""
+    """Honor catalog flag; promote genuinely runnable CrispASR GGUF engines when binary is present."""
     engine = (m.get("engine") or "").lower()
     if engine == "sapi5":
         from . import sapi5_engine
@@ -1420,18 +1501,21 @@ def _runtime_supported_for_builtin(m: dict) -> bool:
         return sapi5_engine.is_available()
     if m.get("runtime_supported", True):
         return True
-    engine = (m.get("engine") or "").lower()
     mid = (m.get("id") or "").lower()
+    quant_policy = (m.get("quant_policy") or "").lower()
     try:
         from .crispasr import CRISPASR_READY_ENGINES, is_available
 
         if not is_available():
             return False
-        # Fish Speech is a Python worker. Do not mark it ready just because
-        # the CrispASR binary exists; that sent synthesis down the Chatterbox path.
+        # Non-GGUF F5 checkpoints (.pt / .safetensors) require a dedicated Python checkpoint setup.
+        if engine in ("f5", "f5-tts") and quant_policy != "gguf":
+            return False
+        # Parakeet & Moonshine catalog entries currently point to HF ONNX repos while CrispASR requires GGUF
+        # and no sherpa/onnx-asr worker is bundled. Do not claim they are runnable until supported.
+        if engine == "onnx-asr":
+            return False
         if engine in CRISPASR_READY_ENGINES or engine == "kitten":
-            return True
-        if engine == "onnx-asr" and ("parakeet" in mid or "moonshine" in mid):
             return True
     except Exception:
         return False
@@ -1441,16 +1525,18 @@ def _runtime_supported_for_builtin(m: dict) -> bool:
 def _runtimes_for_model(m: dict, settings: AppSettings) -> tuple[list[str], str]:
     """Return honest (available_runtimes, active_runtime) without exposing CrispASR on unsupported models."""
     engine = (m.get("engine") or "").strip().lower()
-    mid = (m.get("id") or "").strip().lower()
+    quant_policy = (m.get("quant_policy") or "").strip().lower()
     available: list[str] = []
     if m.get("kind") == "tts":
         if engine == "qwen":
             available = ["crispasr", "python"]
         elif engine in ("f5", "f5-tts"):
-            if "gguf" in mid:
+            if quant_policy == "gguf":
                 available = ["crispasr"]
+            elif m.get("runtime_supported"):
+                available = ["python"]
             else:
-                available = ["python", "crispasr"]
+                available = []
         elif engine in ("piper", "kokoro", "chatterbox", "chatterbox-turbo", "cosyvoice3-tts", "indextts", "orpheus"):
             available = ["crispasr"]
         elif engine in ("xtts", "fish-audio", "fish", "kitten"):
@@ -1469,6 +1555,30 @@ def build_catalog(settings: AppSettings) -> list[CatalogModelEntry]:
 
     for m in BUILTIN_MODELS:
         installed, q_id, install_dir, is_ext, disk_mb = _detect_builtin_install(m, settings)
+        installed_quants = []
+        if m["engine"] == "qwen":
+            installed_quants = [
+                quant["id"]
+                for quant in m["quants"]
+                if _detect_builtin_install(m, settings, qwen_quant=quant["id"])[0]
+            ]
+        elif m["kind"] == "stt" and m["engine"] == "faster-whisper" and installed:
+            # CTranslate2 compute types reuse one downloaded checkpoint.
+            installed_quants = [q["id"] for q in m.get("quants", []) if q.get("compute_type")]
+        elif install_dir and install_dir.is_dir():
+            installed_quants = [
+                quant["id"]
+                for quant in m.get("quants", [])
+                if quant.get("files") and all((install_dir / filename).is_file() for filename in quant["files"])
+            ]
+            if not installed_quants and q_id and not any(q.get("files") for q in m.get("quants", [])):
+                installed_quants = [q_id]
+        elif q_id:
+            installed_quants = [q_id]
+        if m["kind"] == "tts" and m["engine"] != "sapi5" and not is_ext and m.get("quants") and any(q.get("files") for q in m["quants"]):
+            installed = bool(installed_quants)
+            if not installed:
+                q_id = None
         quants = [QuantOption(**q) for q in m.get("quants", [])]
         rec_q = next((q for q in quants if q.recommended), quants[0] if quants else None)
         active_q = next((q for q in quants if q.id == q_id), rec_q)
@@ -1484,6 +1594,15 @@ def build_catalog(settings: AppSettings) -> list[CatalogModelEntry]:
                 langs = sapi5_engine.installed_languages()
             if langs:
                 caps.languages = langs
+        if m["id"] == "xyz-ioquendo":
+            from . import voice_packs
+
+            pack_langs = voice_packs.installed_locale_codes(models_root)
+            if pack_langs:
+                caps.languages = pack_langs
+            if installed:
+                installed_quants = ["references"]
+                q_id = "references"
         avail_rt, active_rt = _runtimes_for_model(m, settings)
         entries.append(
             CatalogModelEntry(
@@ -1503,6 +1622,7 @@ def build_catalog(settings: AppSettings) -> list[CatalogModelEntry]:
                 quants=quants,
                 installed=installed,
                 installed_quant=q_id,
+                installed_quants=installed_quants,
                 install_dir=str(install_dir) if install_dir else None,
                 external=is_ext,
                 removable=installed and not is_ext and install_dir is not None and _is_within(install_dir, models_root),
@@ -2082,8 +2202,19 @@ def import_local_model(
     return entry
 
 
-def remove_installed_model(settings: AppSettings, model_id: str) -> dict[str, Any]:
+def remove_installed_model(
+    settings: AppSettings, model_id: str, quant_id: Optional[str] = None
+) -> dict[str, Any]:
     models_root = resolved_models_dir(settings).resolve()
+    if model_id == "xyz-ioquendo":
+        from . import voice_packs
+
+        result = voice_packs.uninstall_pack(models_root)
+        return {
+            "removed": bool(result.get("removed")),
+            "model_id": model_id,
+            "untouched": result.get("untouched") or ["qwen_weights", "user_profiles"],
+        }
     catalog = build_catalog(settings)
     target = next((m for m in catalog if m.id == model_id), None)
     if target is None:
@@ -2096,6 +2227,34 @@ def remove_installed_model(settings: AppSettings, model_id: str) -> dict[str, An
     install_path = Path(target.install_dir).resolve()
     if not _is_within(install_path, models_root):
         raise PermissionError("Refusing to delete files outside Speech Studio models folder.")
+
+    if quant_id is not None:
+        quant = next((q for q in target.quants if q.id == quant_id), None)
+        if quant is None or quant_id not in target.installed_quants or not quant.files:
+            raise FileNotFoundError(f"Quantization is not installed: {model_id}/{quant_id}")
+        other_files = {
+            filename
+            for other in target.quants
+            if other.id != quant_id and other.id in target.installed_quants
+            for filename in other.files
+        }
+        deleted = []
+        for filename in quant.files:
+            file_path = (install_path / filename).resolve()
+            if filename not in other_files and _is_within(file_path, install_path) and file_path.is_file():
+                file_path.unlink()
+                deleted.append(filename)
+        remaining = [q for q in target.installed_quants if q != quant_id]
+        meta = _meta_file(install_path)
+        if meta.is_file():
+            try:
+                data = json.loads(meta.read_text(encoding="utf-8"))
+                if data.get("quant") == quant_id:
+                    data["quant"] = remaining[0] if remaining else None
+                    meta.write_text(json.dumps(data, indent=2), encoding="utf-8")
+            except (OSError, ValueError, AttributeError):
+                pass
+        return {"removed": bool(deleted), "model_id": model_id, "quant_id": quant_id, "remaining": remaining}
 
     if install_path == models_root:
         removed_files = 0
@@ -2159,15 +2318,24 @@ class DownloadManager:
         if entry is None:
             raise ValueError(f"Unknown built-in model: {model_id}")
 
+        if not _runtime_supported_for_builtin(entry):
+            raise ValueError(
+                f"Model {model_id} has no compatible local runtime yet."
+            )
+
         quants = entry.get("quants", [])
         chosen = next((q for q in quants if q["id"] == quant_id), None) or next(
             (q for q in quants if q.get("recommended")), quants[0]
         )
         has_files_key = "files" in chosen
         explicit_files = list(chosen.get("files") or [])
-        # Post-quantize options (Fish int8/int4) share the BF16 download pack;
-        # full-repo STT models (faster-whisper-*) omit "files" to download the whole repo.
         if has_files_key and not explicit_files:
+            if (entry.get("quant_policy") or "").lower() == "post_quantize":
+                base_q = next((q for q in quants if q.get("files")), None)
+                base_label = base_q["label"] if base_q else "base weights"
+                raise ValueError(
+                    f"Post-quantize variant '{chosen['id']}' for {model_id} is not supported by the runtime yet; install {base_label} instead."
+                )
             fallback = next((q for q in quants if q.get("files")), None)
             if fallback is None:
                 raise ValueError(
@@ -2430,12 +2598,23 @@ class DownloadManager:
                     resp.raise_for_status()
                     script_path.write_text(resp.text, encoding="utf-8")
                 gguf_out = dest_dir / f"{dest_dir.name}.gguf"
+                run_kwargs: dict = {
+                    "cwd": str(dest_dir),
+                    "stdin": subprocess.DEVNULL,
+                    "capture_output": True,
+                    "text": True,
+                    "timeout": 1800.0,
+                }
+                if sys.platform == "win32":
+                    run_kwargs["creationflags"] = getattr(subprocess, "CREATE_NO_WINDOW", 0)
+                    if hasattr(subprocess, "STARTUPINFO"):
+                        si = subprocess.STARTUPINFO()
+                        si.dwFlags |= subprocess.STARTF_USESHOWWINDOW
+                        si.wShowWindow = subprocess.SW_HIDE
+                        run_kwargs["startupinfo"] = si
                 proc = subprocess.run(
                     [sys.executable, str(script_path), str(dest_dir), "--outfile", str(gguf_out)],
-                    cwd=str(dest_dir),
-                    capture_output=True,
-                    text=True,
-                    timeout=1800.0,
+                    **run_kwargs,
                 )
                 if proc.returncode != 0 or not gguf_out.is_file():
                     err_tail = (proc.stderr or proc.stdout or "").strip()[-600:]

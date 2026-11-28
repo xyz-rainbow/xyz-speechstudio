@@ -51,6 +51,7 @@ import {
 import { GlassCard } from "./GlassCard";
 import { ModelHubModal } from "./ModelHubModal";
 import { LoquendoInstallControl } from "./LoquendoInstallControl";
+import { XyzIoquendoInstallControl } from "./XyzIoquendoInstallControl";
 
 interface ModelsViewProps {
   baseUrl: string;
@@ -143,6 +144,7 @@ export const ModelsView: React.FC<ModelsViewProps> = ({
 
   // Remove model confirmation modal
   const [removeTarget, setRemoveTarget] = useState<CatalogModelEntry | null>(null);
+  const [removeQuantId, setRemoveQuantId] = useState<string | null>(null);
 
   // Unified Model Hub / Import modal
   const [hubModalKind, setHubModalKind] = useState<"tts" | "stt" | null>(null);
@@ -326,7 +328,14 @@ export const ModelsView: React.FC<ModelsViewProps> = ({
     setError(null);
     try {
       if (card.kind === "tts") {
-        await onSaveSettings({ ...settings, active_tts_model: card.id });
+        const currentQuant = card.quants.find(
+          (q) => settings.active_tts_model === `${card.id}-${q.id}` && card.installed_quants.includes(q.id),
+        );
+        const selectedQuant = currentQuant?.id ?? card.installed_quant;
+        const selectedId = selectedQuant && card.installed_quants.includes(selectedQuant)
+          ? `${card.id}-${selectedQuant}`
+          : card.id;
+        await onSaveSettings({ ...settings, active_tts_model: selectedId });
         const isDirectLoadEngine =
           card.engine === "piper" ||
           card.engine === "kokoro" ||
@@ -346,13 +355,17 @@ export const ModelsView: React.FC<ModelsViewProps> = ({
           const snap =
             card.engine === "xtts"
               ? await loadXttsWorker(baseUrl, settings.tts_device, false, card.id)
-              : await loadQwenWorker(baseUrl, settings.tts_device, false, card.id);
+              : await loadQwenWorker(baseUrl, settings.tts_device, false, selectedId);
           onWorkersChange(snap);
         }
       } else {
-        await onSaveSettings({ ...settings, active_stt_model: card.id });
+        const activeQuant = card.quants.find(
+          (q) => settings.active_stt_model === `${card.id}-${q.id}` && card.installed_quants.includes(q.id),
+        );
+        const selectedId = activeQuant ? `${card.id}-${activeQuant.id}` : card.id;
+        await onSaveSettings({ ...settings, active_stt_model: selectedId });
         if (card.engine !== "onnx-asr") {
-          const snap = await loadSttWorker(baseUrl, card.id, settings.stt_device);
+          const snap = await loadSttWorker(baseUrl, selectedId, settings.stt_device);
           onWorkersChange(snap);
         }
       }
@@ -412,11 +425,26 @@ export const ModelsView: React.FC<ModelsViewProps> = ({
     try {
       const targetId = removeTarget.id;
       const targetKind = removeTarget.kind;
-      await removeInstalledModel(baseUrl, targetId);
+      const removedQuantId = removeQuantId;
+      const result = await removeInstalledModel(baseUrl, targetId, removedQuantId ?? undefined);
       setRemoveTarget(null);
-      if (targetKind === "tts" && settings.active_tts_model === targetId) {
-        await onSaveSettings({ ...settings, active_tts_model: "" });
-      } else if (targetKind === "stt" && settings.active_stt_model === targetId) {
+      setRemoveQuantId(null);
+      if (targetKind === "tts" && (
+        (removedQuantId === null && (
+          settings.active_tts_model === targetId ||
+          settings.active_tts_model.startsWith(`${targetId}-`)
+        )) ||
+        (removedQuantId !== null && settings.active_tts_model === `${targetId}-${removedQuantId}`)
+      )) {
+        const replacement = removedQuantId !== null && result.remaining?.length
+          ? `${targetId}-${result.remaining[0]}`
+          : "";
+        await onSaveSettings({ ...settings, active_tts_model: replacement });
+      } else if (
+        targetKind === "stt" &&
+        (settings.active_stt_model === targetId ||
+          settings.active_stt_model.startsWith(`${targetId}-`))
+      ) {
         await onSaveSettings({ ...settings, active_stt_model: "" });
       }
       await refreshCatalog();
@@ -498,7 +526,7 @@ export const ModelsView: React.FC<ModelsViewProps> = ({
           </div>
         </div>
 
-        <div className="flex gap-3 overflow-x-auto pb-2">
+        <div className="flex items-start gap-3 overflow-x-auto pb-2">
           {!isEndpoint
             ? visibleLocalCards.map((card) => {
                 const pyWorker =
@@ -529,8 +557,10 @@ export const ModelsView: React.FC<ModelsViewProps> = ({
                     : !!sttWorker?.running && sttWorker.model_id === card.id;
                 const isSelected =
                   card.kind === "tts"
-                    ? settings.active_tts_model === card.id
-                    : settings.active_stt_model === card.id;
+                    ? settings.active_tts_model === card.id ||
+                      card.quants.some((q) => settings.active_tts_model === `${card.id}-${q.id}`)
+                    : settings.active_stt_model === card.id ||
+                      card.quants.some((q) => settings.active_stt_model === `${card.id}-${q.id}`);
                 const activeJob = activeJobFor(card.id);
                 const singleFamily =
                   card.kind === "tts"
@@ -539,12 +569,28 @@ export const ModelsView: React.FC<ModelsViewProps> = ({
                       : card.engine
                     : "stt";
                 const runtimes = card.available_runtimes ?? [];
+                const activeSettingModel =
+                  card.kind === "tts" ? settings.active_tts_model : settings.active_stt_model;
+                const matchedQuant = card.quants.find(
+                  (q) => activeSettingModel === `${card.id}-${q.id}`
+                );
+                const activeQuantDisplay =
+                  matchedQuant?.id ||
+                  (isSelected ? card.installed_quant : null) ||
+                  card.installed_quant ||
+                  card.quants[0]?.id ||
+                  "GGUF";
+                const isComputeOnly =
+                  card.kind === "stt" && card.quants.some((q) => Boolean(q.compute_type));
+                const variantPills = isComputeOnly
+                  ? card.quants.filter((q) => Boolean(q.compute_type)).map((q) => q.id)
+                  : card.installed_quants;
 
                 return (
                   <div
                     key={card.id}
                     className={clsx(
-                      "min-w-[225px] max-w-[225px] shrink-0 rounded-2xl border p-3 flex flex-col gap-2 transition-colors",
+                      "min-w-[225px] max-w-[225px] min-h-[144px] shrink-0 rounded-2xl border p-3 flex flex-col gap-2 transition-colors",
                       isLoaded
                         ? "border-cyan-400/55"
                         : isSelected
@@ -566,7 +612,16 @@ export const ModelsView: React.FC<ModelsViewProps> = ({
                       className="flex flex-wrap items-center gap-1.5 text-[10px] font-mono"
                       style={{ color: "var(--text-muted)" }}
                     >
-                      <span>{card.installed_quant || card.quants[0]?.id || "GGUF"}</span>
+                      <span
+                        className={clsx(
+                          "rounded-full px-1.5 py-0.5 border",
+                          isSelected
+                            ? "border-purple-400/50 bg-purple-500/15 text-purple-200"
+                            : "border-white/10"
+                        )}
+                      >
+                        {isSelected ? `${t("models.active")}: ${activeQuantDisplay}` : activeQuantDisplay}
+                      </span>
                       <span>·</span>
                       <span>{formatDiskSize(card.disk_mb)}</span>
                       {card.external && (
@@ -575,6 +630,57 @@ export const ModelsView: React.FC<ModelsViewProps> = ({
                         </span>
                       )}
                     </div>
+
+                    {card.installed && variantPills.length > 1 && card.runtime_supported && (
+                      <div className="flex flex-wrap items-center gap-1 pt-0.5 max-h-[44px] overflow-y-auto">
+                        {variantPills.map((qid) => {
+                          const pillId = `${card.id}-${qid}`;
+                          const isPillActive =
+                            activeSettingModel === pillId ||
+                            (activeSettingModel === card.id && qid === card.installed_quant);
+                          return (
+                            <button
+                              key={qid}
+                              type="button"
+                              disabled={!!busyKey}
+                              onClick={async () => {
+                                if (!baseUrl || isPillActive) return;
+                                setBusyKey(`${card.id}-${qid}`);
+                                setError(null);
+                                try {
+                                  if (card.kind === "stt") {
+                                    await onSaveSettings({ ...settings, active_stt_model: pillId });
+                                    if (card.engine !== "onnx-asr") {
+                                      const snap = await loadSttWorker(baseUrl, pillId, settings.stt_device);
+                                      onWorkersChange(snap);
+                                    }
+                                  } else {
+                                    await onSaveSettings({ ...settings, active_tts_model: pillId });
+                                    if (card.engine === "qwen" && card.active_runtime === "python") {
+                                      const snap = await loadQwenWorker(baseUrl, settings.tts_device, false, pillId);
+                                      onWorkersChange(snap);
+                                    }
+                                  }
+                                  onAfterGpuAction();
+                                } catch (err) {
+                                  setError(err instanceof Error ? err.message : String(err));
+                                } finally {
+                                  setBusyKey(null);
+                                }
+                              }}
+                              className={clsx(
+                                "rounded-full px-2 py-0.5 text-[10px] font-mono border transition-colors disabled:opacity-45",
+                                isPillActive
+                                  ? "border-purple-400/60 bg-purple-500/20 text-purple-200"
+                                  : "border-white/10 opacity-70 hover:opacity-100"
+                              )}
+                            >
+                              {qid}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    )}
 
                     {runtimes.length > 1 && (
                       <div className="flex items-center gap-1 pt-0.5">
@@ -640,102 +746,108 @@ export const ModelsView: React.FC<ModelsViewProps> = ({
                       </div>
                     ) : (
                       <div className="flex flex-col gap-1.5 mt-auto pt-1">
+                        {card.id === "xyz-ioquendo" && (
+                          <XyzIoquendoInstallControl baseUrl={baseUrl} onRefresh={refreshCatalog} />
+                        )}
                         {card.id === "loquendo-tts7" && (
                           <LoquendoInstallControl baseUrl={baseUrl} supported={card.runtime_supported} onRefresh={refreshCatalog} />
                         )}
-                        {!card.runtime_supported && card.id !== "loquendo-tts7" && (
+                        {!card.runtime_supported && card.id !== "loquendo-tts7" && card.id !== "xyz-ioquendo" && (
                           <span className="text-[10px] font-mono text-amber-300/80">
                             {t("models.runtimeLater")}
                           </span>
                         )}
-                        <div className="flex items-center gap-1.5">
-                          {card.runtime_supported && (
-                            <>
+                        {((card.runtime_supported && card.id !== "xyz-ioquendo") ||
+                          (card.removable && card.id !== "xyz-ioquendo")) && (
+                          <div className="flex items-center gap-1.5">
+                            {card.runtime_supported && card.id !== "xyz-ioquendo" && (
+                              <>
+                                <button
+                                  type="button"
+                                  disabled={!!busyKey || isLoaded || !card.installed}
+                                  onClick={() => handleLoadModel(card)}
+                                  className="flex-1 inline-flex items-center justify-center gap-1 rounded-xl border px-2 py-1 text-xs font-medium disabled:opacity-40 hover:border-cyan-400/50"
+                                  style={{
+                                    borderColor: "var(--border-glass)",
+                                    backgroundColor: "var(--bg-elevated)",
+                                  }}
+                                >
+                                  {busyKey === card.id ? (
+                                    <Loader2 className="w-3 h-3 animate-spin" />
+                                  ) : (
+                                    <Play className="w-3 h-3" />
+                                  )}
+                                  {t("models.load")}
+                                </button>
+                                {card.engine === "sapi5" ? (
+                                  <button
+                                    type="button"
+                                    disabled={!!busyKey}
+                                    onClick={async () => {
+                                      if (!baseUrl) return;
+                                      setBusyKey(`sapi-refresh-${card.id}`);
+                                      setError(null);
+                                      try {
+                                        await refreshSapi5Voices(baseUrl);
+                                        await refreshCatalog();
+                                      } catch (err) {
+                                        setError(err instanceof Error ? err.message : String(err));
+                                      } finally {
+                                        setBusyKey(null);
+                                      }
+                                    }}
+                                    className="inline-flex items-center justify-center rounded-xl border px-2 py-1 text-xs disabled:opacity-40 hover:border-cyan-400/50 text-cyan-300"
+                                    style={{
+                                      borderColor: "var(--border-glass)",
+                                      backgroundColor: "var(--bg-elevated)",
+                                    }}
+                                    title="Rescan Windows SAPI 5 / Loquendo voices"
+                                  >
+                                    <RefreshCw
+                                      className={clsx(
+                                        "w-3 h-3",
+                                        busyKey === `sapi-refresh-${card.id}` && "animate-spin",
+                                      )}
+                                    />
+                                  </button>
+                                ) : (
+                                  <button
+                                    type="button"
+                                    disabled={!isLoaded || !!busyKey}
+                                    onClick={() => handleEjectSingle(singleFamily)}
+                                    className="inline-flex items-center justify-center rounded-xl border px-2 py-1 text-xs disabled:opacity-40 hover:border-rose-400/50 text-rose-300"
+                                    style={{
+                                      borderColor: "var(--border-glass)",
+                                      backgroundColor: "var(--bg-elevated)",
+                                    }}
+                                    title={t("models.eject")}
+                                  >
+                                    <Power className="w-3 h-3" />
+                                  </button>
+                                )}
+                              </>
+                            )}
+                            {card.removable && card.id !== "xyz-ioquendo" && (
                               <button
                                 type="button"
-                                disabled={!!busyKey || isLoaded || !card.installed}
-                                onClick={() => handleLoadModel(card)}
-                                className="flex-1 inline-flex items-center justify-center gap-1 rounded-xl border px-2 py-1 text-xs font-medium disabled:opacity-40 hover:border-cyan-400/50"
+                                disabled={!!busyKey}
+                                onClick={() => setRemoveTarget(card)}
+                                className={clsx(
+                                  "inline-flex items-center justify-center gap-1 rounded-xl border px-2 py-1 text-xs disabled:opacity-40 hover:border-rose-400/60 text-rose-300",
+                                  !card.runtime_supported && "flex-1"
+                                )}
                                 style={{
                                   borderColor: "var(--border-glass)",
                                   backgroundColor: "var(--bg-elevated)",
                                 }}
+                                title={t("models.remove")}
                               >
-                                {busyKey === card.id ? (
-                                  <Loader2 className="w-3 h-3 animate-spin" />
-                                ) : (
-                                  <Play className="w-3 h-3" />
-                                )}
-                                {t("models.load")}
+                                <Trash2 className="w-3 h-3" />
+                                {!card.runtime_supported && t("models.remove")}
                               </button>
-                              {card.engine === "sapi5" ? (
-                                <button
-                                  type="button"
-                                  disabled={!!busyKey}
-                                  onClick={async () => {
-                                    if (!baseUrl) return;
-                                    setBusyKey(`sapi-refresh-${card.id}`);
-                                    setError(null);
-                                    try {
-                                      await refreshSapi5Voices(baseUrl);
-                                      await refreshCatalog();
-                                    } catch (err) {
-                                      setError(err instanceof Error ? err.message : String(err));
-                                    } finally {
-                                      setBusyKey(null);
-                                    }
-                                  }}
-                                  className="inline-flex items-center justify-center rounded-xl border px-2 py-1 text-xs disabled:opacity-40 hover:border-cyan-400/50 text-cyan-300"
-                                  style={{
-                                    borderColor: "var(--border-glass)",
-                                    backgroundColor: "var(--bg-elevated)",
-                                  }}
-                                  title="Rescan Windows SAPI 5 / Loquendo voices"
-                                >
-                                  <RefreshCw
-                                    className={clsx(
-                                      "w-3 h-3",
-                                      busyKey === `sapi-refresh-${card.id}` && "animate-spin",
-                                    )}
-                                  />
-                                </button>
-                              ) : (
-                                <button
-                                  type="button"
-                                  disabled={!isLoaded || !!busyKey}
-                                  onClick={() => handleEjectSingle(singleFamily)}
-                                  className="inline-flex items-center justify-center rounded-xl border px-2 py-1 text-xs disabled:opacity-40 hover:border-rose-400/50 text-rose-300"
-                                  style={{
-                                    borderColor: "var(--border-glass)",
-                                    backgroundColor: "var(--bg-elevated)",
-                                  }}
-                                  title={t("models.eject")}
-                                >
-                                  <Power className="w-3 h-3" />
-                                </button>
-                              )}
-                            </>
-                          )}
-                          {card.removable && (
-                            <button
-                              type="button"
-                              disabled={!!busyKey}
-                              onClick={() => setRemoveTarget(card)}
-                              className={clsx(
-                                "inline-flex items-center justify-center gap-1 rounded-xl border px-2 py-1 text-xs disabled:opacity-40 hover:border-rose-400/60 text-rose-300",
-                                !card.runtime_supported && "flex-1"
-                              )}
-                              style={{
-                                borderColor: "var(--border-glass)",
-                                backgroundColor: "var(--bg-elevated)",
-                              }}
-                              title={t("models.remove")}
-                            >
-                              <Trash2 className="w-3 h-3" />
-                              {!card.runtime_supported && t("models.remove")}
-                            </button>
-                          )}
-                        </div>
+                            )}
+                          </div>
+                        )}
                       </div>
                     )}
                   </div>
@@ -833,7 +945,7 @@ export const ModelsView: React.FC<ModelsViewProps> = ({
           <button
             type="button"
             onClick={triggerAdd}
-            className="min-w-[165px] max-w-[165px] shrink-0 rounded-2xl border border-dashed p-3 flex flex-col items-center justify-center gap-2 transition-colors hover:border-cyan-400/60 text-cyan-300/85 hover:text-cyan-200"
+            className="min-w-[165px] max-w-[165px] min-h-[144px] shrink-0 rounded-2xl border border-dashed p-3 flex flex-col items-center justify-center gap-2 transition-colors hover:border-cyan-400/60 text-cyan-300/85 hover:text-cyan-200"
             style={{
               borderColor: "var(--border-glass)",
               backgroundColor: "var(--bg-input)",
@@ -900,7 +1012,12 @@ export const ModelsView: React.FC<ModelsViewProps> = ({
 
       {/* Endpoint Create / Edit Modal */}
       {epDraft && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/65 backdrop-blur-sm p-4">
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/65 backdrop-blur-sm p-4"
+          role="dialog"
+          aria-modal="true"
+          aria-label={epModalMode === "create" ? t("models.epModalCreate") : t("models.epModalEdit")}
+        >
           <GlassCard className="w-full max-w-lg p-4 flex flex-col gap-3">
             <div className="flex items-center justify-between gap-2">
               <h3 className="text-sm font-semibold">
@@ -911,6 +1028,7 @@ export const ModelsView: React.FC<ModelsViewProps> = ({
               <button
                 type="button"
                 onClick={() => setEpDraft(null)}
+                aria-label={t("models.cancel")}
                 className="opacity-70 hover:opacity-100"
               >
                 <X className="w-4 h-4" />
@@ -1145,7 +1263,18 @@ export const ModelsView: React.FC<ModelsViewProps> = ({
         installedLanguages={settings.installed_languages}
         onClose={() => setHubModalKind(null)}
         onRefreshCatalog={refreshCatalog}
-        onRequestRemove={(entry) => setRemoveTarget(entry)}
+        onRequestRemove={(entry, quantId) => {
+          setRemoveTarget(entry);
+          setRemoveQuantId(quantId ?? null);
+        }}
+        onActivateQuant={async (modelId, quantId) => {
+          if (hubModalKind === "stt") {
+            await onSaveSettings({ ...settings, active_stt_model: `${modelId}-${quantId}` });
+          } else {
+            await onSaveSettings({ ...settings, active_tts_model: `${modelId}-${quantId}` });
+          }
+        }}
+        activeModelId={hubModalKind === "stt" ? settings.active_stt_model : settings.active_tts_model}
         onInstalledLanguagesChange={(next) => {
           void onSaveSettings({ ...settings, installed_languages: next });
         }}
@@ -1153,16 +1282,24 @@ export const ModelsView: React.FC<ModelsViewProps> = ({
 
       {/* Remove Model Confirmation Modal */}
       {removeTarget && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/65 backdrop-blur-sm p-4">
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/65 backdrop-blur-sm p-4"
+          role="dialog"
+          aria-modal="true"
+          aria-label={t("models.removeConfirmTitle")}
+        >
           <GlassCard className="w-full max-w-sm p-4 flex flex-col gap-3">
             <h3 className="text-sm font-semibold">{t("models.removeConfirmTitle")}</h3>
             <p className="text-xs" style={{ color: "var(--text-secondary)" }}>
-              {t("models.removeConfirmBody")} ({removeTarget.name})
+              {t("models.removeConfirmBody")} ({removeTarget.name}{removeQuantId ? ` · ${removeQuantId}` : ""})
             </p>
             <div className="flex justify-end gap-2">
               <button
                 type="button"
-                onClick={() => setRemoveTarget(null)}
+                onClick={() => {
+                  setRemoveTarget(null);
+                  setRemoveQuantId(null);
+                }}
                 className="rounded-xl border px-3 py-1.5 text-xs"
                 style={{ borderColor: "var(--border-glass)" }}
               >

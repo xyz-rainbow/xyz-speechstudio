@@ -1,0 +1,65 @@
+{
+  "schema": "speechstudio.voice_pack.v1",
+  "pack_id": "xyz-ioquendo",
+  "name": "xyz-Ioquendo",
+  "version": "1.0.0-vertical",
+  "engine": "qwen",
+  "required_model_id": "qwen3-1.7b-base",
+  "required_quant_id": "Q4_K_M",
+  "voice_count": 2,
+  "locales": [
+    "en-GB",
+    "es-ES"
+  ],
+  "license": {
+    "kind": "proprietary-pack",
+    "redistribution": "blocked_until_review",
+    "disclaimer": "xyz-Ioquendo is an internal Speech Studio pack name. It is not Loquendo TTS, does not claim affiliation with Nuance/Loquendo, and must not be redistributed until license and provenance review is complete."
+  },
+  "voices": [
+    {
+      "id": "xyz-ioquendo/en-GB/alfie",
+      "slug": "alfie",
+      "name": "Alfie",
+      "locale": "en-GB",
+      "language": "English",
+      "gender": "male",
+      "audio_relpath": "voices/en-GB/alfie/audio.mp3",
+      "text_relpath": "voices/en-GB/alfie/transcript.txt",
+      "audio_sha256": "1a2758e6ac87fc92b8ccf8a046ffc70337061071317542ce6a8a0f3173983f80",
+      "text_sha256": "01ca53634a7079be49ecdc127be0354e9d43c6b3b0af52a069f5fe10837322c6",
+      "duration_s": 24.048,
+      "format": "mp3",
+      "size_bytes": 240480,
+      "provenance": {
+        "type": "synthetic_reference",
+        "generator": "Qwen3-TTS",
+        "note": "Vertical-slice reference for Speech Studio. Generated with Qwen3-TTS; not an official Loquendo voice and not redistributable pending license review.",
+        "source_locale": "en-GB"
+      }
+    },
+    {
+      "id": "xyz-ioquendo/es-ES/alvaro",
+      "slug": "alvaro",
+      "name": "Álvaro",
+      "locale": "es-ES",
+      "language": "Spanish",
+      "gender": "male",
+      "audio_relpath": "voices/es-ES/alvaro/audio.mp3",
+      "text_relpath": "voices/es-ES/alvaro/transcript.txt",
+      "audio_sha256": "25440b12cb49e13fe17548e4aeab2d001e54354b6eb79b9cba711addf406f0ca",
+      "text_sha256": "2bffc7e09fb19701df4e586429b666e2999f3c4ca8a62c83a4388b123d85fafd",
+      "duration_s": 24.307,
+      "format": "mp3",
+      "size_bytes": 243072,
+      "provenance": {
+        "type": "synthetic_reference",
+        "generator": "Qwen3-TTS",
+        "note": "Vertical-slice reference for Speech Studio. Generated with Qwen3-TTS; not an official Loquendo voice and not redistributable pending license review.",
+        "source_locale": "es-ES"
+      }
+    }
+  ],
+  "excluded": [],
+  "warnings": []
+}

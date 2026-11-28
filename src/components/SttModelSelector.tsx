@@ -84,16 +84,38 @@ export const SttModelSelector: React.FC<SttModelSelectorProps> = ({
 
   const localOptions = useMemo(
     () =>
-      localModels.map((m) => ({
-        id: m.id,
-        name: m.name,
-        subtitle: `${m.installed_quant || m.engine} · ~${m.vram_mib} MB`,
-      })),
+      localModels.flatMap((m) => {
+        const computeQuants = m.quants.filter((q) => Boolean(q.compute_type));
+        if (computeQuants.length > 1) {
+          return computeQuants.map((q) => ({
+            id: `${m.id}-${q.id}`,
+            baseId: m.id,
+            name: `${m.name} · ${q.id}`,
+            subtitle: `${q.label} · ~${q.vram_mib} MB`,
+          }));
+        }
+        const quantBadge = m.installed_quant || m.quants[0]?.id || m.engine;
+        return [
+          {
+            id: m.id,
+            baseId: m.id,
+            name: m.installed_quant ? `${m.name} · ${m.installed_quant}` : m.name,
+            subtitle: `${quantBadge} · ~${m.vram_mib} MB`,
+          },
+        ];
+      }),
     [localModels]
   );
 
   const activeLocal =
-    localOptions.find((m) => m.id === settings.active_stt_model) || localOptions[0];
+    localOptions.find((m) => m.id === settings.active_stt_model) ||
+    localOptions.find(
+      (m) =>
+        m.baseId === settings.active_stt_model &&
+        m.id.endsWith("-int8_float16")
+    ) ||
+    localOptions.find((m) => m.baseId === settings.active_stt_model) ||
+    localOptions[0];
   const sourceLabel = isEndpointMode
     ? `${t("models.externalGroup")} · ${activeEp ? activeEp.name : t("transcriber.unconfigured")}`
     : activeLocal

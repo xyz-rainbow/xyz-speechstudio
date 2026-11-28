@@ -3,23 +3,32 @@
 import argparse
 import hashlib
 import json
+import os
 import platform
 import tarfile
 import urllib.request
 from pathlib import Path
 
 
-def fetch(destination: Path, tag: str) -> None:
-    architecture = {"AMD64": "x86_64", "aarch64": "arm64"}.get(platform.machine(), platform.machine())
+def fetch(destination: Path, tag: str, arch: str | None = None) -> None:
+    raw_arch = arch or platform.machine()
+    architecture = {"AMD64": "x86_64", "amd64": "x86_64", "x64": "x86_64", "aarch64": "arm64"}.get(raw_arch, raw_arch)
     if platform.system() == "Darwin":
         name = f"crispasr-macos-{architecture}.tar.gz"
     elif platform.system() == "Linux" and architecture == "x86_64":
         name = "crispasr-linux-x86_64-cpu-legacy.tar.gz"
     else:
         raise RuntimeError("No validated native CPU package for this build platform")
+    headers = {
+        "User-Agent": "SpeechStudio-Packaging",
+        "Accept": "application/vnd.github+json",
+    }
+    token = os.environ.get("GITHUB_TOKEN") or os.environ.get("GH_TOKEN")
+    if token:
+        headers["Authorization"] = f"Bearer {token}"
     request = urllib.request.Request(
         f"https://api.github.com/repos/CrispStrobe/CrispASR/releases/tags/{tag}",
-        headers={"User-Agent": "SpeechStudio-Packaging"},
+        headers=headers,
     )
     with urllib.request.urlopen(request, timeout=30) as response:
         release = json.load(response)
@@ -49,5 +58,6 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--output", type=Path, default=Path(".packaging/native"))
     parser.add_argument("--tag", default="v0.8.55")
+    parser.add_argument("--arch", default=None)
     args = parser.parse_args()
-    fetch(args.output, args.tag)
+    fetch(args.output, args.tag, args.arch)

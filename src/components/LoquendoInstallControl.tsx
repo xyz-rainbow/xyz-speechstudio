@@ -101,29 +101,33 @@ export function LoquendoInstallControl({ baseUrl, supported, onRefresh }: Props)
   };
 
   return (
-    <div className="mt-auto flex flex-col gap-2 pt-2">
-      <p className="text-[11px] leading-relaxed" style={{ color: "var(--text-secondary)" }}>
+    <div className="mt-auto flex flex-col gap-1.5 pt-0.5">
+      <p
+        className="text-[10px] leading-snug line-clamp-2"
+        style={{ color: "var(--text-secondary)" }}
+        title={supported ? t(launched ? "loquendo.finishInstaller" : "loquendo.installerRequired") : t("loquendo.windowsOnly")}
+      >
         {supported ? t(launched ? "loquendo.finishInstaller" : "loquendo.installerRequired") : t("loquendo.windowsOnly")}
       </p>
-      <div className="flex flex-wrap gap-1.5">
+      <div className="flex flex-wrap gap-1">
         <button
           type="button"
           disabled={!supported || !baseUrl || busy}
           onClick={() => void install()}
-          className="inline-flex items-center gap-1.5 rounded-xl border px-2.5 py-1.5 text-xs text-cyan-300 disabled:opacity-40"
+          className="inline-flex items-center gap-1 rounded-xl border px-2 py-1 text-[11px] text-cyan-300 disabled:opacity-40"
           style={{ borderColor: "var(--border-glass)" }}
         >
-          {busy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <FolderOpen className="h-3.5 w-3.5" />}
+          {busy ? <Loader2 className="h-3 w-3 animate-spin" /> : <FolderOpen className="h-3 w-3" />}
           {t("loquendo.installLocal")}
         </button>
         <button
           type="button"
           disabled={!supported || !baseUrl || busy}
           onClick={() => void rescan()}
-          className="inline-flex items-center gap-1.5 rounded-xl border px-2.5 py-1.5 text-xs disabled:opacity-40"
+          className="inline-flex items-center gap-1 rounded-xl border px-2 py-1 text-[11px] disabled:opacity-40"
           style={{ borderColor: "var(--border-glass)", color: "var(--text-primary)" }}
         >
-          <RefreshCw className="h-3.5 w-3.5" />
+          <RefreshCw className="h-3 w-3" />
           {t("loquendo.rescan")}
         </button>
       </div>

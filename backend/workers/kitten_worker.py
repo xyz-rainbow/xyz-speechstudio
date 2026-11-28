@@ -73,6 +73,7 @@ state: dict = {
     "voice_packs": {},
     "phonemizers": {},
     "model_dir": "",
+    "model_file": "",
     "port": 0,
     "pid": os.getpid(),
 }
@@ -80,6 +81,7 @@ state: dict = {
 
 class LoadRequest(BaseModel):
     model_dir: str
+    model_file: Optional[str] = None
 
 
 class SynthRequest(BaseModel):
@@ -214,7 +216,8 @@ def health():
 def load_model(req: LoadRequest):
     t0 = time.perf_counter()
     model_dir = Path(req.model_dir)
-    if state["session"] is not None and state["model_dir"] == str(model_dir):
+    req_file = (req.model_file or "").strip()
+    if state["session"] is not None and state["model_dir"] == str(model_dir) and state.get("model_file", "") == req_file:
         return {"loaded": True, "cached": True, "elapsed_s": 0.0}
 
     try:
@@ -223,15 +226,19 @@ def load_model(req: LoadRequest):
         _ensure_espeak_ascii()
         vocab_path = _ensure_asset(model_dir, "vocab.json")
         vocab = json.loads(vocab_path.read_text(encoding="utf-8"))
-        onnxs = sorted(model_dir.rglob("*.onnx"))
-        if not onnxs:
-            onnx_path = _ensure_asset(model_dir, "kitten_tts_2_mini.onnx")
+        if req_file and (model_dir / req_file).is_file():
+            onnx_path = model_dir / req_file
         else:
-            onnx_path = onnxs[0]
+            onnxs = sorted(model_dir.rglob("*.onnx"))
+            if not onnxs:
+                onnx_path = _ensure_asset(model_dir, req_file or "kitten_tts_2_mini.onnx")
+            else:
+                onnx_path = onnxs[0]
 
         state["session"] = ort.InferenceSession(str(onnx_path), providers=["CPUExecutionProvider"])
         state["vocab"] = vocab
         state["model_dir"] = str(model_dir)
+        state["model_file"] = req_file or onnx_path.name
         state["voice_packs"].clear()
     except Exception as exc:
         raise HTTPException(status_code=500, detail=f"KittenTTS load failed: {exc}") from exc

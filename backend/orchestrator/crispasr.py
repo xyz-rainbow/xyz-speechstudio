@@ -13,6 +13,7 @@ Resolution order for device=cpu:
 
 from __future__ import annotations
 
+import atexit
 import hashlib
 import json
 import os
@@ -378,9 +379,9 @@ PIPER_VOICES_BY_LANG: dict[str, list[tuple[str, str]]] = {
         ("es_MX-ald-medium-f16", "LocalAI-Community/piper-voices-GGUF"),
     ],
     "en": [
-        ("en_US-lessac-medium-f16", "cstr/piper-en_US-lessac-medium-GGUF"),
+        ("en_US-lessac-medium-f16", "LocalAI-Community/piper-voices-GGUF"),
         ("en_US-libritts_r-medium-f16", "cstr/piper-voices-GGUF"),
-        ("en_GB-cori-medium-f16", "cstr/piper-voices-GGUF"),
+        ("en_GB-cori-medium-f16", "LocalAI-Community/piper-voices-GGUF"),
     ],
     "de": [
         ("de_DE-thorsten-medium-f16", "cstr/piper-voices-GGUF"),
@@ -525,17 +526,17 @@ def list_builtin_voices(
         if lang_iso and lang_iso in PIPER_VOICES_BY_LANG:
             for vid, _repo in PIPER_VOICES_BY_LANG[lang_iso]:
                 seen.add(vid)
-                p = _crispasr_cache_dir() / f"piper-{vid}.gguf"
+                local_p = (model_dir / f"piper-{vid}.gguf") if model_dir and model_dir.is_dir() else None
+                p = local_p if (local_p is not None and local_p.is_file()) else (_crispasr_cache_dir() / f"piper-{vid}.gguf")
                 voices.append({"id": vid, "label": f"{vid} ({lang_iso})", "path": str(p)})
-        else:
-            for d in search_dirs:
-                for p in sorted(d.glob("piper-*.gguf")):
-                    vid = p.stem.replace("piper-", "")
-                    if lang_iso and not vid.lower().startswith(f"{lang_iso}_"):
-                        continue
-                    if vid not in seen:
-                        seen.add(vid)
-                        voices.append({"id": vid, "label": vid, "path": str(p)})
+        for d in search_dirs:
+            for p in sorted(d.glob("piper-*.gguf")):
+                vid = p.stem.replace("piper-", "")
+                if lang_iso and not vid.lower().startswith(f"{lang_iso}_"):
+                    continue
+                if vid not in seen:
+                    seen.add(vid)
+                    voices.append({"id": vid, "label": vid, "path": str(p)})
     return voices
 
 
@@ -599,10 +600,19 @@ def _resolve_piper_model_arg(
     v = (voice or "").strip()
     lang_iso = language_code(language) if language else ""
     if v.lower() in ("", "auto", "default"):
+        if model_dir and model_dir.is_dir():
+            for vid, _repo in PIPER_VOICES_BY_LANG.get(lang_iso, []):
+                local_cand = model_dir / f"piper-{vid}.gguf"
+                if local_cand.is_file():
+                    return local_cand
         if lang_iso in PIPER_VOICES_BY_LANG:
             v = PIPER_VOICES_BY_LANG[lang_iso][0][0]
         else:
             return find_gguf_model(model_dir)
+    if model_dir and model_dir.is_dir():
+        local_match = model_dir / f"piper-{v}.gguf"
+        if local_match.is_file():
+            return local_match
     for _lang, items in PIPER_VOICES_BY_LANG.items():
         for vid, repo in items:
             if vid == v:
@@ -650,6 +660,7 @@ def build_tts_command(
     ref_text: Optional[str] = None,
     force_no_gpu: bool = False,
     model_dir: Optional[Path] = None,
+    instruct: Optional[str] = None,
     extra_args: Optional[list[str]] = None,
 ) -> list[str]:
     backend = backend_for_engine(engine, model_dir=model_dir)
@@ -680,6 +691,8 @@ def build_tts_command(
             cmd.extend(["--ref-text", ref_text.strip()])
     elif voice:
         cmd.extend(["--voice", voice])
+    if instruct and instruct.strip():
+        cmd.extend(["--instruct", instruct.strip()])
     if extra_args:
         cmd.extend(extra_args)
     return cmd
@@ -738,6 +751,15 @@ class CrispAsrServerManager:
             had = self._proc is not None and self._proc.poll() is None
             self._stop_server_locked()
             return had
+
+    def uses_model_under(self, directory: Path) -> bool:
+        with self._lock:
+            if not self._model_arg or self._model_arg == "auto":
+                return False
+            try:
+                return Path(self._model_arg).resolve().is_relative_to(directory.resolve())
+            except (OSError, ValueError):
+                return False
 
     def cancel_active(self) -> None:
         self._cancel_event.set()
@@ -807,6 +829,7 @@ class CrispAsrServerManager:
         engine: str,
         backend: str,
         model_arg: str,
+        codec_model: Optional[Path] = None,
         device: DeviceKind,
         force_no_gpu: bool,
         language: str = "en",
@@ -818,7 +841,7 @@ class CrispAsrServerManager:
         import httpx
 
         lang_iso = language_code(language)
-        desired_key = (str(binary), backend, model_arg, device, lang_iso, cli_voice_arg or "")
+        desired_key = (str(binary), backend, model_arg, str(codec_model or ""), device, lang_iso, cli_voice_arg or "")
         with self._lock:
             alive = self._proc is not None and self._proc.poll() is None
             if alive and self._key == desired_key and not voice_added:
@@ -841,6 +864,8 @@ class CrispAsrServerManager:
                 str(port),
                 "--no-punctuation",
             ]
+            if codec_model is not None:
+                cmd.extend(["--codec-model", str(codec_model)])
             if force_no_gpu:
                 cmd.append("--no-gpu")
             if cli_voice_arg:
@@ -951,6 +976,36 @@ class CrispAsrServerManager:
 
 
 server_manager = CrispAsrServerManager()
+_stt_cancel_event = threading.Event()
+_active_stt_proc: Optional[subprocess.Popen] = None
+
+
+def cancel_stt() -> bool:
+    """Cancel an in-flight CrispASR CLI STT transcription if running."""
+    _stt_cancel_event.set()
+    proc = _active_stt_proc
+    if proc is not None and proc.poll() is None:
+        try:
+            proc.terminate()
+            proc.wait(timeout=2)
+        except Exception:
+            try:
+                proc.kill()
+            except Exception:
+                pass
+        return True
+    return False
+
+
+def _atexit_eject_crispasr() -> None:
+    """Ensure the persistent CrispASR process does not outlive the orchestrator."""
+    try:
+        server_manager.eject()
+    except Exception:
+        pass
+
+
+atexit.register(_atexit_eject_crispasr)
 
 
 def synthesize_tts(
@@ -960,9 +1015,12 @@ def synthesize_tts(
     out_path: Path,
     language: str = "en",
     model_dir: Optional[Path] = None,
+    model_path: Optional[Path] = None,
+    codec_path: Optional[Path] = None,
     voice: Optional[str] = None,
     ref_audio: Optional[Path] = None,
     ref_text: Optional[str] = None,
+    instruct: Optional[str] = None,
     device: DeviceKind = "gpu",
     timeout_s: float = 180.0,
     app_root: Optional[Path] = None,
@@ -994,13 +1052,13 @@ def synthesize_tts(
         gguf = _resolve_piper_model_arg(voice, language, model_dir)
         resolved_voice = None
     else:
-        gguf = find_gguf_model(model_dir, engine=engine)
+        gguf = model_path if model_path is not None else find_gguf_model(model_dir, engine=engine)
         resolved_voice = None if ref_audio else resolve_voice_arg(engine, voice, model_dir=model_dir, language=language)
 
     model_arg = str(gguf) if gguf and gguf.is_file() else "auto"
 
-    # Try persistent --server mode first so weights remain warm in VRAM across Play requests & chunks.
-    if backend in SERVER_SUPPORTED_BACKENDS:
+    # Try persistent --server mode first unless --instruct is required (VoiceDesign CLI flag).
+    if backend in SERVER_SUPPORTED_BACKENDS and not (instruct and instruct.strip()):
         try:
             voice_name: Optional[str] = None
             voice_added = False
@@ -1020,6 +1078,7 @@ def synthesize_tts(
                 engine=engine,
                 backend=backend,
                 model_arg=model_arg,
+                codec_model=codec_path,
                 device=device,
                 force_no_gpu=force_no_gpu,
                 language=language,
@@ -1100,6 +1159,8 @@ def synthesize_tts(
             ref_text=ref_text,
             force_no_gpu=force_no_gpu,
             model_dir=model_dir,
+            instruct=instruct,
+            extra_args=["--codec-model", str(codec_path)] if codec_path is not None else None,
         )
 
         t0 = time.perf_counter()
@@ -1206,25 +1267,46 @@ def transcribe_stt(
             cmd.append("--no-gpu")
         cmd.append(str(cli_audio))
 
+        global _active_stt_proc
+        _stt_cancel_event.clear()
         creationflags = getattr(subprocess, "CREATE_NO_WINDOW", 0)
         t0 = time.perf_counter()
-        proc = subprocess.run(
+        proc = subprocess.Popen(
             cmd,
             cwd=str(binary.parent),
             stdin=subprocess.DEVNULL,
-            capture_output=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
             text=True,
             encoding="utf-8",
             errors="replace",
-            timeout=timeout_s,
             creationflags=creationflags,
         )
+        _active_stt_proc = proc
+        deadline = time.time() + timeout_s
+        try:
+            while proc.poll() is None:
+                if _stt_cancel_event.is_set():
+                    proc.terminate()
+                    try:
+                        proc.wait(timeout=2)
+                    except Exception:
+                        proc.kill()
+                    raise InterruptedError("Transcription cancelled by user.")
+                if time.time() > deadline:
+                    proc.kill()
+                    raise TimeoutError(f"CrispASR STT timed out after {timeout_s} seconds")
+                time.sleep(0.1)
+            out, err_s = proc.communicate(timeout=5)
+        finally:
+            if _active_stt_proc is proc:
+                _active_stt_proc = None
         elapsed = time.perf_counter() - t0
         if proc.returncode != 0:
-            err = (proc.stderr or proc.stdout or "").strip()[-1500:]
+            err = (err_s or out or "").strip()[-1500:]
             raise RuntimeError(f"CrispASR STT failed ({proc.returncode}): {err or 'no output'}")
 
-        text = (proc.stdout or "").strip()
+        text = (out or "").strip()
         dur = 0.0
         if audio_path.suffix.lower() == ".wav":
             try:

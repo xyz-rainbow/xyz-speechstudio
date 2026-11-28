@@ -8,10 +8,11 @@ from pydantic import BaseModel, Field, ValidationError, model_validator
 
 from .external_providers import ExternalEndpointConfig
 from .persistence import write_json_atomic
-from .paths import resolve_data_dir
+from .paths import ensure_user_dirs, resolve_cache_dir, resolve_data_dir
 
 APP_ROOT = Path(__file__).absolute().parents[2]
 DATA_DIR = resolve_data_dir(APP_ROOT)
+CACHE_DIR = resolve_cache_dir(APP_ROOT, data_dir=DATA_DIR)
 DEFAULT_MODELS_DIR = DATA_DIR / "models"
 DEFAULT_PROFILES_DIR = DATA_DIR / "profiles"
 DEFAULT_OUTPUTS_DIR = DATA_DIR / "outputs"
@@ -77,8 +78,7 @@ class AppSettings(BaseModel):
 
 
 def ensure_data_dirs() -> None:
-    for d in (DATA_DIR, DEFAULT_MODELS_DIR, DEFAULT_PROFILES_DIR, DEFAULT_OUTPUTS_DIR, DEFAULT_TMP_DIR):
-        d.mkdir(parents=True, exist_ok=True)
+    ensure_user_dirs(DATA_DIR, cache_dir=CACHE_DIR)
 
 
 def load_settings() -> AppSettings:

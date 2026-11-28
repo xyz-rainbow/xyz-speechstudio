@@ -5,6 +5,7 @@ import type { ChunkedAudioPlayerHandle, PlaybackIslandState } from "./components
 import { CloseConfirmModal } from "./components/CloseConfirmModal";
 import { FloatingPlaybackIsland } from "./components/FloatingPlaybackIsland";
 import { ModelsView } from "./components/ModelsView";
+import { PersonaView } from "./components/PersonaView";
 import { ProfilesView } from "./components/ProfilesView";
 import { SettingsView } from "./components/SettingsView";
 import { Sidebar } from "./components/Sidebar";
@@ -39,11 +40,11 @@ import type {
   BackendInfo,
   CatalogModelEntry,
   GenerationRecord,
-  TabId,
   VoiceProfile,
   VramStatus,
   WorkersSnapshot,
 } from "./types";
+import type { AppTabId } from "./types/persona";
 
 const DEFAULT_SETTINGS: AppSettings = {
   language: "en",
@@ -79,7 +80,8 @@ const DEFAULT_SETTINGS: AppSettings = {
 
 function MainStudio() {
   const { t, setLang } = useI18n();
-  const [activeTab, setActiveTab] = useState<TabId>("synthesize");
+  const [activeTab, setActiveTab] = useState<AppTabId>("synthesize");
+  const [personaPublishSeed, setPersonaPublishSeed] = useState<VoiceProfile | null>(null);
   const [settings, setSettings] = useState<AppSettings>(DEFAULT_SETTINGS);
   const [resolvedModelsDir, setResolvedModelsDir] = useState("data/models");
   const [resolvedOutputsDir, setResolvedOutputsDir] = useState("data/outputs");
@@ -231,6 +233,24 @@ function MainStudio() {
         );
         return;
       }
+      if (code === "unsupported") {
+        const translate = tRef.current;
+        void notify(
+          notificationsRef.current,
+          translate("toast.title"),
+          translate("settings.hotkeyUnsupported")
+        );
+        return;
+      }
+      if (code === "empty" || !text.trim()) {
+        const translate = tRef.current;
+        void notify(
+          notificationsRef.current,
+          translate("toast.title"),
+          translate("hotkey.noSelection")
+        );
+        return;
+      }
       setActiveTab("synthesize");
       setIncomingSpeak((prev) => ({ text, nonce: (prev?.nonce ?? 0) + 1 }));
     }).then((fn) => {
@@ -361,6 +381,7 @@ function MainStudio() {
               notificationsEnabled={settings.notifications_enabled}
               onOpenModels={() => setActiveTab("models")}
               onOpenProfiles={() => setActiveTab("profiles")}
+              onProfilesChange={setProfiles}
               onCatalogChange={setCatalog}
               onInstalledLanguagesChange={(next) =>
                 void handleSaveSettings({ ...settings, installed_languages: next })
@@ -382,7 +403,29 @@ function MainStudio() {
                 setSelectedProfileId(id);
                 setActiveTab("synthesize");
               }}
+              onShareToPersona={(profile) => {
+                setPersonaPublishSeed(profile);
+                setActiveTab("persona");
+              }}
+              onOpenModels={() => setActiveTab("models")}
               onAfterGpuAction={refreshSystem}
+              notificationsEnabled={settings.notifications_enabled}
+            />
+          </div>
+
+          <div className={activeTab === "persona" ? "flex-1 min-h-0 flex flex-col overflow-y-auto" : "hidden"}>
+            <PersonaView
+              baseUrl={backend.base_url}
+              catalog={catalog}
+              settings={settings}
+              profiles={profiles}
+              onProfilesChange={setProfiles}
+              onUseProfile={(id) => {
+                setSelectedProfileId(id);
+                setActiveTab("synthesize");
+              }}
+              initialPublishProfile={personaPublishSeed}
+              onConsumeInitialPublishProfile={() => setPersonaPublishSeed(null)}
               notificationsEnabled={settings.notifications_enabled}
             />
           </div>

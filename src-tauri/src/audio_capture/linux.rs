@@ -242,6 +242,8 @@ fn capture_loop(
         socket
             .send(Message::Text(start))
             .map_err(|err| err.to_string())?;
+        // UI waits for this before marking the session active.
+        emit_json(&app, r#"{"type":"status","text":"started"}"#);
         let socket = Arc::new(Mutex::new(socket));
         let reader_stop = stop.clone();
         let reader_app = app.clone();

@@ -68,7 +68,15 @@ $BinDir = Join-Path $Root "runtime\bin"
 New-Item -ItemType Directory -Force -Path $BinDir | Out-Null
 
 Emit-Progress 2 (Get-UiText "checking") "CrispASR ($Variant)"
-$Release = Invoke-RestMethod -Uri "https://api.github.com/repos/CrispStrobe/CrispASR/releases/latest" -Headers @{ "User-Agent" = "SpeechStudio-Installer" }
+$apiHeaders = @{
+    "User-Agent" = "SpeechStudio-Installer"
+    "Accept" = "application/vnd.github+json"
+}
+$ghToken = if ($env:GITHUB_TOKEN) { $env:GITHUB_TOKEN } else { $env:GH_TOKEN }
+if ($ghToken) {
+    $apiHeaders["Authorization"] = "Bearer $ghToken"
+}
+$Release = Invoke-RestMethod -Uri "https://api.github.com/repos/CrispStrobe/CrispASR/releases/latest" -Headers $apiHeaders
 
 function Get-AssetName([string]$v) {
     switch ($v) {

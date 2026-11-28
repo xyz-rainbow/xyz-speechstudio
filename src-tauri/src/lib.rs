@@ -46,7 +46,7 @@ fn hide_main_window(app: tauri::AppHandle) {
 
 #[tauri::command]
 async fn quit_app(app: tauri::AppHandle) {
-    let _ = tauri::async_runtime::spawn_blocking(move || shutdown_and_exit(&app));
+    drop(tauri::async_runtime::spawn_blocking(move || shutdown_and_exit(&app)));
 }
 
 #[tauri::command]
@@ -194,13 +194,13 @@ fn reveal_in_explorer(path: String) -> Result<(), String> {
     }
 }
 
-#[cfg(any(windows, target_os = "linux"))]
+#[cfg(any(windows, target_os = "linux", target_os = "macos"))]
 #[derive(serde::Deserialize)]
 struct HotkeySettings {
     read_hotkey: Option<String>,
 }
 
-#[cfg(any(windows, target_os = "linux"))]
+#[cfg(any(windows, target_os = "linux", target_os = "macos"))]
 fn configured_read_hotkey(app_root: &std::path::Path) -> Option<String> {
     let text = std::fs::read_to_string(paths::data_dir(app_root).join("settings.json")).ok()?;
     let parsed: HotkeySettings = serde_json::from_str(&text).ok()?;
@@ -241,7 +241,7 @@ pub fn run() {
                     let _ = win.hide();
                 }
             }
-            #[cfg(any(windows, target_os = "linux"))]
+            #[cfg(any(windows, target_os = "linux", target_os = "macos"))]
             {
                 let root = app.state::<BackendState>().app_root.clone();
                 if let Some(acc) = configured_read_hotkey(&root) {

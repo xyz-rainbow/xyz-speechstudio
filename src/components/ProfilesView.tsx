@@ -8,7 +8,9 @@ import {
   Pause,
   Play,
   Plus,
+  RotateCcw,
   Scissors,
+  Share2,
   Sparkles,
   Trash2,
   X,
@@ -27,9 +29,12 @@ import {
   updateProfile,
 } from "../services/api";
 import { pickFile } from "../services/fileDialog";
+import { restoreProfileOriginalAudio, switchProfileEngine } from "../services/personaClient";
 import type { AppSettings, CatalogModelEntry, EngineKind, VoiceProfile } from "../types";
+import { getEngineAudioRequirement } from "../utils/personaCompatibility";
 import { BorderBeamButton } from "./BorderBeamButton";
 import { GlassCard } from "./GlassCard";
+import { VoiceDesignModal } from "./VoiceDesignModal";
 
 const PROFILE_LANGUAGES = [
   "Auto",
@@ -66,6 +71,8 @@ interface ProfilesViewProps {
   selectedProfileId: string;
   onProfilesChange: (next: VoiceProfile[]) => void;
   onUseProfile: (id: string) => void;
+  onShareToPersona?: (profile: VoiceProfile) => void;
+  onOpenModels?: () => void;
   onAfterGpuAction: () => void;
   notificationsEnabled: boolean;
 }
@@ -78,18 +85,24 @@ export const ProfilesView: React.FC<ProfilesViewProps> = ({
   selectedProfileId,
   onProfilesChange,
   onUseProfile,
+  onShareToPersona,
+  onOpenModels,
   onAfterGpuAction,
   notificationsEnabled,
 }) => {
   const { t } = useI18n();
   const [editingId, setEditingId] = useState<string | "new" | null>(null);
+  const [voiceDesignOpen, setVoiceDesignOpen] = useState(false);
   const [name, setName] = useState("");
   const [language, setLanguage] = useState("Spanish");
   const [engine, setEngine] = useState<EngineKind>("qwen");
   const [refAudioPath, setRefAudioPath] = useState("");
+  const [editingOriginalPath, setEditingOriginalPath] = useState("");
   const [refText, setRefText] = useState("");
   const [busy, setBusy] = useState(false);
   const [trimmingId, setTrimmingId] = useState<string | null>(null);
+  const [switchingId, setSwitchingId] = useState<string | null>(null);
+  const [restoringId, setRestoringId] = useState<string | null>(null);
   const [transcribing, setTranscribing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [previewKey, setPreviewKey] = useState<string | null>(null);
@@ -199,6 +212,7 @@ export const ProfilesView: React.FC<ProfilesViewProps> = ({
     setLanguage("Spanish");
     setEngine(availableEngines[0]?.value || "qwen");
     setRefAudioPath("");
+    setEditingOriginalPath("");
     setRefText("");
     setError(null);
   };
@@ -209,9 +223,12 @@ export const ProfilesView: React.FC<ProfilesViewProps> = ({
     setLanguage(p.language);
     setEngine(p.engine);
     setRefAudioPath(p.ref_audio_path);
+    setEditingOriginalPath(p.ref_original_path || p.ref_audio_path);
     setRefText(p.ref_text);
     setError(null);
   };
+
+  const engineRequirement = React.useMemo(() => getEngineAudioRequirement(engine), [engine]);
 
   const pickAudio = async () => {
     setError(null);
@@ -320,11 +337,54 @@ export const ProfilesView: React.FC<ProfilesViewProps> = ({
       onProfilesChange(profiles.map((item) => (item.id === updated.id ? updated : item)));
       if (editingId === p.id) {
         setRefAudioPath(updated.ref_audio_path);
+        setRefText(updated.ref_text);
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     } finally {
       setTrimmingId(null);
+    }
+  };
+
+  const handleSwitchEngine = async (p: VoiceProfile, nextEngine: EngineKind) => {
+    if (!baseUrl || nextEngine === p.engine) return;
+    setSwitchingId(p.id);
+    setError(null);
+    try {
+      const updated = await switchProfileEngine(baseUrl, p.id, nextEngine, true);
+      onProfilesChange(profiles.map((item) => (item.id === updated.id ? updated : item)));
+      if (editingId === p.id) {
+        setEngine(updated.engine);
+      }
+      onAfterGpuAction();
+      void notify(notificationsEnabled, t("toast.title"), t("toast.profileSaved"));
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+      void notify(notificationsEnabled, t("toast.title"), t("toast.failed"));
+    } finally {
+      setSwitchingId(null);
+    }
+  };
+
+  const handleRestoreOriginal = async (p: VoiceProfile) => {
+    if (!baseUrl) return;
+    setRestoringId(p.id);
+    setError(null);
+    try {
+      const updated = await restoreProfileOriginalAudio(baseUrl, p.id);
+      onProfilesChange(profiles.map((item) => (item.id === updated.id ? updated : item)));
+      if (editingId === p.id) {
+        setRefAudioPath(updated.ref_audio_path);
+        setEditingOriginalPath(updated.ref_original_path || updated.ref_audio_path);
+        setRefText(updated.ref_text);
+      }
+      onAfterGpuAction();
+      void notify(notificationsEnabled, t("toast.title"), t("toast.profileSaved"));
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+      void notify(notificationsEnabled, t("toast.title"), t("toast.failed"));
+    } finally {
+      setRestoringId(null);
     }
   };
 
@@ -343,7 +403,15 @@ export const ProfilesView: React.FC<ProfilesViewProps> = ({
 
   return (
     <div className="flex flex-col gap-3 pb-4">
-      <div className="flex items-center justify-end gap-2">
+      <div className="flex flex-wrap items-center justify-end gap-2">
+        <button
+          type="button"
+          onClick={() => setVoiceDesignOpen(true)}
+          className="inline-flex items-center gap-1.5 rounded-full border border-purple-400/45 bg-purple-500/15 px-3.5 py-2 text-xs font-medium text-purple-200 hover:bg-purple-500/25"
+        >
+          <Sparkles className="w-3.5 h-3.5" />
+          {t("profiles.voiceDesignBtn")}
+        </button>
         <BorderBeamButton onClick={openNew}>
           <Plus className="w-4 h-4" />
           {t("profiles.newProfile")}
@@ -413,6 +481,33 @@ export const ProfilesView: React.FC<ProfilesViewProps> = ({
                 })
               )}
             </select>
+          </div>
+
+          <div
+            className="rounded-xl border px-3 py-2 text-[11px] flex flex-wrap items-center justify-between gap-2"
+            style={{
+              borderColor: "var(--border-glass)",
+              backgroundColor: "var(--bg-elevated)",
+              color: "var(--text-secondary)",
+            }}
+          >
+            <span>
+              <strong style={{ color: "var(--text-primary)" }}>{engineRequirement.label}:</strong>{" "}
+              {engineRequirement.notes} ({t("profiles.originalPreserved")})
+            </span>
+            {editingId !== "new" &&
+              editingOriginalPath &&
+              refAudioPath &&
+              editingOriginalPath !== refAudioPath && (
+                <button
+                  type="button"
+                  onClick={() => setRefAudioPath(editingOriginalPath)}
+                  className="inline-flex items-center gap-1 rounded-lg border border-cyan-400/45 bg-cyan-500/15 px-2 py-0.5 text-[10px] font-medium text-cyan-200 hover:bg-cyan-500/25"
+                >
+                  <RotateCcw className="w-3 h-3" />
+                  {t("profiles.restoreOriginal")}
+                </button>
+              )}
           </div>
 
           <div className="flex items-center gap-2">
@@ -600,8 +695,30 @@ export const ProfilesView: React.FC<ProfilesViewProps> = ({
               )}
 
               {p.ref_trimmed && (
-                <div className="text-[10px] text-emerald-300/90 font-mono">
-                  {t("profiles.trimmedHint").replace("{{sec}}", dur.toFixed(1))}
+                <div className="flex flex-wrap items-center justify-between gap-2 text-[10px] text-emerald-300/90 font-mono">
+                  <div className="flex flex-wrap items-center gap-1.5">
+                    <span>{t("profiles.trimmedHint").replace("{{sec}}", dur.toFixed(1))}</span>
+                    {p.ref_original_text && p.ref_original_text !== p.ref_text && (
+                      <span className="rounded-full px-1.5 py-0.5 border border-cyan-400/35 bg-cyan-500/10 text-cyan-200">
+                        {t("profiles.originalTextPreserved")}
+                      </span>
+                    )}
+                  </div>
+                  {p.ref_original_path && baseUrl && (
+                    <button
+                      type="button"
+                      disabled={restoringId === p.id}
+                      onClick={() => handleRestoreOriginal(p)}
+                      className="inline-flex items-center gap-1 rounded-lg border border-cyan-400/45 bg-cyan-500/15 px-2 py-0.5 text-[10px] font-sans font-medium text-cyan-200 hover:bg-cyan-500/25 disabled:opacity-50"
+                    >
+                      {restoringId === p.id ? (
+                        <Loader2 className="w-3 h-3 animate-spin" />
+                      ) : (
+                        <RotateCcw className="w-3 h-3" />
+                      )}
+                      {t("profiles.restoreOriginal")}
+                    </button>
+                  )}
                 </div>
               )}
 
@@ -664,9 +781,45 @@ export const ProfilesView: React.FC<ProfilesViewProps> = ({
                   <Edit3 className="w-3 h-3" />
                   {t("profiles.edit")}
                 </button>
+                {availableEngines.length > 1 && baseUrl && (
+                  <select
+                    aria-label={t("profiles.switchEngineLabel")}
+                    disabled={switchingId === p.id}
+                    value={p.engine}
+                    onChange={(e) => handleSwitchEngine(p, e.target.value as EngineKind)}
+                    title={t("profiles.originalPreserved")}
+                    className="rounded-xl border px-2 py-1 text-[11px] outline-none disabled:opacity-50"
+                    style={{
+                      borderColor: "var(--border-glass)",
+                      backgroundColor: "var(--bg-elevated)",
+                      color: "var(--text-primary)",
+                    }}
+                  >
+                    {!availableEngines.some((eng) => eng.value === p.engine) && (
+                      <option value={p.engine}>{p.engine}</option>
+                    )}
+                    {availableEngines.map((eng) => (
+                      <option key={eng.value} value={eng.value}>
+                        {eng.label}
+                      </option>
+                    ))}
+                  </select>
+                )}
+                {onShareToPersona && (
+                  <button
+                    type="button"
+                    onClick={() => onShareToPersona(p)}
+                    title={t("profiles.shareInPersona")}
+                    className="inline-flex items-center gap-1 rounded-xl border px-2 py-1 text-xs hover:border-purple-400/50"
+                    style={{ borderColor: "var(--border-glass)", backgroundColor: "var(--bg-elevated)" }}
+                  >
+                    <Share2 className="w-3 h-3" />
+                  </button>
+                )}
                 <button
                   type="button"
                   onClick={() => handleDelete(p)}
+                  aria-label={t("profiles.delete")}
                   className="inline-flex items-center gap-1 rounded-xl border px-2 py-1 text-xs text-rose-300 hover:border-rose-500/50 ml-auto"
                   style={{ borderColor: "var(--border-glass)", backgroundColor: "var(--bg-elevated)" }}
                 >
@@ -677,6 +830,17 @@ export const ProfilesView: React.FC<ProfilesViewProps> = ({
           );
         })}
       </div>
+
+      <VoiceDesignModal
+        open={voiceDesignOpen}
+        baseUrl={baseUrl}
+        onClose={() => setVoiceDesignOpen(false)}
+        onOpenModels={onOpenModels}
+        onSaved={(created) => {
+          onProfilesChange([...profiles, created]);
+          onUseProfile(created.id);
+        }}
+      />
     </div>
   );
 };

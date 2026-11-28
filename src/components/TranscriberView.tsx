@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useRef, useState } from "react";
 import {
   Check,
   Copy,
@@ -9,7 +9,7 @@ import {
   X,
 } from "lucide-react";
 import { useI18n } from "../i18n";
-import { notify, transcribeAudioFile } from "../services/api";
+import { cancelSttTranscription, notify, transcribeAudioFile } from "../services/api";
 import { pickFile } from "../services/fileDialog";
 import type { AppSettings, CatalogModelEntry, TranscriptSegment } from "../types";
 import { BorderBeamButton } from "./BorderBeamButton";
@@ -54,6 +54,7 @@ export const TranscriberView: React.FC<TranscriberViewProps> = ({
   const [busy, setBusy] = useState(false);
   const [copied, setCopied] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const abortRef = useRef<AbortController | null>(null);
 
   const pickAudio = async () => {
     setError(null);
@@ -72,24 +73,41 @@ export const TranscriberView: React.FC<TranscriberViewProps> = ({
 
   const handleTranscribe = async () => {
     if (!baseUrl || !audioPath.trim()) return;
+    abortRef.current?.abort();
+    const abort = new AbortController();
+    abortRef.current = abort;
     setBusy(true);
     setError(null);
     try {
-      const res = await transcribeAudioFile(baseUrl, {
-        audio_path: audioPath.trim(),
-        language: language === "auto" ? undefined : language,
-      });
+      const res = await transcribeAudioFile(
+        baseUrl,
+        {
+          audio_path: audioPath.trim(),
+          language: language === "auto" ? undefined : language,
+        },
+        abort.signal
+      );
       setOutputText(res.text);
       setSegments(res.segments || []);
       setStats(`${res.language} · ${res.duration_s.toFixed(1)}s in ${res.elapsed_s.toFixed(2)}s`);
       onAfterGpuAction();
       void notify(settings.notifications_enabled, t("toast.title"), t("toast.transcribed"));
     } catch (err) {
+      if (err instanceof DOMException && err.name === "AbortError") {
+        setError(t("transcriber.cancelled"));
+        return;
+      }
       setError(err instanceof Error ? err.message : String(err));
       void notify(settings.notifications_enabled, t("toast.title"), t("toast.failed"));
     } finally {
+      if (abortRef.current === abort) abortRef.current = null;
       setBusy(false);
     }
+  };
+
+  const handleCancel = () => {
+    abortRef.current?.abort();
+    if (baseUrl) void cancelSttTranscription(baseUrl);
   };
 
   const handleCopy = async () => {
@@ -125,6 +143,7 @@ export const TranscriberView: React.FC<TranscriberViewProps> = ({
               disabled={busy}
               onClick={() => setAudioPath("")}
               title={t("transcriber.clearAudio")}
+              aria-label={t("transcriber.clearAudio")}
               className="p-1.5 rounded-xl border hover:border-rose-400/50 text-rose-300 disabled:opacity-40"
               style={{ borderColor: "var(--border-glass)", backgroundColor: "var(--bg-elevated)" }}
             >
@@ -201,6 +220,17 @@ export const TranscriberView: React.FC<TranscriberViewProps> = ({
               {busy ? <Loader2 className="w-4 h-4 animate-spin" /> : <Sparkles className="w-4 h-4" />}
               {busy ? t("transcriber.transcribing") : t("transcriber.transcribe")}
             </BorderBeamButton>
+
+            {busy && (
+              <button
+                type="button"
+                onClick={handleCancel}
+                className="inline-flex items-center gap-1.5 rounded-full border border-rose-500/45 bg-rose-500/15 px-3.5 py-2 text-xs font-medium text-rose-200 hover:bg-rose-500/25"
+              >
+                <X className="w-3.5 h-3.5" />
+                {t("transcriber.cancel")}
+              </button>
+            )}
 
             <button
               type="button"

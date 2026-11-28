@@ -1,0 +1,16 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: persona-api
+  namespace: speech-studio-persona
+  labels:
+    app.kubernetes.io/name: persona-api
+    app.kubernetes.io/part-of: speech-studio
+spec:
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/name: persona-api
+  ports:
+    - name: http
+      port: 80
+      targetPort: http

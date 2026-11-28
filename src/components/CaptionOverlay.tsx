@@ -10,6 +10,7 @@ export const CaptionOverlay: React.FC = () => {
   const [opacity, setOpacity] = useState(0.84);
   const [fontSize, setFontSize] = useState(16);
   const [line, setLine] = useState("");
+  const [kind, setKind] = useState<"idle" | "partial" | "final" | "error">("idle");
 
   useEffect(() => {
     let unlisten: (() => void) | undefined;
@@ -17,9 +18,23 @@ export const CaptionOverlay: React.FC = () => {
     listen<string>("caption", (ev) => {
       try {
         const body = JSON.parse(ev.payload) as { type?: string; text?: string };
-        if (body.type === "partial" || body.type === "final" || body.type === "error") {
+        if (body.type === "partial") {
+          setKind("partial");
+          setLine(body.text || "");
+          return;
+        }
+        if (body.type === "final") {
+          const text = (body.text || "").trim();
+          if (!text) return;
+          setKind("final");
+          setLine(text);
+          return;
+        }
+        if (body.type === "error") {
+          setKind("error");
           setLine(body.text || "");
         }
+        // status events are for session lifecycle in SubtitlesView, not overlay text
       } catch {
         /* ignore malformed events */
       }
@@ -71,7 +86,12 @@ export const CaptionOverlay: React.FC = () => {
       >
         <p
           data-tauri-drag-region
-          className="w-full text-center font-medium leading-snug line-clamp-3 text-slate-100 pointer-events-none"
+          className={clsx(
+            "w-full text-center font-medium leading-snug line-clamp-3 pointer-events-none",
+            kind === "error" && "text-rose-300",
+            kind === "partial" && "text-slate-300/90 italic",
+            (kind === "final" || kind === "idle") && "text-slate-100",
+          )}
           style={{ fontSize: `${fontSize}px` }}
         >
           {line || "—"}

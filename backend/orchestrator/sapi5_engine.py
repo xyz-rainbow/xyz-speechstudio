@@ -16,9 +16,10 @@ from pathlib import Path
 from typing import Optional
 
 _LOCK = threading.Lock()
-_CACHE_TTL_S = 30.0
+_CACHE_TTL_S = 300.0
 _CACHED_VOICES: list[dict[str, str]] = []
 _CACHED_AT: float = 0.0
+_CACHE_POPULATED: bool = False
 
 _BASE_LANG_MAP: dict[str, str] = {
     "all": "all",
@@ -71,16 +72,24 @@ def _ps32_exe() -> Optional[str]:
 
 def _run_ps_encoded(exe: str, script: str, timeout_s: float = 60.0) -> str:
     enc = base64.b64encode(script.encode("utf-16-le")).decode("ascii")
-    creationflags = getattr(subprocess, "CREATE_NO_WINDOW", 0)
+    run_kwargs: dict = {
+        "stdin": subprocess.DEVNULL,
+        "capture_output": True,
+        "text": True,
+        "encoding": "utf-8",
+        "errors": "replace",
+        "timeout": timeout_s,
+    }
+    if sys.platform == "win32":
+        run_kwargs["creationflags"] = getattr(subprocess, "CREATE_NO_WINDOW", 0)
+        if hasattr(subprocess, "STARTUPINFO"):
+            si = subprocess.STARTUPINFO()
+            si.dwFlags |= subprocess.STARTF_USESHOWWINDOW
+            si.wShowWindow = subprocess.SW_HIDE
+            run_kwargs["startupinfo"] = si
     proc = subprocess.run(
-        [exe, "-NoProfile", "-NonInteractive", "-EncodedCommand", enc],
-        stdin=subprocess.DEVNULL,
-        capture_output=True,
-        text=True,
-        encoding="utf-8",
-        errors="replace",
-        timeout=timeout_s,
-        creationflags=creationflags,
+        [exe, "-NoProfile", "-NonInteractive", "-WindowStyle", "Hidden", "-EncodedCommand", enc],
+        **run_kwargs,
     )
     if proc.returncode != 0:
         err = (proc.stderr or proc.stdout or "").strip()
@@ -181,12 +190,12 @@ def _parse_ps_json(raw: str) -> list[dict]:
 
 def discover_voices(force_refresh: bool = False) -> list[dict[str, str]]:
     """Enumerate Windows SAPI 5 (64-bit + 32-bit WOW64) and OneCore voices."""
-    global _CACHED_VOICES, _CACHED_AT
+    global _CACHED_VOICES, _CACHED_AT, _CACHE_POPULATED
     if not is_available():
         return []
     now = time.time()
     with _LOCK:
-        if not force_refresh and _CACHED_VOICES and (now - _CACHED_AT) < _CACHE_TTL_S:
+        if not force_refresh and _CACHE_POPULATED and (now - _CACHED_AT) < _CACHE_TTL_S:
             return list(_CACHED_VOICES)
 
         rows: list[dict] = []
@@ -268,6 +277,7 @@ def discover_voices(force_refresh: bool = False) -> list[dict[str, str]]:
         )
         _CACHED_VOICES = normalized
         _CACHED_AT = now
+        _CACHE_POPULATED = True
         return list(_CACHED_VOICES)
 
 

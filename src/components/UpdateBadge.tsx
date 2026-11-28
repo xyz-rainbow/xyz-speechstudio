@@ -104,6 +104,7 @@ export const UpdatesView: React.FC<UpdatesViewProps> = ({ baseUrl }) => {
   const [checking, setChecking] = useState(false);
   const [installing, setInstalling] = useState(false);
   const [progress, setProgress] = useState<UpdateProgress | null>(null);
+  const [launchedNotice, setLaunchedNotice] = useState("");
   const [error, setError] = useState("");
 
   useEffect(() => {
@@ -132,6 +133,7 @@ export const UpdatesView: React.FC<UpdatesViewProps> = ({ baseUrl }) => {
       if (!baseUrl) return;
       setChecking(true);
       setError("");
+      setLaunchedNotice("");
       try {
         const next = await checkForUpdate(baseUrl, version, force);
         setInfo(next);
@@ -153,24 +155,52 @@ export const UpdatesView: React.FC<UpdatesViewProps> = ({ baseUrl }) => {
   const dateLabel = formatReleaseDate(info?.published_at, lang);
   const canInstall = available && Boolean(info?.asset) && !installing;
 
+  const formatInstallError = (code: string): string => {
+    if (code === "no-asset") return t("update.noAsset");
+    if (code === "cancelled") return t("update.cancelled");
+    if (code === "digest-mismatch" || code === "size-mismatch" || code === "bad-digest") {
+      return t("update.integrityError");
+    }
+    if (code === "busy") return t("update.busy");
+    if (code === "already-current") return t("update.alreadyCurrent");
+    return t("update.installError");
+  };
+
   const onInstall = async () => {
     if (!canInstall) return;
     setInstalling(true);
     setProgress(null);
+    setLaunchedNotice("");
     setError("");
     try {
       const result = await installUpdate(baseUrl, version);
+      const assetLabel = result.asset_name || info?.asset?.name || "";
       if (result.quits_app) {
-        await quitApp();
+        setLaunchedNotice(t("update.installerOpenedQuitting").replace("{{asset}}", assetLabel));
+        setProgress({ phase: "launched", downloaded: 1, total: 1 });
+        window.setTimeout(() => {
+          void quitApp();
+        }, 200);
+        if (!isTauri()) {
+          setInstalling(false);
+        }
         return;
       }
+      setLaunchedNotice(t("update.installerOpened").replace("{{asset}}", assetLabel));
       setInstalling(false);
     } catch (err) {
       const code = err instanceof Error ? err.message : "";
-      setError(code === "no-asset" ? t("update.noAsset") : code === "cancelled" ? t("update.cancelled") : t("update.installError"));
+      setError(formatInstallError(code));
       setInstalling(false);
     }
   };
+
+  const progressLabel =
+    progress?.phase === "verifying"
+      ? t("update.verifying")
+      : progress?.phase === "launched"
+        ? launchedNotice || t("update.installing")
+        : t("update.installing");
 
   return (
     <GlassCard className="flex-1 min-h-0 p-5 flex flex-col gap-4 overflow-y-auto">
@@ -213,17 +243,27 @@ export const UpdatesView: React.FC<UpdatesViewProps> = ({ baseUrl }) => {
       {available && !info?.asset && (
         <p className="text-xs text-amber-300">{t("update.noAsset")}</p>
       )}
+      {launchedNotice && (
+        <p className="rounded-xl border border-cyan-400/40 bg-cyan-500/10 px-3 py-2 text-xs text-cyan-200">
+          {launchedNotice}
+        </p>
+      )}
       {error && <p className="text-xs text-rose-300">{error}</p>}
 
       {installing && (
-        <div className="flex items-center gap-3 text-xs">
-          <progress className="flex-1" aria-label={t("update.installing")}
-            value={progress?.total ? progress.downloaded : undefined}
-            max={progress?.total || 1} />
-          {progress && progress.total > 0 && <span>{Math.min(100, Math.round(progress.downloaded / progress.total * 100))}%</span>}
-          <button type="button" onClick={() => void cancelUpdate(baseUrl).catch(() => setError(t("update.installError")))}>
-            {t("update.cancel")}
-          </button>
+        <div className="flex flex-col gap-1.5 text-xs">
+          <div className="flex items-center gap-3">
+            <progress className="flex-1" aria-label={progressLabel}
+              value={progress?.total ? progress.downloaded : undefined}
+              max={progress?.total || 1} />
+            {progress && progress.total > 0 && <span>{Math.min(100, Math.round(progress.downloaded / progress.total * 100))}%</span>}
+            {progress?.phase !== "launched" && (
+              <button type="button" onClick={() => void cancelUpdate(baseUrl).catch(() => setError(t("update.installError")))}>
+                {t("update.cancel")}
+              </button>
+            )}
+          </div>
+          <span style={{ color: "var(--text-secondary)" }}>{progressLabel}</span>
         </div>
       )}
 
@@ -234,7 +274,7 @@ export const UpdatesView: React.FC<UpdatesViewProps> = ({ baseUrl }) => {
           onClick={() => void onInstall()}
           className="inline-flex items-center justify-center gap-2 rounded-xl border border-lime-400 bg-lime-500/15 hover:bg-lime-500/25 disabled:opacity-40 px-4 py-2 text-xs font-semibold text-white transition-colors"
         >
-          {installing ? t("update.installing") : t("update.install")}
+          {installing ? progressLabel : error && canInstall ? t("update.retry") : t("update.install")}
         </button>
         <button
           type="button"

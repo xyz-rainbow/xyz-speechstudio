@@ -2,6 +2,7 @@ import React from "react";
 import {
   AudioLines,
   Captions,
+  Compass,
   Cpu,
   FileAudio,
   PanelLeftClose,
@@ -11,20 +12,21 @@ import {
 } from "lucide-react";
 import { clsx } from "clsx";
 import { useI18n } from "../i18n";
-import type { TabId } from "../types";
+import type { AppTabId } from "../types/persona";
 import { UpdateBadge } from "./UpdateBadge";
 
 interface SidebarProps {
-  activeTab: TabId;
+  activeTab: AppTabId;
   collapsed: boolean;
   baseUrl: string;
-  onSelectTab: (tab: TabId) => void;
+  onSelectTab: (tab: AppTabId) => void;
   onToggleCollapse: () => void;
 }
 
-const NAV_ITEMS: { id: TabId; icon: React.ComponentType<{ className?: string }> }[] = [
+const NAV_ITEMS: { id: AppTabId; icon: React.ComponentType<{ className?: string }> }[] = [
   { id: "synthesize", icon: AudioLines },
   { id: "profiles", icon: Users },
+  { id: "persona", icon: Compass },
   { id: "transcriber", icon: FileAudio },
   { id: "subtitles", icon: Captions },
   { id: "models", icon: Cpu },

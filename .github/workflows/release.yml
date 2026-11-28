@@ -1,7 +1,8 @@
 # Publish a GitHub Release when a v* tag is pushed.
-# The note in docs/releases/<tag>.md is the body, including what still
-# does not work. The Windows job builds the Inno Setup installer and
-# uploads SpeechStudio_*_Setup.exe. It does not run the installer.
+# The note in docs/releases/<tag>.md is the body. All platform installers
+# (Windows Setup, Linux amd64 .deb, macOS Apple Silicon .dmg, macOS Intel .dmg)
+# are built from the same synced tag version and verified via SHA256SUMS.txt
+# before the draft release is published.
 
 name: Release
 
@@ -51,91 +52,58 @@ jobs:
               --title "$TITLE"
           fi
 
-  installer:
-    name: Build Windows installer
+  installers:
     needs: release
-    runs-on: windows-latest
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v7
-
-      - name: Sync version to release tag
-        shell: pwsh
-        run: python scripts/sync_version.py --version "${{ github.ref_name }}"
-
-      - name: Setup Node
-        uses: actions/setup-node@v7
-        with:
-          node-version: "22"
-          cache: npm
-
-      - name: Setup Rust
-        uses: dtolnay/rust-toolchain@stable
-
-      - name: Cache cargo
-        uses: Swatinem/rust-cache@v2
-        with:
-          workspaces: src-tauri
-
-      - name: Install dependencies
-        run: npm ci
-
-      - name: Build speech-studio.exe
-        run: npx tauri build --no-bundle
-
-      - name: Install Inno Setup
-        shell: pwsh
-        run: |
-          choco install innosetup --yes --no-progress
-          if ($LASTEXITCODE -eq 3010) { exit 0 }
-          exit $LASTEXITCODE
-
-      - name: Compile installer
-        shell: pwsh
-        run: |
-          python -m pip install uv==0.12.21
-          .\scripts\fetch-crispasr.ps1 -Variant cpu
-          .\installer\windows\build.ps1
-
-      - name: Upload installer
-        shell: pwsh
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          $ver = "${{ github.ref_name }}".TrimStart("v", "V")
-          $setup = Get-ChildItem -LiteralPath installer\Output -Filter "SpeechStudio_${ver}_Setup.exe" | Select-Object -First 1
-          if (-not $setup) { throw "No se encontro SpeechStudio_${ver}_Setup.exe" }
-          gh release upload "${{ github.ref_name }}" $setup.FullName --clobber
-
-  unix-installers:
     uses: ./.github/workflows/build-installers.yml
     with:
-      include_windows: false
+      include_windows: true
+      version: ${{ github.ref_name }}
 
-  upload-unix:
-    needs: [release, unix-installers]
+  publish:
+    name: Verify checksums and publish release
+    needs: [release, installers]
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/download-artifact@v4
+      - name: Download all platform installers
+        uses: actions/download-artifact@v4
         with:
           pattern: SpeechStudio-*
-          path: installer-artifacts
+          path: release-assets
           merge-multiple: true
-      - name: Upload Unix installers
+
+      - name: Verify required packages and checksums
+        id: verify
+        run: |
+          VER="${GITHUB_REF_NAME#v}"
+          VER="${VER#V}"
+          WIN="SpeechStudio_${VER}_Setup.exe"
+          DEB="SpeechStudio_${VER}_amd64.deb"
+          DMG_ARM="SpeechStudio_${VER}_aarch64.dmg"
+          DMG_INTEL="SpeechStudio_${VER}_x64.dmg"
+          cd release-assets
+          for f in "$WIN" "$DEB" "$DMG_ARM" "$DMG_INTEL"; do
+            if [ ! -s "$f" ]; then
+              echo "Missing or empty required release package: $f" >&2
+              ls -la >&2
+              exit 1
+            fi
+          done
+          sha256sum "$WIN" "$DEB" "$DMG_ARM" "$DMG_INTEL" > SHA256SUMS.txt
+          sha256sum -c SHA256SUMS.txt
+          cat SHA256SUMS.txt
+
+      - name: Upload packages and publish release
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GH_REPO: ${{ github.repository }}
         run: |
-          mapfile -d '' assets < <(find installer-artifacts -type f \( -name '*.deb' -o -name '*.dmg' \) -print0)
-          test "${#assets[@]}" -ge 3
-          gh release upload "$GITHUB_REF_NAME" "${assets[@]}" --clobber
-
-  publish:
-    needs: [installer, upload-unix]
-    runs-on: ubuntu-24.04
-    steps:
-      - name: Publish complete release
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          GH_REPO: ${{ github.repository }}
-        run: gh release edit "$GITHUB_REF_NAME" --draft=false
+          VER="${GITHUB_REF_NAME#v}"
+          VER="${VER#V}"
+          gh release upload "$GITHUB_REF_NAME" \
+            "release-assets/SpeechStudio_${VER}_Setup.exe" \
+            "release-assets/SpeechStudio_${VER}_amd64.deb" \
+            "release-assets/SpeechStudio_${VER}_aarch64.dmg" \
+            "release-assets/SpeechStudio_${VER}_x64.dmg" \
+            "release-assets/SHA256SUMS.txt" \
+            --clobber
+          gh release edit "$GITHUB_REF_NAME" --draft=false
